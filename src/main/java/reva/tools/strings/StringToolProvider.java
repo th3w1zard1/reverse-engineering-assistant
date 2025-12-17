@@ -35,6 +35,7 @@ import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.model.symbol.ReferenceManager;
+import ghidra.util.Msg;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import reva.tools.AbstractToolProvider;
@@ -162,11 +163,32 @@ public class StringToolProvider extends AbstractToolProvider {
             boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
 
             // Get strings with pagination
+            // Use a safety limit to prevent infinite iteration on large programs
+            // Maximum iterations: startIndex + maxCount + safety buffer (1000)
+            int maxIterations = pagination.startIndex() + pagination.maxCount() + 1000;
+            // Cap at 100k iterations to prevent hangs (should complete in < 5 seconds)
+            if (maxIterations > 100000) {
+                maxIterations = 100000;
+            }
+            
             List<Map<String, Object>> stringData = new ArrayList<>();
             DataIterator dataIterator = program.getListing().getDefinedData(true);
             int currentIndex = 0;
+            int iterationCount = 0;
 
             for (Data data : dataIterator) {
+                iterationCount++;
+                
+                // Safety check: prevent infinite iteration
+                if (iterationCount > maxIterations) {
+                    Msg.warn(this, String.format(
+                        "String iteration limit reached (%d iterations) for program %s. " +
+                        "Only %d strings found before limit. Consider using a smaller startIndex or maxCount.",
+                        maxIterations, program.getName(), stringData.size()
+                    ));
+                    break;
+                }
+                
                 if (!(data.getValue() instanceof String)) {
                     continue;
                 }
