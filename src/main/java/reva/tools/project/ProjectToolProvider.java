@@ -59,6 +59,7 @@ import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
 import reva.util.SchemaUtil;
 import reva.util.RevaInternalServiceRegistry;
+import reva.util.ToolLogCollector;
 
 /**
  * Tool provider for project-related operations.
@@ -971,17 +972,22 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get the project path from the request
-            String projectPath;
-            boolean shouldOpenAllPrograms;
-            try {
-                projectPath = getString(request, "projectPath");
-                shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
-            } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
-            }
+            // Start log collection to capture all messages during tool execution
+            ToolLogCollector logCollector = new ToolLogCollector();
+            logCollector.start();
 
             try {
+                // Get the project path from the request
+                String projectPath;
+                boolean shouldOpenAllPrograms;
+                try {
+                    projectPath = getString(request, "projectPath");
+                    shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
+                } catch (IllegalArgumentException e) {
+                    logCollector.stop();
+                    return createErrorResult(e.getMessage());
+                }
+
                 // Validate the project file exists
                 File projectFile = new File(projectPath);
                 if (!projectFile.exists()) {
@@ -1037,7 +1043,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
                             if (activeProjectDir.equals(requestedProjectDir) || activeProject.getName().equals(projectName)) {
                                 project = activeProject;
                                 projectWasAlreadyOpen = true;
-                                Msg.info(this, "Project is locked (already open), using active project: " + activeProject.getName());
+                                String logMsg = "Project is locked (already open), using active project: " + activeProject.getName();
+                                Msg.info(this, logMsg);
+                                logCollector.addLog("INFO", logMsg);
                             } else {
                                 return createErrorResult(String.format(
                                     "Project is locked. Active project '%s' at '%s' does not match requested project '%s' at '%s'. " +
@@ -1065,7 +1073,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     DomainFolder rootFolder = project.getProjectData().getRootFolder();
                     collectAllPrograms(rootFolder, allPrograms);
                 } catch (Exception e) {
-                    Msg.warn(this, "Error collecting programs: " + e.getMessage());
+                    String logMsg = "Error collecting programs: " + e.getMessage();
+                    Msg.warn(this, logMsg);
+                    logCollector.addLog("WARN", logMsg);
                 }
 
                 // Open programs into memory if requested (default: true)
@@ -1085,13 +1095,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
                             Program program = RevaProgramManager.getProgramByPath(programPath);
                             if (program != null && !program.isClosed()) {
                                 openedPrograms.add(programPath);
-                                Msg.info(this, "Opened program: " + programPath);
+                                String logMsg = "Opened program: " + programPath;
+                                Msg.info(this, logMsg);
+                                logCollector.addLog("INFO", logMsg);
                             } else {
                                 failedPrograms.add(programPath + " (returned null or closed)");
                             }
                         } catch (Exception e) {
                             failedPrograms.add(programPath + " (" + e.getMessage() + ")");
-                            Msg.warn(this, "Failed to open program " + programPath + ": " + e.getMessage());
+                            String logMsg = "Failed to open program " + programPath + ": " + e.getMessage();
+                            Msg.warn(this, logMsg);
+                            logCollector.addLog("WARN", logMsg);
                         }
                     }
                 }
@@ -1134,11 +1148,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 }
                 result.put("message", message);
 
+                // Add collected logs to response
+                ToolLogCollector.addLogsToResult(result, logCollector);
+                logCollector.stop();
+
                 return createJsonResult(result);
 
             } catch (IllegalArgumentException e) {
+                logCollector.stop();
                 return createErrorResult("Invalid project path: " + e.getMessage());
             } catch (Exception e) {
+                logCollector.stop();
                 return createErrorResult("Failed to open project: " + e.getMessage());
             }
         });

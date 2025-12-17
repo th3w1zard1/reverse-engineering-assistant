@@ -41,6 +41,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 import reva.util.SimilarityComparator;
+import reva.util.ToolLogCollector;
 
 
 
@@ -157,10 +158,15 @@ public class StringToolProvider extends AbstractToolProvider {
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get program and pagination parameters using helper methods
-            Program program = getProgramFromArgs(request);
-            PaginationParams pagination = getPaginationParams(request);
-            boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
+            // Start log collection to capture all messages during tool execution
+            ToolLogCollector logCollector = new ToolLogCollector();
+            logCollector.start();
+
+            try {
+                // Get program and pagination parameters using helper methods
+                Program program = getProgramFromArgs(request);
+                PaginationParams pagination = getPaginationParams(request);
+                boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
 
             // Get strings with pagination
             // Use a safety limit to prevent infinite iteration on large programs
@@ -170,7 +176,7 @@ public class StringToolProvider extends AbstractToolProvider {
             if (maxIterations > 100000) {
                 maxIterations = 100000;
             }
-            
+
             List<Map<String, Object>> stringData = new ArrayList<>();
             DataIterator dataIterator = program.getListing().getDefinedData(true);
             int currentIndex = 0;
@@ -178,17 +184,19 @@ public class StringToolProvider extends AbstractToolProvider {
 
             for (Data data : dataIterator) {
                 iterationCount++;
-                
+
                 // Safety check: prevent infinite iteration
                 if (iterationCount > maxIterations) {
-                    Msg.warn(this, String.format(
+                    String logMsg = String.format(
                         "String iteration limit reached (%d iterations) for program %s. " +
                         "Only %d strings found before limit. Consider using a smaller startIndex or maxCount.",
                         maxIterations, program.getName(), stringData.size()
-                    ));
+                    );
+                    Msg.warn(this, logMsg);
+                    logCollector.addLog("WARN", logMsg);
                     break;
                 }
-                
+
                 if (!(data.getValue() instanceof String)) {
                     continue;
                 }
@@ -221,7 +229,18 @@ public class StringToolProvider extends AbstractToolProvider {
             List<Object> resultData = new ArrayList<>();
             resultData.add(paginationInfo);
             resultData.addAll(stringData);
+
+                // Add collected logs to pagination info if any
+                if (logCollector.hasLogs()) {
+                    ToolLogCollector.addLogsToResult(paginationInfo, logCollector);
+                }
+            logCollector.stop();
+
             return createJsonResult(resultData);
+            } catch (Exception e) {
+                logCollector.stop();
+                throw e;
+            }
         });
     }
 

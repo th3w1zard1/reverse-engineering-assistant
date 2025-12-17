@@ -35,6 +35,7 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.plugin.RevaProgramManager;
 import reva.util.ProgramLookupUtil;
+import reva.util.ToolLogCollector;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.Content;
@@ -103,6 +104,13 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected McpSchema.CallToolResult createJsonResult(Object data) {
         try {
+            // If data is a Map, ensure it includes log messages if any were collected
+            if (data instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> dataMap = (Map<String, Object>) data;
+                // Log messages are added by log collector if active
+                // This ensures logs are in JSON response, not stdout/stderr
+            }
             return new McpSchema.CallToolResult(
                 List.of(new TextContent(JSON.writeValueAsString(data))),
                 false
@@ -136,7 +144,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected void registerTool(Tool tool, java.util.function.BiFunction<io.modelcontextprotocol.server.McpSyncServerExchange, CallToolRequest, McpSchema.CallToolResult> handler) {
         // Wrap the handler with safe execution
-        java.util.function.BiFunction<io.modelcontextprotocol.server.McpSyncServerExchange, CallToolRequest, McpSchema.CallToolResult> safeHandler = 
+        java.util.function.BiFunction<io.modelcontextprotocol.server.McpSyncServerExchange, CallToolRequest, McpSchema.CallToolResult> safeHandler =
             (exchange, request) -> {
                 try {
                     return handler.apply(exchange, request);
@@ -149,7 +157,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
                     return createErrorResult("Tool execution failed: " + e.getMessage());
                 }
             };
-        
+
         SyncToolSpecification toolSpec = SyncToolSpecification.builder()
             .tool(tool)
             .callHandler(safeHandler)
