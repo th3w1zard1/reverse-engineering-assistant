@@ -80,11 +80,13 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
+        // Available in all modes - opens project and loads programs into memory
+        registerOpenProjectTool();
+
         // GUI-only tools: require ToolManager which isn't available in headless mode
         if (!headlessMode) {
             registerGetCurrentProgramTool();
             registerListOpenProgramsTool();
-            registerOpenProjectTool();
             registerOpenProgramInCodeBrowserTool();
             registerOpenAllProgramsInCodeBrowserTool();
         }
@@ -950,6 +952,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
         properties.put("projectPath", SchemaUtil.stringProperty(
             "Path to the Ghidra project file (.gpr) to open. Use absolute path for reliability."
         ));
+        properties.put("openAllPrograms", SchemaUtil.booleanPropertyWithDefault(
+            "Whether to automatically open all programs in the project into memory (default: true). " +
+            "Set to false for large projects where you want to open specific programs later.", true
+        ));
 
         List<String> required = List.of("projectPath");
 
@@ -957,7 +963,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("open-project")
             .title("Open Project")
-            .description("Open a Ghidra project from a .gpr file path")
+            .description("Open a Ghidra project from a .gpr file path and optionally load all programs into memory. " +
+                "When openAllPrograms is true (default), all programs in the project are opened and cached, " +
+                "making them immediately accessible to other tools like get-strings, get-functions, etc.")
             .inputSchema(createSchema(properties, required))
             .build();
 
@@ -965,8 +973,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
         registerTool(tool, (exchange, request) -> {
             // Get the project path from the request
             String projectPath;
+            boolean shouldOpenAllPrograms;
             try {
                 projectPath = getString(request, "projectPath");
+                shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             }
@@ -1012,27 +1022,79 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 // Get the opened project
                 Project project = ghidraProject.getProject();
 
+                // Collect all programs in the project
+                List<DomainFile> allPrograms = new ArrayList<>();
+                try {
+                    DomainFolder rootFolder = project.getProjectData().getRootFolder();
+                    collectAllPrograms(rootFolder, allPrograms);
+                } catch (Exception e) {
+                    Msg.warn(this, "Error collecting programs: " + e.getMessage());
+                }
+
+                // Open programs into memory if requested (default: true)
+                List<String> openedPrograms = new ArrayList<>();
+                List<String> failedPrograms = new ArrayList<>();
+                List<String> availablePrograms = new ArrayList<>();
+
+                for (DomainFile domainFile : allPrograms) {
+                    availablePrograms.add(domainFile.getPathname());
+                }
+
+                if (shouldOpenAllPrograms) {
+                    for (DomainFile domainFile : allPrograms) {
+                        String programPath = domainFile.getPathname();
+                        try {
+                            // Use RevaProgramManager to open the program - this caches it for future access
+                            Program program = RevaProgramManager.getProgramByPath(programPath);
+                            if (program != null && !program.isClosed()) {
+                                openedPrograms.add(programPath);
+                                Msg.info(this, "Opened program: " + programPath);
+                            } else {
+                                failedPrograms.add(programPath + " (returned null or closed)");
+                            }
+                        } catch (Exception e) {
+                            failedPrograms.add(programPath + " (" + e.getMessage() + ")");
+                            Msg.warn(this, "Failed to open program " + programPath + ": " + e.getMessage());
+                        }
+                    }
+                }
+
                 // Create result data
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
                 result.put("projectPath", projectPath);
                 result.put("projectName", project.getName());
                 result.put("projectLocation", projectDir);
-                result.put("message", "Project opened successfully: " + project.getName());
 
                 // Get project metadata
                 result.put("isActive", (AppInfo.getActiveProject() == project));
+                result.put("programCount", allPrograms.size());
+                result.put("availablePrograms", availablePrograms);
+                result.put("openAllProgramsRequested", shouldOpenAllPrograms);
+                result.put("programsOpened", openedPrograms.size());
+                result.put("programsFailed", failedPrograms.size());
 
-                // Count programs in the project
-                int programCount = 0;
-                try {
-                    DomainFolder rootFolder = project.getProjectData().getRootFolder();
-                    programCount = countPrograms(rootFolder);
-                } catch (Exception e) {
-                    // Ignore errors counting programs - not critical
-                    Msg.debug(this, "Error counting programs: " + e.getMessage());
+                if (!openedPrograms.isEmpty()) {
+                    result.put("openedPrograms", openedPrograms);
                 }
-                result.put("programCount", programCount);
+
+                if (!failedPrograms.isEmpty()) {
+                    result.put("failedPrograms", failedPrograms);
+                }
+
+                String message;
+                if (shouldOpenAllPrograms) {
+                    message = String.format(
+                        "Project '%s' opened successfully. %d programs found, %d opened into memory, %d failed.",
+                        project.getName(), allPrograms.size(), openedPrograms.size(), failedPrograms.size()
+                    );
+                } else {
+                    message = String.format(
+                        "Project '%s' opened successfully. %d programs available. Use get-strings, get-functions, etc. with programPath to access them.",
+                        project.getName(), allPrograms.size()
+                    );
+                }
+                result.put("message", message);
 
                 return createJsonResult(result);
 
@@ -1065,6 +1127,25 @@ public class ProjectToolProvider extends AbstractToolProvider {
         }
 
         return count;
+    }
+
+    /**
+     * Recursively collect all programs in a folder
+     * @param folder The folder to search
+     * @param programs List to add programs to
+     */
+    private void collectAllPrograms(DomainFolder folder, List<DomainFile> programs) {
+        // Collect programs in this folder
+        for (DomainFile file : folder.getFiles()) {
+            if (file.getContentType().equals("Program")) {
+                programs.add(file);
+            }
+        }
+
+        // Recursively collect from subfolders
+        for (DomainFolder subfolder : folder.getFolders()) {
+            collectAllPrograms(subfolder, programs);
+        }
     }
 
     /**
@@ -1125,7 +1206,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 // Find an existing Code Browser tool
                 PluginTool codeBrowserTool = null;
                 PluginTool[] runningTools = toolManager.getRunningTools();
-                
+
                 // Look for existing Code Browser tool
                 for (PluginTool runningTool : runningTools) {
                     if ("CodeBrowser".equals(runningTool.getName())) {
@@ -1180,8 +1261,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 result.put("programName", program.getName());
                 result.put("codeBrowserTool", codeBrowserTool.getName());
                 result.put("wasAlreadyOpen", alreadyOpen);
-                result.put("message", alreadyOpen ? 
-                    "Program is already open in Code Browser" : 
+                result.put("message", alreadyOpen ?
+                    "Program is already open in Code Browser" :
                     "Program opened in Code Browser successfully");
 
                 return createJsonResult(result);
@@ -1282,7 +1363,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
                 PluginTool codeBrowserTool = null;
                 PluginTool[] runningTools = toolManager.getRunningTools();
-                
+
                 for (PluginTool runningTool : runningTools) {
                     if ("CodeBrowser".equals(runningTool.getName())) {
                         codeBrowserTool = runningTool;
@@ -1327,7 +1408,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
                 for (DomainFile domainFile : matchingPrograms) {
                     String programPath = domainFile.getPathname();
-                    
+
                     if (openProgramPaths.contains(programPath)) {
                         alreadyOpenPrograms.add(programPath);
                         continue;
