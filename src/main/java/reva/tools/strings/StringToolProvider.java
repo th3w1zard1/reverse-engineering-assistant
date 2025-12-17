@@ -145,6 +145,13 @@ public class StringToolProvider extends AbstractToolProvider {
             "description", "Include list of functions that reference each string (max 100 per string).",
             "default", false
         ));
+        properties.put("maxIterations", Map.of(
+            "type", "integer",
+            "description", "Maximum number of data items to iterate through when searching for strings. " +
+                "Prevents infinite hangs on very large programs. Default: 1,000,000 (should complete in < 1 minute). " +
+                "Increase for programs with millions of data items, decrease for faster timeouts.",
+            "default", 1000000
+        ));
 
         List<String> required = List.of("programPath");
 
@@ -167,15 +174,15 @@ public class StringToolProvider extends AbstractToolProvider {
                 Program program = getProgramFromArgs(request);
                 PaginationParams pagination = getPaginationParams(request);
                 boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
-
-            // Get strings with pagination
-            // Use a safety limit to prevent infinite iteration on large programs
-            // Maximum iterations: startIndex + maxCount + safety buffer (1000)
-            int maxIterations = pagination.startIndex() + pagination.maxCount() + 1000;
-            // Cap at 100k iterations to prevent hangs (should complete in < 5 seconds)
-            if (maxIterations > 100000) {
-                maxIterations = 100000;
-            }
+                
+                // Get configurable iteration limit (default: 1,000,000)
+                int maxIterations = getOptionalInt(request, "maxIterations", 1000000);
+                
+                // Ensure minimum safety limit (at least startIndex + maxCount + buffer)
+                int minimumIterations = pagination.startIndex() + pagination.maxCount() + 1000;
+                if (maxIterations < minimumIterations) {
+                    maxIterations = minimumIterations;
+                }
 
             List<Map<String, Object>> stringData = new ArrayList<>();
             DataIterator dataIterator = program.getListing().getDefinedData(true);
@@ -189,8 +196,9 @@ public class StringToolProvider extends AbstractToolProvider {
                 if (iterationCount > maxIterations) {
                     String logMsg = String.format(
                         "String iteration limit reached (%d iterations) for program %s. " +
-                        "Only %d strings found before limit. Consider using a smaller startIndex or maxCount.",
-                        maxIterations, program.getName(), stringData.size()
+                        "Only %d strings found before limit. Consider using a smaller startIndex or maxCount, " +
+                        "or increase the maxIterations parameter (current: %d).",
+                        maxIterations, program.getName(), stringData.size(), maxIterations
                     );
                     Msg.warn(this, logMsg);
                     logCollector.addLog("WARN", logMsg);
