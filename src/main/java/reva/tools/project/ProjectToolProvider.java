@@ -28,6 +28,8 @@ import ghidra.framework.main.AppInfo;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.model.Project;
+import ghidra.framework.model.ProjectLocator;
+import ghidra.base.project.GhidraProject;
 import ghidra.program.model.lang.CompilerSpec;
 import ghidra.program.model.lang.CompilerSpecID;
 import ghidra.program.model.lang.Language;
@@ -77,6 +79,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
         if (!headlessMode) {
             registerGetCurrentProgramTool();
             registerListOpenProgramsTool();
+            registerOpenProjectTool();
         }
         registerListProjectFilesTool();
         registerCheckinProgramTool();
@@ -929,6 +932,132 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 return createErrorResult("Import failed: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * Register a tool to open a Ghidra project
+     */
+    private void registerOpenProjectTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("projectPath", SchemaUtil.stringProperty(
+            "Path to the Ghidra project file (.gpr) to open. Use absolute path for reliability."
+        ));
+
+        List<String> required = List.of("projectPath");
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+            .name("open-project")
+            .title("Open Project")
+            .description("Open a Ghidra project from a .gpr file path")
+            .inputSchema(createSchema(properties, required))
+            .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            // Get the project path from the request
+            String projectPath;
+            try {
+                projectPath = getString(request, "projectPath");
+            } catch (IllegalArgumentException e) {
+                return createErrorResult(e.getMessage());
+            }
+
+            try {
+                // Validate the project file exists
+                File projectFile = new File(projectPath);
+                if (!projectFile.exists()) {
+                    return createErrorResult("Project file does not exist: " + projectPath);
+                }
+
+                // Check if it's a .gpr file
+                if (!projectPath.toLowerCase().endsWith(".gpr")) {
+                    return createErrorResult("Project file must have .gpr extension: " + projectPath);
+                }
+
+                // Extract project directory and name from the .gpr file path
+                // .gpr file is typically at: <projectDir>/<projectName>.gpr
+                String projectDir = projectFile.getParent();
+                String projectName = projectFile.getName();
+                // Remove .gpr extension
+                if (projectName.toLowerCase().endsWith(".gpr")) {
+                    projectName = projectName.substring(0, projectName.length() - 4);
+                }
+
+                if (projectDir == null) {
+                    return createErrorResult("Invalid project path: " + projectPath);
+                }
+
+                // Create ProjectLocator
+                ProjectLocator locator = new ProjectLocator(projectDir, projectName);
+
+                // Verify the project exists
+                if (!locator.getMarkerFile().exists() || !locator.getProjectDir().exists()) {
+                    return createErrorResult("Project not found at: " + projectPath + 
+                        " (marker file or project directory missing)");
+                }
+
+                // Open the project
+                // Note: In GUI mode, this will open the project and make it active
+                GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
+
+                // Get the opened project
+                Project project = ghidraProject.getProject();
+
+                // Create result data
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("projectPath", projectPath);
+                result.put("projectName", project.getName());
+                result.put("projectLocation", projectDir);
+                result.put("message", "Project opened successfully: " + project.getName());
+
+                // Get project metadata
+                result.put("isActive", (AppInfo.getActiveProject() == project));
+                
+                // Count programs in the project
+                int programCount = 0;
+                try {
+                    DomainFolder rootFolder = project.getProjectData().getRootFolder();
+                    programCount = countPrograms(rootFolder);
+                } catch (Exception e) {
+                    // Ignore errors counting programs - not critical
+                    Msg.debug(this, "Error counting programs: " + e.getMessage());
+                }
+                result.put("programCount", programCount);
+
+                return createJsonResult(result);
+
+            } catch (IllegalArgumentException e) {
+                return createErrorResult("Invalid project path: " + e.getMessage());
+            } catch (Exception e) {
+                return createErrorResult("Failed to open project: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Recursively count programs in a folder
+     * @param folder The folder to count programs in
+     * @return The number of programs found
+     */
+    private int countPrograms(DomainFolder folder) {
+        int count = 0;
+        
+        // Count programs in this folder
+        for (DomainFile file : folder.getFiles()) {
+            if (file.getContentType().equals("Program")) {
+                count++;
+            }
+        }
+
+        // Recursively count in subfolders
+        for (DomainFolder subfolder : folder.getFolders()) {
+            count += countPrograms(subfolder);
+        }
+
+        return count;
     }
 
 }
