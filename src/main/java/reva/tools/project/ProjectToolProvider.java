@@ -1015,12 +1015,32 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         " (marker file or project directory missing)");
                 }
 
-                // Open the project
-                // Note: In GUI mode, this will open the project and make it active
-                GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
-
-                // Get the opened project
-                Project project = ghidraProject.getProject();
+                // Check if this project is already open
+                Project project = AppInfo.getActiveProject();
+                boolean projectWasAlreadyOpen = false;
+                
+                if (project != null && project.getName().equals(projectName)) {
+                    // Project is already open - use it directly
+                    projectWasAlreadyOpen = true;
+                    Msg.info(this, "Project '" + projectName + "' is already open, using existing instance");
+                } else {
+                    // Try to open the project
+                    try {
+                        GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
+                        project = ghidraProject.getProject();
+                    } catch (Exception e) {
+                        // If we can't open it, check if it's because it's already locked
+                        // In that case, try to use the active project if names match
+                        Project activeProject = AppInfo.getActiveProject();
+                        if (activeProject != null && activeProject.getName().equals(projectName)) {
+                            project = activeProject;
+                            projectWasAlreadyOpen = true;
+                            Msg.info(this, "Project locked but already active, using existing instance");
+                        } else {
+                            throw e; // Re-throw if it's not the active project
+                        }
+                    }
+                }
 
                 // Collect all programs in the project
                 List<DomainFile> allPrograms = new ArrayList<>();
@@ -1065,7 +1085,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 result.put("projectPath", projectPath);
                 result.put("projectName", project.getName());
                 result.put("projectLocation", projectDir);
-
+                result.put("projectWasAlreadyOpen", projectWasAlreadyOpen);
+                
                 // Get project metadata
                 result.put("isActive", (AppInfo.getActiveProject() == project));
                 result.put("programCount", allPrograms.size());
