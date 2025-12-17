@@ -12,6 +12,8 @@ The `reva.tools.project` package provides MCP tools for Ghidra project managemen
 - `list-project-files` - List files and folders in the Ghidra project with optional recursion
 - `list-open-programs` - List all programs currently open in Ghidra across all tools
 - `open-project` - Open a Ghidra project from a .gpr file path (GUI mode only)
+- `open-program-in-code-browser` - Open a specific program in Code Browser (GUI mode only)
+- `open-all-programs-in-code-browser` - Open all programs matching extensions (exe/dll) in Code Browser (GUI mode only)
 - `checkin-program` - Check in (commit) a program to version control with commit message
 
 ## Critical Implementation Patterns

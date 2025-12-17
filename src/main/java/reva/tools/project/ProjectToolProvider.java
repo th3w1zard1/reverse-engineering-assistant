@@ -18,8 +18,10 @@ package reva.tools.project;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.framework.data.DefaultCheckinHandler;
@@ -29,7 +31,10 @@ import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.model.Project;
 import ghidra.framework.model.ProjectLocator;
+import ghidra.framework.model.ToolManager;
 import ghidra.base.project.GhidraProject;
+import ghidra.app.services.ProgramManager;
+import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.lang.CompilerSpec;
 import ghidra.program.model.lang.CompilerSpecID;
 import ghidra.program.model.lang.Language;
@@ -80,6 +85,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
             registerGetCurrentProgramTool();
             registerListOpenProgramsTool();
             registerOpenProjectTool();
+            registerOpenProgramInCodeBrowserTool();
+            registerOpenAllProgramsInCodeBrowserTool();
         }
         registerListProjectFilesTool();
         registerCheckinProgramTool();
@@ -994,7 +1001,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
                 // Verify the project exists
                 if (!locator.getMarkerFile().exists() || !locator.getProjectDir().exists()) {
-                    return createErrorResult("Project not found at: " + projectPath + 
+                    return createErrorResult("Project not found at: " + projectPath +
                         " (marker file or project directory missing)");
                 }
 
@@ -1015,7 +1022,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
                 // Get project metadata
                 result.put("isActive", (AppInfo.getActiveProject() == project));
-                
+
                 // Count programs in the project
                 int programCount = 0;
                 try {
@@ -1044,7 +1051,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
      */
     private int countPrograms(DomainFolder folder) {
         int count = 0;
-        
+
         // Count programs in this folder
         for (DomainFile file : folder.getFiles()) {
             if (file.getContentType().equals("Program")) {
@@ -1058,6 +1065,338 @@ public class ProjectToolProvider extends AbstractToolProvider {
         }
 
         return count;
+    }
+
+    /**
+     * Register a tool to open a program in Code Browser
+     */
+    private void registerOpenProgramInCodeBrowserTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("programPath", SchemaUtil.stringProperty(
+            "Path to the program to open in Code Browser (e.g., '/swkotor.exe')"
+        ));
+
+        List<String> required = List.of("programPath");
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+            .name("open-program-in-code-browser")
+            .title("Open Program in Code Browser")
+            .description("Open a program in Ghidra's Code Browser tool. The program will be opened if not already open.")
+            .inputSchema(createSchema(properties, required))
+            .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            // Get the program path from the request
+            String programPath;
+            try {
+                programPath = getString(request, "programPath");
+            } catch (IllegalArgumentException e) {
+                return createErrorResult(e.getMessage());
+            }
+
+            try {
+                // Get the program (this will open it if not already open)
+                Program program;
+                try {
+                    program = getProgramFromArgs(request);
+                } catch (Exception e) {
+                    return createErrorResult(e.getMessage());
+                }
+
+                if (program == null || program.isClosed()) {
+                    return createErrorResult("Failed to open program: " + programPath);
+                }
+
+                // Get the active project
+                Project project = AppInfo.getActiveProject();
+                if (project == null) {
+                    return createErrorResult("No active project found");
+                }
+
+                // Get the tool manager
+                ToolManager toolManager = project.getToolManager();
+                if (toolManager == null) {
+                    return createErrorResult("No tool manager available");
+                }
+
+                // Find an existing Code Browser tool
+                PluginTool codeBrowserTool = null;
+                PluginTool[] runningTools = toolManager.getRunningTools();
+                
+                // Look for existing Code Browser tool
+                for (PluginTool runningTool : runningTools) {
+                    if ("CodeBrowser".equals(runningTool.getName())) {
+                        codeBrowserTool = runningTool;
+                        break;
+                    }
+                }
+
+                // If no Code Browser found, try to use RevaPlugin's tool if it has ProgramManager
+                if (codeBrowserTool == null) {
+                    reva.plugin.RevaPlugin revaPlugin = reva.util.RevaInternalServiceRegistry.getService(reva.plugin.RevaPlugin.class);
+                    if (revaPlugin != null && revaPlugin.getTool() != null) {
+                        PluginTool revaTool = revaPlugin.getTool();
+                        ProgramManager testManager = revaTool.getService(ProgramManager.class);
+                        if (testManager != null) {
+                            codeBrowserTool = revaTool;
+                            Msg.debug(this, "Using RevaPlugin's tool for opening program");
+                        }
+                    }
+                }
+
+                // If still no tool found, return error (cannot programmatically launch tools)
+                if (codeBrowserTool == null) {
+                    return createErrorResult("No Code Browser tool is currently running. Please open Code Browser in Ghidra first, or the program will be opened in the background and available via other tools.");
+                }
+
+                // Get the ProgramManager service from the Code Browser tool
+                ProgramManager programManager = codeBrowserTool.getService(ProgramManager.class);
+                if (programManager == null) {
+                    return createErrorResult("Code Browser tool does not have ProgramManager service");
+                }
+
+                // Check if program is already open in this tool
+                Program[] openPrograms = programManager.getAllOpenPrograms();
+                boolean alreadyOpen = false;
+                for (Program openProg : openPrograms) {
+                    if (openProg.getDomainFile().getPathname().equals(program.getDomainFile().getPathname())) {
+                        alreadyOpen = true;
+                        break;
+                    }
+                }
+
+                // Open the program in Code Browser if not already open
+                if (!alreadyOpen) {
+                    programManager.openProgram(program.getDomainFile());
+                }
+
+                // Create result data
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("programPath", programPath);
+                result.put("programName", program.getName());
+                result.put("codeBrowserTool", codeBrowserTool.getName());
+                result.put("wasAlreadyOpen", alreadyOpen);
+                result.put("message", alreadyOpen ? 
+                    "Program is already open in Code Browser" : 
+                    "Program opened in Code Browser successfully");
+
+                return createJsonResult(result);
+
+            } catch (IllegalArgumentException e) {
+                return createErrorResult("Invalid program path: " + e.getMessage());
+            } catch (Exception e) {
+                return createErrorResult("Failed to open program in Code Browser: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Register a tool to open all programs (exe/dll) in the project in Code Browser
+     */
+    private void registerOpenAllProgramsInCodeBrowserTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("extensions", SchemaUtil.stringProperty(
+            "Comma-separated list of file extensions to open (e.g., 'exe,dll' or 'exe'). Defaults to 'exe,dll'"
+        ));
+        properties.put("folderPath", SchemaUtil.stringProperty(
+            "Folder path to search for programs (default: '/' for root folder)"
+        ));
+
+        List<String> required = new ArrayList<>();
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+            .name("open-all-programs-in-code-browser")
+            .title("Open All Programs in Code Browser")
+            .description("Open all programs matching specified extensions (exe/dll) in the project into Code Browser. Searches recursively through the project.")
+            .inputSchema(createSchema(properties, required))
+            .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            try {
+                // Get optional parameters
+                String extensionsStr = getOptionalString(request, "extensions", "exe,dll");
+                String folderPath = getOptionalString(request, "folderPath", "/");
+
+                // Parse extensions
+                String[] extensions = extensionsStr.split(",");
+                Set<String> extensionSet = new HashSet<>();
+                for (String ext : extensions) {
+                    String trimmed = ext.trim().toLowerCase();
+                    if (!trimmed.isEmpty()) {
+                        // Remove leading dot if present
+                        if (trimmed.startsWith(".")) {
+                            trimmed = trimmed.substring(1);
+                        }
+                        extensionSet.add(trimmed);
+                    }
+                }
+
+                if (extensionSet.isEmpty()) {
+                    return createErrorResult("No valid extensions specified");
+                }
+
+                // Get the active project
+                Project project = AppInfo.getActiveProject();
+                if (project == null) {
+                    return createErrorResult("No active project found");
+                }
+
+                // Get the folder to search
+                DomainFolder folder;
+                if (folderPath.equals("/")) {
+                    folder = project.getProjectData().getRootFolder();
+                } else {
+                    folder = project.getProjectData().getFolder(folderPath);
+                }
+
+                if (folder == null) {
+                    return createErrorResult("Folder not found: " + folderPath);
+                }
+
+                // Collect all matching programs
+                List<DomainFile> matchingPrograms = new ArrayList<>();
+                collectProgramsByExtension(folder, extensionSet, matchingPrograms);
+
+                if (matchingPrograms.isEmpty()) {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("success", true);
+                    result.put("programsFound", 0);
+                    result.put("programsOpened", 0);
+                    result.put("extensions", extensionSet);
+                    result.put("message", "No programs found matching extensions: " + extensionSet);
+                    return createJsonResult(result);
+                }
+
+                // Get or create Code Browser tool
+                ToolManager toolManager = project.getToolManager();
+                if (toolManager == null) {
+                    return createErrorResult("No tool manager available");
+                }
+
+                PluginTool codeBrowserTool = null;
+                PluginTool[] runningTools = toolManager.getRunningTools();
+                
+                for (PluginTool runningTool : runningTools) {
+                    if ("CodeBrowser".equals(runningTool.getName())) {
+                        codeBrowserTool = runningTool;
+                        break;
+                    }
+                }
+
+                // If no Code Browser found, try to use RevaPlugin's tool if it has ProgramManager
+                if (codeBrowserTool == null) {
+                    reva.plugin.RevaPlugin revaPlugin = reva.util.RevaInternalServiceRegistry.getService(reva.plugin.RevaPlugin.class);
+                    if (revaPlugin != null && revaPlugin.getTool() != null) {
+                        PluginTool revaTool = revaPlugin.getTool();
+                        ProgramManager testManager = revaTool.getService(ProgramManager.class);
+                        if (testManager != null) {
+                            codeBrowserTool = revaTool;
+                            Msg.debug(this, "Using RevaPlugin's tool for opening programs");
+                        }
+                    }
+                }
+
+                // If still no tool found, return error (cannot programmatically launch tools)
+                if (codeBrowserTool == null) {
+                    return createErrorResult("No Code Browser tool is currently running. Please open Code Browser in Ghidra first, or programs will be opened in the background and available via other tools.");
+                }
+
+                ProgramManager programManager = codeBrowserTool.getService(ProgramManager.class);
+                if (programManager == null) {
+                    return createErrorResult("Code Browser tool does not have ProgramManager service");
+                }
+
+                // Get currently open programs to avoid duplicates
+                Program[] openPrograms = programManager.getAllOpenPrograms();
+                Set<String> openProgramPaths = new HashSet<>();
+                for (Program openProg : openPrograms) {
+                    openProgramPaths.add(openProg.getDomainFile().getPathname());
+                }
+
+                // Open each matching program
+                List<String> openedPrograms = new ArrayList<>();
+                List<String> alreadyOpenPrograms = new ArrayList<>();
+                List<String> failedPrograms = new ArrayList<>();
+
+                for (DomainFile domainFile : matchingPrograms) {
+                    String programPath = domainFile.getPathname();
+                    
+                    if (openProgramPaths.contains(programPath)) {
+                        alreadyOpenPrograms.add(programPath);
+                        continue;
+                    }
+
+                    try {
+                        programManager.openProgram(domainFile);
+                        openedPrograms.add(programPath);
+                        openProgramPaths.add(programPath); // Track as opened
+                    } catch (Exception e) {
+                        failedPrograms.add(programPath + " (" + e.getMessage() + ")");
+                        Msg.error(this, "Failed to open program " + programPath + ": " + e.getMessage());
+                    }
+                }
+
+                // Create result data
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("programsFound", matchingPrograms.size());
+                result.put("programsOpened", openedPrograms.size());
+                result.put("programsAlreadyOpen", alreadyOpenPrograms.size());
+                result.put("programsFailed", failedPrograms.size());
+                result.put("extensions", extensionSet);
+                result.put("openedPrograms", openedPrograms);
+                result.put("alreadyOpenPrograms", alreadyOpenPrograms);
+                if (!failedPrograms.isEmpty()) {
+                    result.put("failedPrograms", failedPrograms);
+                }
+                result.put("message", String.format(
+                    "Opened %d programs, %d were already open, %d failed",
+                    openedPrograms.size(), alreadyOpenPrograms.size(), failedPrograms.size()
+                ));
+
+                return createJsonResult(result);
+
+            } catch (IllegalArgumentException e) {
+                return createErrorResult("Invalid parameter: " + e.getMessage());
+            } catch (Exception e) {
+                return createErrorResult("Failed to open programs: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Recursively collect programs matching specified extensions
+     * @param folder The folder to search
+     * @param extensions Set of extensions to match (without leading dot, lowercase)
+     * @param programs List to add matching programs to
+     */
+    private void collectProgramsByExtension(DomainFolder folder, Set<String> extensions, List<DomainFile> programs) {
+        // Check files in this folder
+        for (DomainFile file : folder.getFiles()) {
+            if (file.getContentType().equals("Program")) {
+                String fileName = file.getName().toLowerCase();
+                // Check if file extension matches
+                int lastDot = fileName.lastIndexOf('.');
+                if (lastDot > 0 && lastDot < fileName.length() - 1) {
+                    String ext = fileName.substring(lastDot + 1);
+                    if (extensions.contains(ext)) {
+                        programs.add(file);
+                    }
+                }
+            }
+        }
+
+        // Recurse into subfolders
+        for (DomainFolder subfolder : folder.getFolders()) {
+            collectProgramsByExtension(subfolder, extensions, programs);
+        }
     }
 
 }
