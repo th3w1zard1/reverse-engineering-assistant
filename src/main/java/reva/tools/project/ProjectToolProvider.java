@@ -1018,28 +1018,45 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 // Check if this project is already open
                 Project project = AppInfo.getActiveProject();
                 boolean projectWasAlreadyOpen = false;
-                
-                if (project != null && project.getName().equals(projectName)) {
-                    // Project is already open - use it directly
-                    projectWasAlreadyOpen = true;
-                    Msg.info(this, "Project '" + projectName + "' is already open, using existing instance");
-                } else {
-                    // Try to open the project
-                    try {
-                        GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
-                        project = ghidraProject.getProject();
-                    } catch (Exception e) {
-                        // If we can't open it, check if it's because it's already locked
-                        // In that case, try to use the active project if names match
+
+                // First, try to open the project
+                try {
+                    GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
+                    project = ghidraProject.getProject();
+                } catch (Exception e) {
+                    // If opening fails (likely because project is already locked/open), use active project
+                    String errorMsg = e.getMessage();
+                    if (errorMsg != null && (errorMsg.contains("lock") || errorMsg.contains("Lock") || errorMsg.contains("Unable"))) {
+                        // Project is locked - use active project if available
                         Project activeProject = AppInfo.getActiveProject();
-                        if (activeProject != null && activeProject.getName().equals(projectName)) {
-                            project = activeProject;
-                            projectWasAlreadyOpen = true;
-                            Msg.info(this, "Project locked but already active, using existing instance");
+                        if (activeProject != null) {
+                            // Verify the active project matches the requested one by checking location
+                            String activeProjectDir = activeProject.getProjectLocator().getProjectDir().getAbsolutePath();
+                            String requestedProjectDir = new File(projectDir).getAbsolutePath();
+
+                            if (activeProjectDir.equals(requestedProjectDir) || activeProject.getName().equals(projectName)) {
+                                project = activeProject;
+                                projectWasAlreadyOpen = true;
+                                Msg.info(this, "Project is locked (already open), using active project: " + activeProject.getName());
+                            } else {
+                                return createErrorResult(String.format(
+                                    "Project is locked. Active project '%s' at '%s' does not match requested project '%s' at '%s'. " +
+                                    "Please close the other project or open the correct one.",
+                                    activeProject.getName(), activeProjectDir, projectName, requestedProjectDir
+                                ));
+                            }
                         } else {
-                            throw e; // Re-throw if it's not the active project
+                            return createErrorResult("Project is locked and no active project available. Please close the project in Ghidra first or ensure a project is open.");
                         }
+                    } else {
+                        // Some other error - re-throw it
+                        throw e;
                     }
+                }
+
+                // Verify we have a valid project
+                if (project == null) {
+                    return createErrorResult("Failed to open or access project: " + projectPath);
                 }
 
                 // Collect all programs in the project
@@ -1086,7 +1103,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 result.put("projectName", project.getName());
                 result.put("projectLocation", projectDir);
                 result.put("projectWasAlreadyOpen", projectWasAlreadyOpen);
-                
+
                 // Get project metadata
                 result.put("isActive", (AppInfo.getActiveProject() == project));
                 result.put("programCount", allPrograms.size());
