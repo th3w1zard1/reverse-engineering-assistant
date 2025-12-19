@@ -393,6 +393,11 @@ public class StringToolProvider extends AbstractToolProvider {
             "description", "Include list of functions that reference each string (max 100 per string).",
             "default", false
         ));
+        properties.put("caseSensitive", Map.of(
+            "type", "boolean",
+            "description", "Whether the search should be case sensitive",
+            "default", false
+        ));
 
         List<String> required = List.of("programPath", "regexPattern");
 
@@ -411,15 +416,17 @@ public class StringToolProvider extends AbstractToolProvider {
             String regexPattern = getString(request, "regexPattern");
             PaginationParams pagination = getPaginationParams(request);
             boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
+            boolean caseSensitive = getOptionalBoolean(request, "caseSensitive", false);
 
             if (regexPattern.trim().isEmpty()) {
                 return createErrorResult("Regex pattern cannot be empty");
             }
 
-            // Compile the regex pattern
+            // Compile the regex pattern with case sensitivity flag
             Pattern pattern;
             try {
-                pattern = Pattern.compile(regexPattern);
+                int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE;
+                pattern = Pattern.compile(regexPattern, flags);
             } catch (PatternSyntaxException e) {
                 return createErrorResult("Invalid regex pattern: " + e.getMessage());
             }
@@ -461,6 +468,7 @@ public class StringToolProvider extends AbstractToolProvider {
             // Create result metadata
             Map<String, Object> searchMetadata = new HashMap<>();
             searchMetadata.put("regexPattern", regexPattern);
+            searchMetadata.put("caseSensitive", caseSensitive);
             searchMetadata.put("searchComplete", searchComplete);
             searchMetadata.put("startIndex", pagination.startIndex());
             searchMetadata.put("requestedCount", pagination.maxCount());
