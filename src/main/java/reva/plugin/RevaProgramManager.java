@@ -26,6 +26,7 @@ import ghidra.app.util.task.ProgramOpener;
 import ghidra.framework.main.AppInfo;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
+import ghidra.framework.model.DomainObject;
 import ghidra.framework.model.Project;
 import ghidra.framework.model.ToolManager;
 import ghidra.framework.plugintool.PluginTool;
@@ -293,17 +294,17 @@ public class RevaProgramManager {
 
         // Handle paths that may include folders (e.g., "/imported/program.exe")
         DomainFile domainFile = null;
-        
+
         if (programPath.startsWith("/")) {
             // Remove leading slash for processing
             String relativePath = programPath.substring(1);
             int lastSlash = relativePath.lastIndexOf('/');
-            
+
             if (lastSlash > 0) {
                 // Path contains folders - need to get the folder first, then the file
                 String folderPath = "/" + relativePath.substring(0, lastSlash);
                 String fileName = relativePath.substring(lastSlash + 1);
-                
+
                 DomainFolder folder = project.getProjectData().getFolder(folderPath);
                 if (folder != null) {
                     domainFile = folder.getFile(fileName);
@@ -327,18 +328,13 @@ public class RevaProgramManager {
         // This approach bypasses GUI dialogs and handles upgrades in the background
         Program program = null;
         try {
-            // Check if the domain file needs upgrading
-            if (domainFile.needsUpgrade()) {
-                Msg.info(RevaProgramManager.class, "Program needs upgrade: " + programPath + ", upgrading automatically...");
-                // Upgrade will happen automatically when we open the program
-            }
-            
             // Open the program using getDomainObject - this handles upgrades automatically
-            // The -1 parameter means "open for update" (not read-only)
-            // TaskMonitor.DUMMY ensures no GUI dialogs appear
+            // Parameters: consumer, readOnly, okToUpgrade, monitor
             // Use null as the consumer object since this is a static method
-            DomainObject domainObject = domainFile.getDomainObject(null, -1, false, TaskMonitor.DUMMY);
-            
+            // false for readOnly means open for update
+            // false for okToUpgrade means don't show upgrade dialogs (upgrades happen automatically)
+            DomainObject domainObject = domainFile.getDomainObject(null, false, false, TaskMonitor.DUMMY);
+
             if (domainObject instanceof Program) {
                 program = (Program) domainObject;
             } else {

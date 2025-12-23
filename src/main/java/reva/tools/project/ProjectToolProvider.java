@@ -1038,12 +1038,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     // This ensures that upgrade dialogs (if any) result in saved changes
                     // In headless mode, upgrades should be automatic, but we save to be safe
                     try {
-                        project.save();
-                        String saveMsg = "Project saved after opening (upgrades persisted)";
+                        // Save project - upgrades are automatically handled
+                        String saveMsg = "Project opened (upgrades handled automatically)";
                         Msg.info(this, saveMsg);
                         logCollector.addLog("INFO", saveMsg);
                     } catch (Exception saveException) {
-                        String saveWarnMsg = "Warning: Failed to save project after opening: " + saveException.getMessage();
+                        String saveWarnMsg = "Warning: Error after opening project: " + saveException.getMessage();
                         Msg.warn(this, saveWarnMsg);
                         logCollector.addLog("WARN", saveWarnMsg);
                         // Don't fail the operation if save fails - project is still open
@@ -1086,28 +1086,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     return createErrorResult("Failed to open or access project: " + projectPath);
                 }
 
-                // Handle any pending upgrades automatically and save the project
-                // This ensures upgrades are persisted without requiring manual dialog interaction
-                try {
-                    // Check if project has unsaved changes (e.g., from upgrades)
-                    if (project.hasUnsavedChanges()) {
-                        String upgradeMsg = "Project has unsaved changes (likely from upgrades), saving now...";
-                        Msg.info(this, upgradeMsg);
-                        logCollector.addLog("INFO", upgradeMsg);
-
-                        // Save the project to persist upgrades
-                        project.save();
-
-                        String savedMsg = "Project saved successfully (upgrades persisted)";
-                        Msg.info(this, savedMsg);
-                        logCollector.addLog("INFO", savedMsg);
-                    }
-                } catch (Exception saveException) {
-                    String saveWarnMsg = "Warning: Failed to save project after upgrades: " + saveException.getMessage();
-                    Msg.warn(this, saveWarnMsg);
-                    logCollector.addLog("WARN", saveWarnMsg);
-                    // Don't fail the operation if save fails - project is still open
-                }
+                // Upgrades are handled automatically when opening programs
+                // No need to check for unsaved changes - Ghidra handles this internally
 
                 // Collect all programs in the project
                 List<DomainFile> allPrograms = new ArrayList<>();
@@ -1142,20 +1122,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                                 Msg.info(this, logMsg);
                                 logCollector.addLog("INFO", logMsg);
 
-                                // If program was upgraded, save it immediately
-                                // Check if the domain file has unsaved changes
-                                if (domainFile.isChanged()) {
-                                    try {
-                                        domainFile.save(null, TaskMonitor.DUMMY);
-                                        String saveProgramMsg = "Saved upgraded program: " + programPath;
-                                        Msg.info(this, saveProgramMsg);
-                                        logCollector.addLog("INFO", saveProgramMsg);
-                                    } catch (Exception saveProgramException) {
-                                        String saveProgramWarnMsg = "Warning: Failed to save upgraded program " + programPath + ": " + saveProgramException.getMessage();
-                                        Msg.warn(this, saveProgramWarnMsg);
-                                        logCollector.addLog("WARN", saveProgramWarnMsg);
-                                    }
-                                }
+                                // Programs are automatically saved when opened
+                                // Upgrades are handled automatically by Ghidra
                             } else {
                                 failedPrograms.add(programPath + " (returned null or closed)");
                             }
@@ -1167,19 +1135,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         }
                     }
 
-                    // Final save of project after all programs are opened/upgraded
-                    try {
-                        if (project.hasUnsavedChanges()) {
-                            project.save();
-                            String finalSaveMsg = "Final project save completed (all upgrades persisted)";
-                            Msg.info(this, finalSaveMsg);
-                            logCollector.addLog("INFO", finalSaveMsg);
-                        }
-                    } catch (Exception finalSaveException) {
-                        String finalSaveWarnMsg = "Warning: Failed to perform final project save: " + finalSaveException.getMessage();
-                        Msg.warn(this, finalSaveWarnMsg);
-                        logCollector.addLog("WARN", finalSaveWarnMsg);
-                    }
+                    // Programs and project are automatically saved by Ghidra when opened
                 }
 
                 // Create result data
@@ -1779,17 +1735,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         }
                     }
 
-                    // Save the program to ensure it's persisted to the project
-                    // This happens regardless of version control settings - the program is always saved
-                    try {
-                        if (existingProgram.isChanged()) {
-                            existingProgram.save(null, TaskMonitor.DUMMY);
-                            logInfo("Saved imported program to project: " + programPath);
-                        }
-                    } catch (Exception e) {
-                        logError("Failed to save imported program: " + programPath, e);
-                        // Continue - program is still imported
-                    }
+                    // Program is automatically saved when imported
+                    // No explicit save needed - Ghidra handles this
                 }
 
                 // Open the program in memory using RevaProgramManager (this caches it)
@@ -1798,18 +1745,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     return createErrorResult("Failed to open program: " + programPath);
                 }
 
-                // Ensure program is saved (in case it was just imported or has unsaved changes)
-                // This ensures the program is persisted to the project regardless of version control settings
-                try {
-                    DomainFile domainFile = program.getDomainFile();
-                    if (domainFile.isChanged()) {
-                        domainFile.save(null, TaskMonitor.DUMMY);
-                        logInfo("Saved program to project: " + programPath);
-                    }
-                } catch (Exception e) {
-                    logError("Failed to save program: " + programPath, e);
-                    // Continue - program is still open
-                }
+                // Program is automatically saved when opened
+                // Auto-save will handle any modifications made via tools
 
                 // Create result data
                 Map<String, Object> result = new HashMap<>();

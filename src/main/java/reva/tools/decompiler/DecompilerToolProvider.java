@@ -1237,9 +1237,7 @@ public class DecompilerToolProvider extends AbstractToolProvider {
             }
 
             // Auto-save the program to persist changes (only if transaction succeeded)
-            if (transactionSuccess) {
-                autoSaveProgram(program, "Change variable data types");
-            }
+            autoSaveProgram(program, "Change variable data types");
 
             // Build result and get diff using helper
             Map<String, Object> resultData = new HashMap<>();
