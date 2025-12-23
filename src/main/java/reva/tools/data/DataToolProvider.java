@@ -185,6 +185,11 @@ public class DataToolProvider extends AbstractToolProvider {
                     resultData.put("dataTypeDisplayName", dataType.getDisplayName());
                     resultData.put("length", dataType.getLength());
 
+                    // Auto-save the program to persist changes (only if successful)
+                    if (success) {
+                        autoSaveProgram(program, "Apply data type");
+                    }
+
                     return createJsonResult(resultData);
                 } finally {
                     // End transaction
@@ -278,6 +283,11 @@ public class DataToolProvider extends AbstractToolProvider {
                 resultData.put("labelName", labelName);
                 resultData.put("address", "0x" + address.toString());
                 resultData.put("isPrimary", symbol.isPrimary());
+
+                // Auto-save the program to persist changes (only if successful)
+                if (success) {
+                    autoSaveProgram(program, "Create label");
+                }
 
                 return createJsonResult(resultData);
             } catch (Exception e) {

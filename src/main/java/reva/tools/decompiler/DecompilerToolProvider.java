@@ -1098,6 +1098,9 @@ public class DecompilerToolProvider extends AbstractToolProvider {
                 return createErrorResult("No matching variables found to rename");
             }
 
+            // Auto-save the program to persist changes
+            autoSaveProgram(program, "Rename variables");
+
             // Build result and get diff using helper
             Map<String, Object> resultData = new HashMap<>();
             resultData.put("programName", program.getName());
@@ -1231,6 +1234,11 @@ public class DecompilerToolProvider extends AbstractToolProvider {
 
             if (changedCount == 0 && errors.isEmpty()) {
                 return createErrorResult("No matching variables found to change data types");
+            }
+
+            // Auto-save the program to persist changes (only if transaction succeeded)
+            if (transactionSuccess) {
+                autoSaveProgram(program, "Change variable data types");
             }
 
             // Build result and get diff using helper
@@ -1842,6 +1850,9 @@ public class DecompilerToolProvider extends AbstractToolProvider {
                     result.put("comment", comment);
 
                     program.endTransaction(transactionId, true);
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Set decompilation comment");
 
                     logInfo(toolName + ": Successfully set comment at " + targetAddress);
                     return createJsonResult(result);

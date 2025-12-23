@@ -106,6 +106,10 @@ public class BookmarkToolProvider extends AbstractToolProvider {
                     result.put("comment", comment);
 
                     program.endTransaction(transactionId, true);
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Set bookmark");
+
                     return createJsonResult(result);
                 } catch (Exception e) {
                     program.endTransaction(transactionId, false);
@@ -263,6 +267,10 @@ public class BookmarkToolProvider extends AbstractToolProvider {
                     result.put("category", category);
 
                     program.endTransaction(transactionId, true);
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Remove bookmark");
+
                     return createJsonResult(result);
                 } catch (Exception e) {
                     program.endTransaction(transactionId, false);

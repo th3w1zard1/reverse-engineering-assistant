@@ -1112,6 +1112,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                     program.endTransaction(txId, true);
 
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Set function prototype");
+
                     // Return updated function information
                     Map<String, Object> result = new HashMap<>();
                     result.put("success", true);
@@ -1447,6 +1450,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 program.endTransaction(txId, true);
 
+                // Auto-save the program to persist changes
+                autoSaveProgram(program, "Create function");
+
                 // Build response
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
@@ -1612,6 +1618,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 }
                 return createErrorResult("Error updating function tags: " + e.getMessage());
             }
+
+            // Auto-save the program to persist changes
+            autoSaveProgram(program, "Update function tags");
 
             // Invalidate caches since tags changed (outside try block for robustness)
             invalidateFunctionCaches(programPath);

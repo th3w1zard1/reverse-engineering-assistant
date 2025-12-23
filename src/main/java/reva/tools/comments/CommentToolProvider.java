@@ -111,6 +111,10 @@ public class CommentToolProvider extends AbstractToolProvider {
                     result.put("comment", comment);
 
                     program.endTransaction(transactionId, true);
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Set comment");
+
                     return createJsonResult(result);
                 } catch (Exception e) {
                     program.endTransaction(transactionId, false);
@@ -269,6 +273,10 @@ public class CommentToolProvider extends AbstractToolProvider {
                     result.put("commentType", commentTypeStr);
 
                     program.endTransaction(transactionId, true);
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Remove comment");
+
                     return createJsonResult(result);
                 } catch (Exception e) {
                     program.endTransaction(transactionId, false);

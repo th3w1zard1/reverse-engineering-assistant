@@ -74,7 +74,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
         properties.put("cDefinition", SchemaUtil.createStringProperty("C-style structure definition"));
         properties.put("category", SchemaUtil.createOptionalStringProperty("Category path (default: /)"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
         required.add("cDefinition");
@@ -95,7 +95,7 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                 DataTypeManager dtm = program.getDataTypeManager();
                 CParser parser = new CParser(dtm);
-                
+
                 int txId = program.startTransaction("Parse C Structure");
                 try {
                     DataType dt = parser.parse(cDefinition);
@@ -106,21 +106,24 @@ public class StructureToolProvider extends AbstractToolProvider {
                     // Move to specified category
                     CategoryPath catPath = new CategoryPath(category);
                     Category cat = dtm.createCategory(catPath);
-                    
+
                     // Resolve into the program's DTM
                     DataType resolved = dtm.resolve(dt, DataTypeConflictHandler.REPLACE_HANDLER);
                     if (cat != null && resolved.getCategoryPath() != catPath) {
                         resolved.setName(resolved.getName());
                         cat.moveDataType(resolved, DataTypeConflictHandler.REPLACE_HANDLER);
                     }
-                    
+
                     program.endTransaction(txId, true);
-                    
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Parse C structure");
+
                     // Return structure info
                     Map<String, Object> result = createStructureInfo(resolved);
                     result.put("message", "Successfully created structure: " + resolved.getName());
                     return createJsonResult(result);
-                    
+
                 } catch (Exception e) {
                     program.endTransaction(txId, false);
                     Msg.error(this, "Failed to parse C structure", e);
@@ -138,7 +141,7 @@ public class StructureToolProvider extends AbstractToolProvider {
     private void registerValidateCStructureTool() {
         Map<String, Object> properties = new HashMap<>();
         properties.put("cDefinition", SchemaUtil.createStringProperty("C-style structure definition to validate"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("cDefinition");
 
@@ -152,23 +155,23 @@ public class StructureToolProvider extends AbstractToolProvider {
         registerTool(tool, (exchange, request) -> {
             try {
                 String cDefinition = getString(request, "cDefinition");
-                
+
                 // Create a temporary parser with a standalone DTM
                 DataTypeManager tempDtm = new StandAloneDataTypeManager("temp");
                 CParser parser = new CParser(tempDtm);
-                
+
                 try {
                     DataType dt = parser.parse(cDefinition);
                     if (dt == null) {
                         return createErrorResult("Invalid structure definition");
                     }
-                    
+
                     Map<String, Object> result = new HashMap<>();
                     result.put("valid", true);
                     result.put("parsedType", dt.getName());
                     result.put("displayName", dt.getDisplayName());
                     result.put("size", dt.getLength());
-                    
+
                     if (dt instanceof Structure) {
                         Structure struct = (Structure) dt;
                         result.put("fieldCount", struct.getNumComponents());
@@ -178,9 +181,9 @@ public class StructureToolProvider extends AbstractToolProvider {
                         result.put("fieldCount", union.getNumComponents());
                         result.put("isUnion", true);
                     }
-                    
+
                     return createJsonResult(result);
-                    
+
                 } catch (Exception e) {
                     Map<String, Object> result = new HashMap<>();
                     result.put("valid", false);
@@ -207,7 +210,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("category", SchemaUtil.createOptionalStringProperty("Category path (default: /)"));
         properties.put("packed", SchemaUtil.createOptionalBooleanProperty("Whether structure should be packed"));
         properties.put("description", SchemaUtil.createOptionalStringProperty("Description of the structure"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
         required.add("name");
@@ -232,12 +235,12 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                 DataTypeManager dtm = program.getDataTypeManager();
                 CategoryPath catPath = new CategoryPath(category);
-                
+
                 int txId = program.startTransaction("Create Structure");
                 try {
                     // Create category if needed
                     dtm.createCategory(catPath);
-                    
+
                     // Create structure or union
                     Composite composite;
                     if ("union".equalsIgnoreCase(type)) {
@@ -248,20 +251,23 @@ public class StructureToolProvider extends AbstractToolProvider {
                             ((Structure) composite).setPackingEnabled(true);
                         }
                     }
-                    
+
                     if (description != null) {
                         composite.setDescription(description);
                     }
-                    
+
                     // Add to DTM
                     DataType resolved = dtm.addDataType(composite, DataTypeConflictHandler.REPLACE_HANDLER);
-                    
+
                     program.endTransaction(txId, true);
-                    
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Create structure");
+
                     Map<String, Object> result = createStructureInfo(resolved);
                     result.put("message", "Successfully created " + type + ": " + name);
                     return createJsonResult(result);
-                    
+
                 } catch (Exception e) {
                     program.endTransaction(txId, false);
                     Msg.error(this, "Failed to create structure", e);
@@ -284,13 +290,13 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("dataType", SchemaUtil.createStringProperty("Data type (e.g., 'int', 'char[32]')"));
         properties.put("offset", SchemaUtil.createOptionalNumberProperty("Offset (for structures, omit to append)"));
         properties.put("comment", SchemaUtil.createOptionalStringProperty("Field comment"));
-        
+
         // Bitfield support
         Map<String, Object> bitfieldProps = new HashMap<>();
         bitfieldProps.put("bitSize", SchemaUtil.createNumberProperty("Size in bits"));
         bitfieldProps.put("bitOffset", SchemaUtil.createOptionalNumberProperty("Bit offset within byte"));
         properties.put("bitfield", SchemaUtil.createOptionalObjectProperty("Bitfield configuration", bitfieldProps));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
         required.add("structureName");
@@ -316,24 +322,24 @@ public class StructureToolProvider extends AbstractToolProvider {
                 Map<String, Object> bitfield = getOptionalMap(request.arguments(), "bitfield", null);
 
                 DataTypeManager dtm = program.getDataTypeManager();
-                
+
                 // Find the structure
                 DataType dt = dtm.getDataType(structureName);
                 if (dt == null) {
                     // Search in all categories
                     dt = findDataTypeByName(dtm, structureName);
                 }
-                
+
                 if (dt == null) {
                     return createErrorResult("Structure not found: " + structureName);
                 }
-                
+
                 if (!(dt instanceof Composite)) {
                     return createErrorResult("Data type is not a structure or union: " + structureName);
                 }
-                
+
                 Composite composite = (Composite) dt;
-                
+
                 // Parse the field data type
                 DataType fieldType = null;
                 try {
@@ -348,11 +354,11 @@ public class StructureToolProvider extends AbstractToolProvider {
                         // Ignore fallback failure
                     }
                 }
-                
+
                 if (fieldType == null) {
                     return createErrorResult("Invalid data type: " + dataTypeStr);
                 }
-                
+
                 int txId = program.startTransaction("Add Structure Field");
                 try {
                     if (bitfield != null) {
@@ -362,10 +368,10 @@ public class StructureToolProvider extends AbstractToolProvider {
                         }
                         Structure struct = (Structure) composite;
                         int bitSize = getInt(bitfield, "bitSize");
-                        
+
                         if (offset != null) {
                             int bitOffset = getOptionalInt(bitfield, "bitOffset", 0);
-                            struct.insertBitFieldAt(offset, fieldType.getLength(), bitOffset, 
+                            struct.insertBitFieldAt(offset, fieldType.getLength(), bitOffset,
                                 fieldType, bitSize, fieldName, comment);
                         } else {
                             struct.addBitField(fieldType, bitSize, fieldName, comment);
@@ -375,7 +381,7 @@ public class StructureToolProvider extends AbstractToolProvider {
                         if (composite instanceof Structure) {
                             Structure struct = (Structure) composite;
                             if (offset != null) {
-                                struct.insertAtOffset(offset, fieldType, fieldType.getLength(), 
+                                struct.insertAtOffset(offset, fieldType, fieldType.getLength(),
                                     fieldName, comment);
                             } else {
                                 struct.add(fieldType, fieldName, comment);
@@ -385,13 +391,16 @@ public class StructureToolProvider extends AbstractToolProvider {
                             union.add(fieldType, fieldName, comment);
                         }
                     }
-                    
+
                     program.endTransaction(txId, true);
-                    
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Add structure field");
+
                     Map<String, Object> result = createStructureInfo(composite);
                     result.put("message", "Successfully added field: " + fieldName);
                     return createJsonResult(result);
-                    
+
                 } catch (Exception e) {
                     program.endTransaction(txId, false);
                     Msg.error(this, "Failed to add field", e);
@@ -545,6 +554,9 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                     program.endTransaction(txId, true);
 
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Modify structure field");
+
                     Map<String, Object> result = createDetailedStructureInfo(struct);
                     result.put("message", "Successfully modified field in structure: " + structureName);
                     result.put("modifiedField", replacementFieldName);
@@ -664,6 +676,9 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                     program.endTransaction(txId, true);
 
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Modify structure from C");
+
                     Map<String, Object> result = createDetailedStructureInfo(existingStruct);
                     result.put("message", "Successfully modified structure from C definition: " + structureName);
                     result.put("fieldsCount", existingStruct.getNumComponents());
@@ -687,7 +702,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
         properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
         required.add("structureName");
@@ -707,17 +722,17 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                 DataTypeManager dtm = program.getDataTypeManager();
                 DataType dt = findDataTypeByName(dtm, structureName);
-                
+
                 if (dt == null) {
                     return createErrorResult("Structure not found: " + structureName);
                 }
-                
+
                 if (!(dt instanceof Composite)) {
                     return createErrorResult("Data type is not a structure or union: " + structureName);
                 }
-                
+
                 return createJsonResult(createDetailedStructureInfo((Composite) dt));
-                
+
             } catch (Exception e) {
                 return createErrorResult("Error: " + e.getMessage());
             }
@@ -733,7 +748,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("category", SchemaUtil.createOptionalStringProperty("Filter by category path"));
         properties.put("nameFilter", SchemaUtil.createOptionalStringProperty("Filter by name (substring match)"));
         properties.put("includeBuiltIn", SchemaUtil.createOptionalBooleanProperty("Include built-in types"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
 
@@ -754,7 +769,7 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                 DataTypeManager dtm = program.getDataTypeManager();
                 List<Map<String, Object>> structures = new ArrayList<>();
-                
+
                 // Get all data types
                 Iterator<DataType> iter = dtm.getAllDataTypes();
                 while (iter.hasNext()) {
@@ -762,31 +777,31 @@ public class StructureToolProvider extends AbstractToolProvider {
                     if (!(dt instanceof Composite)) {
                         continue;
                     }
-                    
+
                     // Apply filters
                     if (!includeBuiltIn && dt.getSourceArchive().getName().equals("BuiltInTypes")) {
                         continue;
                     }
-                    
-                    if (categoryFilter != null && 
+
+                    if (categoryFilter != null &&
                         !dt.getCategoryPath().getPath().startsWith(categoryFilter)) {
                         continue;
                     }
-                    
-                    if (nameFilter != null && 
+
+                    if (nameFilter != null &&
                         !dt.getName().toLowerCase().contains(nameFilter.toLowerCase())) {
                         continue;
                     }
-                    
+
                     structures.add(createStructureInfo(dt));
                 }
-                
+
                 Map<String, Object> result = new HashMap<>();
                 result.put("count", structures.size());
                 result.put("structures", structures);
-                
+
                 return createJsonResult(result);
-                
+
             } catch (Exception e) {
                 return createErrorResult("Error: " + e.getMessage());
             }
@@ -802,7 +817,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure"));
         properties.put("addressOrSymbol", SchemaUtil.createStringProperty("Address or symbol name to apply structure"));
         properties.put("clearExisting", SchemaUtil.createOptionalBooleanProperty("Clear existing data"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
         required.add("structureName");
@@ -825,25 +840,25 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                 DataTypeManager dtm = program.getDataTypeManager();
                 DataType dt = findDataTypeByName(dtm, structureName);
-                
+
                 if (dt == null) {
                     return createErrorResult("Structure not found: " + structureName);
                 }
-                
+
                 if (!(dt instanceof Composite)) {
                     return createErrorResult("Data type is not a structure or union: " + structureName);
                 }
-                
+
                 // Check if address is in valid memory
                 Memory memory = program.getMemory();
                 if (!memory.contains(address)) {
                     return createErrorResult("Address is not in valid memory: " + AddressUtil.formatAddress(address));
                 }
-                
+
                 int txId = program.startTransaction("Apply Structure");
                 try {
                     Listing listing = program.getListing();
-                    
+
                     if (clearExisting) {
                         // Clear existing data
                         Data existingData = listing.getDataAt(address);
@@ -851,20 +866,23 @@ public class StructureToolProvider extends AbstractToolProvider {
                             listing.clearCodeUnits(address, address.add(existingData.getLength() - 1), false);
                         }
                     }
-                    
+
                     // Create data
                     Data data = listing.createData(address, dt);
-                    
+
                     program.endTransaction(txId, true);
-                    
+
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Apply structure");
+
                     Map<String, Object> result = new HashMap<>();
                     result.put("message", "Successfully applied structure at " + AddressUtil.formatAddress(address));
                     result.put("address", AddressUtil.formatAddress(address));
                     result.put("structureName", dt.getName());
                     result.put("size", data.getLength());
-                    
+
                     return createJsonResult(result);
-                    
+
                 } catch (Exception e) {
                     program.endTransaction(txId, false);
                     Msg.error(this, "Failed to apply structure", e);
@@ -980,6 +998,9 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                     program.endTransaction(txId, true);
 
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Delete structure");
+
                     if (removed) {
                         Map<String, Object> result = new HashMap<>();
                         result.put("message", "Successfully deleted structure: " + structureName);
@@ -1010,7 +1031,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
         properties.put("headerContent", SchemaUtil.createStringProperty("C header file content"));
         properties.put("category", SchemaUtil.createOptionalStringProperty("Category path (default: /)"));
-        
+
         List<String> required = new ArrayList<>();
         required.add("programPath");
         required.add("headerContent");
@@ -1031,15 +1052,15 @@ public class StructureToolProvider extends AbstractToolProvider {
 
                 DataTypeManager dtm = program.getDataTypeManager();
                 CParser parser = new CParser(dtm);
-                
+
                 int txId = program.startTransaction("Parse C Header");
                 List<Map<String, Object>> createdTypes = new ArrayList<>();
-                
+
                 try {
                     // Parse the entire header content as one unit to handle dependencies
                     CategoryPath catPath = new CategoryPath(category);
                     Category cat = dtm.createCategory(catPath);
-                    
+
                     // Use CParser to parse the entire header content
                     DataType dt = parser.parse(headerContent);
                     if (dt != null) {
@@ -1050,18 +1071,18 @@ public class StructureToolProvider extends AbstractToolProvider {
                         }
                         createdTypes.add(createStructureInfo(resolved));
                     }
-                    
+
                     // If single parse didn't work, try parsing line by line
                     if (createdTypes.isEmpty()) {
                         String[] lines = headerContent.split("\n");
                         StringBuilder currentDef = new StringBuilder();
-                        
+
                         for (String line : lines) {
                             line = line.trim();
                             if (line.isEmpty()) continue;
-                            
+
                             currentDef.append(line).append("\n");
-                            
+
                             // If line ends with semicolon, try to parse this definition
                             if (line.endsWith(";")) {
                                 try {
@@ -1082,15 +1103,18 @@ public class StructureToolProvider extends AbstractToolProvider {
                             }
                         }
                     }
-                    
+
                     program.endTransaction(txId, true);
+                    
+                    // Auto-save the program to persist changes
+                    autoSaveProgram(program, "Parse C header");
                     
                     Map<String, Object> result = new HashMap<>();
                     result.put("message", "Successfully parsed header file");
                     result.put("createdCount", createdTypes.size());
                     result.put("createdTypes", createdTypes);
                     return createJsonResult(result);
-                    
+
                 } catch (Exception e) {
                     program.endTransaction(txId, false);
                     Msg.error(this, "Failed to parse header", e);
@@ -1111,7 +1135,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         if (dt != null) {
             return dt;
         }
-        
+
         // Search all categories
         Iterator<DataType> iter = dtm.getAllDataTypes();
         while (iter.hasNext()) {
@@ -1120,7 +1144,7 @@ public class StructureToolProvider extends AbstractToolProvider {
                 return dataType;
             }
         }
-        
+
         return null;
     }
 
@@ -1129,19 +1153,19 @@ public class StructureToolProvider extends AbstractToolProvider {
      */
     private Map<String, Object> createStructureInfo(DataType dt) {
         Map<String, Object> info = DataTypeParserUtil.createDataTypeInfo(dt);
-        
+
         if (dt instanceof Composite) {
             Composite composite = (Composite) dt;
             info.put("isUnion", dt instanceof Union);
             info.put("numComponents", composite.getNumComponents());
-            
+
             if (dt instanceof Structure) {
                 Structure struct = (Structure) dt;
                 info.put("isPacked", struct.isPackingEnabled());
                 // hasFlexibleArray check would go here if method exists
             }
         }
-        
+
         return info;
     }
 
