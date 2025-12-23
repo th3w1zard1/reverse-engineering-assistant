@@ -1619,23 +1619,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("path", SchemaUtil.stringProperty(
-            "Absolute file system path to the program file to open. If the program already exists in the project, it will be opened. Otherwise, it will be imported first."
+            "File system path to program. Imports if not in project, opens if exists."
         ));
         properties.put("destinationFolder", SchemaUtil.stringProperty(
-            "Project folder path where to import the program if it doesn't exist (default: '/' for root folder). " +
-            "Only used when importing a new program. If the program already exists, this parameter is ignored."
+            "Project folder for new imports (default: '/'). Ignored if program exists."
         ));
         properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
-            "Run Ghidra's auto-analysis after importing a new program (default: true). " +
-            "Only applies if the program is being imported (not if it already exists in the project). " +
-            "Analysis can take time but provides better decompilation and function detection.",
+            "Run auto-analysis on new imports (default: true). Ignored if program exists.",
             true
         ));
         properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
-            "Add imported program to version control (default: true). " +
-            "Only applies if the program is being imported (not if it already exists in the project). " +
-            "Note: The program is ALWAYS saved to the project regardless of this setting. " +
-            "This parameter only controls whether it's added to version control (for tracking changes over time).",
+            "Add new imports to version control (default: true). Program always saved regardless.",
             true
         ));
 
@@ -1645,14 +1639,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("open-program")
             .title("Open Program")
-            .description("Open a program in the current project. If the program doesn't exist in the project, it will be imported first. " +
-                "The program will be opened in memory, saved to the project (always saved, regardless of version control settings), " +
-                "and cached for future access. This ensures the program is immediately available for use with other tools like " +
-                "get-strings, get-functions, set-comment, etc. " +
-                "Parameters: 'path' (required) - file system path to the program; " +
-                "'destinationFolder' (optional, default: '/') - where to import if new; " +
-                "'analyzeAfterImport' (optional, default: true) - run analysis on new imports; " +
-                "'enableVersionControl' (optional, default: true) - add to version control (does NOT affect auto-save, program is always saved).")
+            .description("Open program in project. Imports if missing, opens if exists. Always saves to project. Caches for other tools.")
             .inputSchema(createSchema(properties, required))
             .build();
 
