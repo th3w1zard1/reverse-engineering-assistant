@@ -1622,13 +1622,21 @@ public class ProjectToolProvider extends AbstractToolProvider {
             "Absolute file system path to the program file to open. If the program already exists in the project, it will be opened. Otherwise, it will be imported first."
         ));
         properties.put("destinationFolder", SchemaUtil.stringProperty(
-            "Project folder path where to import the program if it doesn't exist (default: root folder)"
+            "Project folder path where to import the program if it doesn't exist (default: '/' for root folder). " +
+            "Only used when importing a new program. If the program already exists, this parameter is ignored."
         ));
         properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
-            "Run auto-analysis after importing (only applies if program is imported, default: false)", false
+            "Run Ghidra's auto-analysis after importing a new program (default: true). " +
+            "Only applies if the program is being imported (not if it already exists in the project). " +
+            "Analysis can take time but provides better decompilation and function detection.",
+            true
         ));
         properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
-            "Automatically add imported program to version control (only applies if program is imported, default: true)", true
+            "Add imported program to version control (default: true). " +
+            "Only applies if the program is being imported (not if it already exists in the project). " +
+            "Note: The program is ALWAYS saved to the project regardless of this setting. " +
+            "This parameter only controls whether it's added to version control (for tracking changes over time).",
+            true
         ));
 
         List<String> required = List.of("path");
@@ -1638,8 +1646,13 @@ public class ProjectToolProvider extends AbstractToolProvider {
             .name("open-program")
             .title("Open Program")
             .description("Open a program in the current project. If the program doesn't exist in the project, it will be imported first. " +
-                "The program will be opened in memory, saved to the project, and cached for future access. " +
-                "This ensures the program is immediately available for use with other tools like get-strings, get-functions, etc.")
+                "The program will be opened in memory, saved to the project (always saved, regardless of version control settings), " +
+                "and cached for future access. This ensures the program is immediately available for use with other tools like " +
+                "get-strings, get-functions, set-comment, etc. " +
+                "Parameters: 'path' (required) - file system path to the program; " +
+                "'destinationFolder' (optional, default: '/') - where to import if new; " +
+                "'analyzeAfterImport' (optional, default: true) - run analysis on new imports; " +
+                "'enableVersionControl' (optional, default: true) - add to version control (does NOT affect auto-save, program is always saved).")
             .inputSchema(createSchema(properties, required))
             .build();
 
@@ -1651,7 +1664,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
                 // Get optional parameters with defaults
                 String destinationFolder = getOptionalString(request, "destinationFolder", "/");
-                boolean analyzeAfterImport = getOptionalBoolean(request, "analyzeAfterImport", false);
+                boolean analyzeAfterImport = getOptionalBoolean(request, "analyzeAfterImport", true);
                 boolean enableVersionControl = getOptionalBoolean(request, "enableVersionControl", true);
 
                 // Validate file exists
@@ -1765,6 +1778,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     }
 
                     // Add to version control if requested
+                    // NOTE: Version control is separate from saving. The program is ALWAYS saved to the project
+                    // regardless of this setting. Version control only enables change tracking over time.
                     if (enableVersionControl && existingProgram.canAddToRepository()) {
                         try {
                             String commitMessage = analyzeAfterImport
@@ -1773,14 +1788,16 @@ public class ProjectToolProvider extends AbstractToolProvider {
                             existingProgram.addToVersionControl(commitMessage, false, TaskMonitor.DUMMY);
                         } catch (Exception e) {
                             logError("Failed to add program to version control: " + programPath, e);
-                            // Continue - program is still imported
+                            // Continue - program is still imported and will be saved
                         }
                     }
 
-                    // Save the program to ensure it's persisted
+                    // Save the program to ensure it's persisted to the project
+                    // This happens regardless of version control settings - the program is always saved
                     try {
                         if (existingProgram.isChanged()) {
                             existingProgram.save(null, TaskMonitor.DUMMY);
+                            logInfo("Saved imported program to project: " + programPath);
                         }
                     } catch (Exception e) {
                         logError("Failed to save imported program: " + programPath, e);
@@ -1795,11 +1812,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 }
 
                 // Ensure program is saved (in case it was just imported or has unsaved changes)
+                // This ensures the program is persisted to the project regardless of version control settings
                 try {
                     DomainFile domainFile = program.getDomainFile();
                     if (domainFile.isChanged()) {
                         domainFile.save(null, TaskMonitor.DUMMY);
-                        logInfo("Saved program: " + programPath);
+                        logInfo("Saved program to project: " + programPath);
                     }
                 } catch (Exception e) {
                     logError("Failed to save program: " + programPath, e);
