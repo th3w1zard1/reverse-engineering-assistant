@@ -134,7 +134,7 @@ public class RevaApplicationPlugin extends Plugin implements ApplicationLevelOnl
     @Override
     public void projectOpened(Project project) {
         this.currentProject = project;
-        Msg.info(this, "Project opened: " + project.getName());
+        Msg.debug(this, "Project opened: " + project.getName());
         // The MCP server doesn't need to restart - it continues serving across projects
     }
 

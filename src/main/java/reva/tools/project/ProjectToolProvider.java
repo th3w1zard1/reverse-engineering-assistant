@@ -1026,9 +1026,27 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 boolean projectWasAlreadyOpen = false;
 
                 // First, try to open the project
+                GhidraProject ghidraProject = null;
                 try {
-                    GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
+                    // Open project with upgrade enabled (third parameter = true)
+                    // This will automatically upgrade programs if needed
+                    ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
                     project = ghidraProject.getProject();
+                    
+                    // CRITICAL: Save the project immediately after opening to persist any upgrades
+                    // This ensures that upgrade dialogs (if any) result in saved changes
+                    // In headless mode, upgrades should be automatic, but we save to be safe
+                    try {
+                        project.save();
+                        String saveMsg = "Project saved after opening (upgrades persisted)";
+                        Msg.info(this, saveMsg);
+                        logCollector.addLog("INFO", saveMsg);
+                    } catch (Exception saveException) {
+                        String saveWarnMsg = "Warning: Failed to save project after opening: " + saveException.getMessage();
+                        Msg.warn(this, saveWarnMsg);
+                        logCollector.addLog("WARN", saveWarnMsg);
+                        // Don't fail the operation if save fails - project is still open
+                    }
                 } catch (Exception e) {
                     // If opening fails (likely because project is already locked/open), use active project
                     String errorMsg = e.getMessage();
@@ -1067,6 +1085,29 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     return createErrorResult("Failed to open or access project: " + projectPath);
                 }
 
+                // Handle any pending upgrades automatically and save the project
+                // This ensures upgrades are persisted without requiring manual dialog interaction
+                try {
+                    // Check if project has unsaved changes (e.g., from upgrades)
+                    if (project.hasUnsavedChanges()) {
+                        String upgradeMsg = "Project has unsaved changes (likely from upgrades), saving now...";
+                        Msg.info(this, upgradeMsg);
+                        logCollector.addLog("INFO", upgradeMsg);
+                        
+                        // Save the project to persist upgrades
+                        project.save();
+                        
+                        String savedMsg = "Project saved successfully (upgrades persisted)";
+                        Msg.info(this, savedMsg);
+                        logCollector.addLog("INFO", savedMsg);
+                    }
+                } catch (Exception saveException) {
+                    String saveWarnMsg = "Warning: Failed to save project after upgrades: " + saveException.getMessage();
+                    Msg.warn(this, saveWarnMsg);
+                    logCollector.addLog("WARN", saveWarnMsg);
+                    // Don't fail the operation if save fails - project is still open
+                }
+
                 // Collect all programs in the project
                 List<DomainFile> allPrograms = new ArrayList<>();
                 try {
@@ -1092,12 +1133,28 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         String programPath = domainFile.getPathname();
                         try {
                             // Use RevaProgramManager to open the program - this caches it for future access
+                            // This will automatically handle any program upgrades needed
                             Program program = RevaProgramManager.getProgramByPath(programPath);
                             if (program != null && !program.isClosed()) {
                                 openedPrograms.add(programPath);
                                 String logMsg = "Opened program: " + programPath;
                                 Msg.info(this, logMsg);
                                 logCollector.addLog("INFO", logMsg);
+                                
+                                // If program was upgraded, save it immediately
+                                // Check if the domain file has unsaved changes
+                                if (domainFile.isChanged()) {
+                                    try {
+                                        domainFile.save(null, TaskMonitor.DUMMY);
+                                        String saveProgramMsg = "Saved upgraded program: " + programPath;
+                                        Msg.info(this, saveProgramMsg);
+                                        logCollector.addLog("INFO", saveProgramMsg);
+                                    } catch (Exception saveProgramException) {
+                                        String saveProgramWarnMsg = "Warning: Failed to save upgraded program " + programPath + ": " + saveProgramException.getMessage();
+                                        Msg.warn(this, saveProgramWarnMsg);
+                                        logCollector.addLog("WARN", saveProgramWarnMsg);
+                                    }
+                                }
                             } else {
                                 failedPrograms.add(programPath + " (returned null or closed)");
                             }
@@ -1107,6 +1164,20 @@ public class ProjectToolProvider extends AbstractToolProvider {
                             Msg.warn(this, logMsg);
                             logCollector.addLog("WARN", logMsg);
                         }
+                    }
+                    
+                    // Final save of project after all programs are opened/upgraded
+                    try {
+                        if (project.hasUnsavedChanges()) {
+                            project.save();
+                            String finalSaveMsg = "Final project save completed (all upgrades persisted)";
+                            Msg.info(this, finalSaveMsg);
+                            logCollector.addLog("INFO", finalSaveMsg);
+                        }
+                    } catch (Exception finalSaveException) {
+                        String finalSaveWarnMsg = "Warning: Failed to perform final project save: " + finalSaveException.getMessage();
+                        Msg.warn(this, finalSaveWarnMsg);
+                        logCollector.addLog("WARN", finalSaveWarnMsg);
                     }
                 }
 

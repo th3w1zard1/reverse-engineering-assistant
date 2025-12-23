@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Logback configuration for ReVa MCP Server
+    
+    CRITICAL: This configuration ensures that log messages do NOT interfere with the MCP JSON-RPC protocol
+    while keeping ALL logging visible (no suppression).
+    
+    Problem: Java log messages (from Ghidra's Msg.info(), etc.) were being sent over the HTTP streamable
+    transport, causing the Python MCP client to try parsing them as JSON-RPC messages. This resulted in
+    errors like "Unexpected token 'I', 'INFO  Usin'... is not valid JSON".
+    
+    Solution:
+    - All logs are written to stderr (not stdout) to avoid interfering with JSON-RPC protocol
+    - NO suppression - all logging levels remain at their default/requested levels
+    - Logs go to stderr where they can be seen but won't interfere with the HTTP response stream
+-->
+<configuration>
+    <!-- Console appender that writes to stderr (not stdout) to avoid interfering with MCP JSON-RPC protocol -->
+    <!-- This ensures logs are visible but don't get mixed into the HTTP response stream -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Root logger - writes to stderr only (never stdout) -->
+    <!-- All logging levels are preserved - no suppression -->
+    <root level="DEBUG">
+        <appender-ref ref="STDERR"/>
+    </root>
+</configuration>

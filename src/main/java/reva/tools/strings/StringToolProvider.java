@@ -174,10 +174,10 @@ public class StringToolProvider extends AbstractToolProvider {
                 Program program = getProgramFromArgs(request);
                 PaginationParams pagination = getPaginationParams(request);
                 boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
-                
+
                 // Get configurable iteration limit (default: 1,000,000)
                 int maxIterations = getOptionalInt(request, "maxIterations", 1000000);
-                
+
                 // Ensure minimum safety limit (at least startIndex + maxCount + buffer)
                 int minimumIterations = pagination.startIndex() + pagination.maxCount() + 1000;
                 if (maxIterations < minimumIterations) {

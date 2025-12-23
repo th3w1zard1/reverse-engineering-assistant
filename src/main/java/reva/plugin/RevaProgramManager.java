@@ -322,10 +322,42 @@ public class RevaProgramManager {
             return null;
         }
 
-        // Open the program
-        ProgramOpener programOpener = new ProgramOpener(programCache);
-        ProgramLocator locator = new ProgramLocator(domainFile);
-        Program program = programOpener.openProgram(locator, TaskMonitor.DUMMY);
+        // Open the program programmatically to avoid upgrade dialogs
+        // Use getDomainObject with TaskMonitor.DUMMY to handle upgrades automatically
+        // This approach bypasses GUI dialogs and handles upgrades in the background
+        Program program = null;
+        try {
+            // Check if the domain file needs upgrading
+            if (domainFile.needsUpgrade()) {
+                Msg.info(RevaProgramManager.class, "Program needs upgrade: " + programPath + ", upgrading automatically...");
+                // Upgrade will happen automatically when we open the program
+            }
+            
+            // Open the program using getDomainObject - this handles upgrades automatically
+            // The -1 parameter means "open for update" (not read-only)
+            // TaskMonitor.DUMMY ensures no GUI dialogs appear
+            // Use null as the consumer object since this is a static method
+            DomainObject domainObject = domainFile.getDomainObject(null, -1, false, TaskMonitor.DUMMY);
+            
+            if (domainObject instanceof Program) {
+                program = (Program) domainObject;
+            } else {
+                Msg.warn(RevaProgramManager.class, "Domain object is not a Program: " + programPath);
+                if (domainObject != null) {
+                    domainObject.release(null);
+                }
+            }
+        } catch (Exception e) {
+            Msg.error(RevaProgramManager.class, "Failed to open program " + programPath + ": " + e.getMessage(), e);
+            // Fall back to ProgramOpener if getDomainObject fails
+            try {
+                ProgramOpener programOpener = new ProgramOpener(programCache);
+                ProgramLocator locator = new ProgramLocator(domainFile);
+                program = programOpener.openProgram(locator, TaskMonitor.DUMMY);
+            } catch (Exception fallbackException) {
+                Msg.error(RevaProgramManager.class, "Fallback ProgramOpener also failed: " + fallbackException.getMessage(), fallbackException);
+            }
+        }
 
         if (program != null) {
             // Ensure the program is checked out if versioned
