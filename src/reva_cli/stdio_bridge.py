@@ -3,6 +3,9 @@ Stdio to HTTP MCP bridge using official MCP SDK Server abstraction.
 
 Provides a proper MCP Server that forwards all requests to ReVa's StreamableHTTP endpoint.
 Uses the MCP SDK's stdio transport and Pydantic serialization - no manual JSON-RPC handling.
+
+The bridge acts as a transparent proxy - all tool calls, resources, and prompts are
+forwarded to the Java ReVa backend running on localhost.
 """
 
 from __future__ import annotations

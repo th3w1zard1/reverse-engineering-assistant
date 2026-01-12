@@ -47,8 +47,9 @@ public class RevaProgramManager {
     private static final Map<String, Program> registeredPrograms = new HashMap<>();
 
     /**
-     * Get all currently open programs in any Ghidra tool
-     * @return List of open programs
+     * Get all currently open programs in any Ghidra tool.
+     * If no programs are open, automatically opens all programs from the project.
+     * @return List of open programs (never empty if programs exist in project)
      */
     public static List<Program> getOpenPrograms() {
         List<Program> openPrograms = new ArrayList<>();
@@ -119,7 +120,86 @@ public class RevaProgramManager {
             }
         }
 
+        // If still no programs are open, automatically open all programs from the project
+        if (openPrograms.isEmpty()) {
+            Msg.debug(RevaProgramManager.class, "No programs currently open, auto-opening programs from project");
+            List<String> projectProgramPaths = collectProgramPathsFromProject(project);
+            Msg.debug(RevaProgramManager.class, "Found " + projectProgramPaths.size() + " programs in project");
+
+            for (String programPath : projectProgramPaths) {
+                try {
+                    Program program = getProgramByPath(programPath);
+                    if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
+                        openPrograms.add(program);
+                        Msg.info(RevaProgramManager.class, "Auto-opened program from project: " + programPath);
+                    }
+                } catch (Exception e) {
+                    Msg.debug(RevaProgramManager.class, "Failed to auto-open program " + programPath + ": " + e.getMessage());
+                }
+            }
+        }
+
         Msg.debug(RevaProgramManager.class, "Total open programs found: " + openPrograms.size());
+        return openPrograms;
+    }
+
+    /**
+     * Get all currently open programs without auto-opening programs from project.
+     * This is used by getProgramByPath to check if a specific program is already open
+     * before attempting to open it from the project.
+     * @return List of currently open programs (without auto-opening)
+     */
+    private static List<Program> getOpenProgramsWithoutAutoOpen() {
+        List<Program> openPrograms = new ArrayList<>();
+
+        // First try to get programs from the tool manager
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            Msg.debug(RevaProgramManager.class, "No active project found");
+            return getCachedAndRegisteredPrograms();
+        }
+
+        ToolManager toolManager = project.getToolManager();
+        if (toolManager != null) {
+            PluginTool[] runningTools = toolManager.getRunningTools();
+            for (PluginTool tool : runningTools) {
+                ProgramManager programManager = tool.getService(ProgramManager.class);
+                if (programManager != null) {
+                    Program[] programs = programManager.getAllOpenPrograms();
+                    for (Program program : programs) {
+                        if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
+                            openPrograms.add(program);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try RevaPlugin's tool as fallback
+        if (openPrograms.isEmpty()) {
+            RevaPlugin revaPlugin = RevaInternalServiceRegistry.getService(RevaPlugin.class);
+            if (revaPlugin != null && revaPlugin.getTool() != null) {
+                PluginTool tool = revaPlugin.getTool();
+                ProgramManager programManager = tool.getService(ProgramManager.class);
+                if (programManager != null) {
+                    Program[] programs = programManager.getAllOpenPrograms();
+                    for (Program program : programs) {
+                        if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
+                            openPrograms.add(program);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also include programs from cache and registered programs
+        List<Program> cachedAndRegistered = getCachedAndRegisteredPrograms();
+        for (Program program : cachedAndRegistered) {
+            if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
+                openPrograms.add(program);
+            }
+        }
+
         return openPrograms;
     }
 
@@ -145,6 +225,50 @@ public class RevaProgramManager {
         }
 
         return programs;
+    }
+
+    /**
+     * Collect all program paths from the project recursively.
+     * @param project The active project
+     * @return List of program paths found in the project
+     */
+    private static List<String> collectProgramPathsFromProject(Project project) {
+        List<String> paths = new ArrayList<>();
+        if (project == null) {
+            return paths;
+        }
+
+        try {
+            DomainFolder rootFolder = project.getProjectData().getRootFolder();
+            collectProgramPathsRecursive(rootFolder, paths);
+        } catch (Exception e) {
+            Msg.debug(RevaProgramManager.class, "Error collecting program paths from project: " + e.getMessage());
+        }
+
+        return paths;
+    }
+
+    /**
+     * Recursively collect program paths from a domain folder.
+     * @param folder The folder to search
+     * @param paths The list to add paths to
+     */
+    private static void collectProgramPathsRecursive(DomainFolder folder, List<String> paths) {
+        if (folder == null) {
+            return;
+        }
+
+        // Add programs in this folder
+        for (DomainFile file : folder.getFiles()) {
+            if ("Program".equals(file.getContentType())) {
+                paths.add(file.getPathname());
+            }
+        }
+
+        // Recurse into subfolders
+        for (DomainFolder subfolder : folder.getFolders()) {
+            collectProgramPathsRecursive(subfolder, paths);
+        }
     }
 
     /**
@@ -288,9 +412,9 @@ public class RevaProgramManager {
             }
         }
 
-        // First try to find among open programs
-        List<Program> openPrograms = getOpenPrograms();
-        Msg.debug(RevaProgramManager.class, "Checking " + openPrograms.size() + " open programs");
+        // First try to find among currently open programs (without auto-opening all)
+        List<Program> openPrograms = getOpenProgramsWithoutAutoOpen();
+        Msg.debug(RevaProgramManager.class, "Checking " + openPrograms.size() + " currently open programs");
 
         for (Program program : openPrograms) {
             // Check the Ghidra project path first (most common case)
