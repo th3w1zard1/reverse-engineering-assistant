@@ -233,11 +233,27 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         servletHolder.setAsyncSupported(true);
         servletContextHandler.addServlet(servletHolder, "/*");
 
+        // Add HTTP keep-alive filter to prevent connection drops
+        // This ensures connections stay alive for long-running MCP sessions
+        // The filter explicitly sets Connection: keep-alive headers
+        FilterHolder keepAliveFilterHolder = new FilterHolder(new KeepAliveFilter());
+        servletContextHandler.addFilter(keepAliveFilterHolder, "/*", EnumSet.of(DispatcherType.REQUEST));
+
         // Create server with specific host binding for security
         httpServer = new Server();
         ServerConnector connector = new ServerConnector(httpServer);
         connector.setHost(serverHost);
         connector.setPort(serverPort);
+
+        // Configure connection timeouts to prevent premature session termination
+        // Set idle timeout to 24 hours (86400000ms) to keep connections alive indefinitely
+        // This prevents the "Session terminated" error that occurs when connections timeout
+        // The idle timeout is the maximum time a connection can be idle before being closed
+        connector.setIdleTimeout(86400000L); // 24 hours in milliseconds
+
+        // Note: Connection timeout (for establishing connections) is handled by Jetty's
+        // default settings and doesn't need to be configured separately on ServerConnector
+
         httpServer.addConnector(connector);
         httpServer.setHandler(servletContextHandler);
 
@@ -438,9 +454,11 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
 
         // Create new transport provider with updated configuration
         // Note: As of MCP SDK v0.14.0, the builder uses McpJsonMapper.getDefault() automatically
+        // Use a longer keep-alive interval (5 minutes) to prevent session termination
+        // The keep-alive interval sends periodic messages to keep the connection alive
         currentTransportProvider = HttpServletStreamableServerTransportProvider.builder()
             .mcpEndpoint(MCP_MSG_ENDPOINT)
-            .keepAliveInterval(java.time.Duration.ofSeconds(30))
+            .keepAliveInterval(java.time.Duration.ofMinutes(5))
             .build();
     }
 

@@ -258,8 +258,9 @@ class ReVaStdioBridge:
 
         # Increased timeout for long-running operations (Ghidra operations can take time)
         # Also increased read timeout to handle slow responses
-        timeout = 600.0  # 10 minutes for overall timeout
-        read_timeout = 300.0  # 5 minutes for read operations
+        # Use very long timeouts to prevent session termination
+        timeout = 3600.0  # 1 hour for overall timeout (prevents premature disconnection)
+        read_timeout = 1800.0  # 30 minutes for read operations (handles long Ghidra operations)
 
         max_retries = 3
         retry_delay = 2.0
@@ -269,6 +270,8 @@ class ReVaStdioBridge:
                 # Connect to ReVa backend with increased timeout
                 # Note: streamablehttp_client doesn't expose read_timeout directly,
                 # but we can configure httpx client with custom timeout
+                # The timeout parameter controls both connect and read timeouts
+                # Using a very long timeout prevents "Session terminated" errors
                 async with streamablehttp_client(self.url, timeout=timeout) as (
                     read_stream,
                     write_stream,
@@ -313,14 +316,33 @@ class ReVaStdioBridge:
                             print(
                                 "Bridge ready - stdio transport active", file=sys.stderr
                             )
-                            async with stdio_server() as (stdio_read, stdio_write):
-                                await self.server.run(
-                                    stdio_read,
-                                    stdio_write,
-                                    self.server.create_initialization_options(),
+                            try:
+                                async with stdio_server() as (stdio_read, stdio_write):
+                                    await self.server.run(
+                                        stdio_read,
+                                        stdio_write,
+                                        self.server.create_initialization_options(),
+                                    )
+                                # If we get here, the server ran successfully
+                                break
+                            except Exception as stdio_error:
+                                # If stdio server fails, check if backend connection is still alive
+                                # and attempt to reconnect if needed
+                                print(
+                                    f"Stdio server error: {type(stdio_error).__name__}: {stdio_error}",
+                                    file=sys.stderr,
                                 )
-                            # If we get here, the server ran successfully
-                            break
+                                # Check if this is a connection error that warrants retry
+                                if isinstance(stdio_error, (ConnectionError, OSError)):
+                                    if attempt < max_retries - 1:
+                                        print(
+                                            f"Connection error in stdio bridge, retrying... (attempt {attempt + 1}/{max_retries})",
+                                            file=sys.stderr,
+                                        )
+                                        await asyncio.sleep(retry_delay)
+                                        continue
+                                # For other errors, re-raise to be handled by outer exception handler
+                                raise
 
             except asyncio.TimeoutError as e:
                 print(
