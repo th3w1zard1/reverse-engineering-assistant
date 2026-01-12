@@ -6,6 +6,7 @@ Handles PyGhidra initialization, ReVa server startup, and project management.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,8 +20,9 @@ if TYPE_CHECKING:
 class ReVaLauncher:
     """Wraps ReVa headless launcher with Python-side project management.
 
-    Note: Stdio mode uses ephemeral projects in temp directories.
+    Note: Stdio mode uses ephemeral projects in temp directories by default.
     Projects are created per-session and cleaned up on exit.
+    If REVA_PROJECT_PATH environment variable is set, uses that project instead.
     """
 
     def __init__(
@@ -40,6 +42,7 @@ class ReVaLauncher:
         self.java_launcher: RevaHeadlessLauncher | None = None
         self.port: int | None = None
         self.temp_project_dir: Path | None = None
+        self.user_project_path: Path | None = None
 
     def start(self) -> int:
         """
@@ -64,19 +67,56 @@ class ReVaLauncher:
 
             from .project_manager import ProjectManager
 
-            # Stdio mode: ephemeral projects in temp directory (session-scoped, auto-cleanup)
-            # Keeps working directory clean - no .reva creation in cwd
-            self.temp_project_dir = Path(tempfile.mkdtemp(prefix="reva_project_"))
-            project_manager = ProjectManager()
-            project_name = project_manager.get_project_name()
+            # Check for REVA_PROJECT_PATH environment variable
+            project_gpr_path = os.getenv("REVA_PROJECT_PATH")
 
-            # Use temp directory for the project (not .reva/projects)
-            projects_dir = self.temp_project_dir
+            if project_gpr_path:
+                # Use user-specified project from environment variable
+                project_gpr = Path(project_gpr_path)
+
+                # Validate it's a .gpr file
+                if not project_gpr.suffix.lower() == ".gpr":
+                    raise ValueError(
+                        f"REVA_PROJECT_PATH must point to a .gpr file, got: {project_gpr_path}"
+                    )
+
+                # Validate the file exists
+                if not project_gpr.exists():
+                    raise FileNotFoundError(
+                        f"Project file specified in REVA_PROJECT_PATH does not exist: {project_gpr_path}"
+                    )
+
+                # Extract project directory and name (same logic as open-project tool)
+                project_dir = project_gpr.parent
+                project_name = project_gpr.stem  # Gets filename without extension
+
+                if not project_name:
+                    raise ValueError(
+                        f"Invalid project name extracted from path: {project_gpr_path}"
+                    )
+
+                # Store the user project path (so we don't clean it up)
+                self.user_project_path = project_gpr
+
+                # Use the project directory
+                projects_dir = project_dir
+
+                print(f"Using project from REVA_PROJECT_PATH: {project_gpr}", file=sys.stderr)
+                print(f"Project location: {projects_dir}/{project_name}", file=sys.stderr)
+            else:
+                # Stdio mode: ephemeral projects in temp directory (session-scoped, auto-cleanup)
+                # Keeps working directory clean - no .reva creation in cwd
+                self.temp_project_dir = Path(tempfile.mkdtemp(prefix="reva_project_"))
+                project_manager = ProjectManager()
+                project_name = project_manager.get_project_name()
+
+                # Use temp directory for the project (not .reva/projects)
+                projects_dir = self.temp_project_dir
+
+                print(f"Project location: {projects_dir}/{project_name}", file=sys.stderr)
 
             # Convert to Java File objects
             java_project_location = File(str(projects_dir))
-
-            print(f"Project location: {projects_dir}/{project_name}", file=sys.stderr)
 
             # Create launcher with project parameters
             if self.config_file:
@@ -150,7 +190,7 @@ class ReVaLauncher:
                 self.java_launcher = None
                 self.port = None
 
-        # Clean up temporary project directory
+        # Clean up temporary project directory (only if using temp project, not user project)
         if self.temp_project_dir and self.temp_project_dir.exists():
             try:
                 import shutil

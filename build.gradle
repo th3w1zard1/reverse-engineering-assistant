@@ -190,4 +190,74 @@ task integrationTest(type: Test) {
 check.dependsOn integrationTest
 
 // Exclude additional files from the built extension
-// Ex: buildExtension.exclude '.idea/**'
+afterEvaluate {
+	if (tasks.findByName('buildExtension')) {
+		tasks.buildExtension {
+			// Build artifacts
+			exclude '.gradle/**'
+			exclude 'build/**'
+			exclude 'dist/**'
+			exclude 'bin/**'
+
+			// IDE and editor files
+			exclude '.idea/**'
+			exclude '.vscode/**'
+			exclude '.cursor/**'
+			exclude '.vim/**'
+			exclude '.history/**'
+			exclude '**/.idea/**'
+			exclude '**/.vscode/**'
+			exclude '**/.cursor/**'
+			exclude '**/.vim/**'
+			exclude '**/.history/**'
+
+			// Version control
+			exclude '.git/**'
+			exclude '.svn/**'
+			exclude '.hg/**'
+			exclude '**/.git/**'
+			exclude '**/.svn/**'
+			exclude '**/.hg/**'
+
+			// Python virtual environments and artifacts
+			exclude '.venv/**'
+			exclude 'venv/**'
+			exclude 'env/**'
+			exclude '__pycache__/**'
+			exclude '**/.venv/**'
+			exclude '**/venv/**'
+			exclude '**/env/**'
+			exclude '**/__pycache__/**'
+			exclude '**/*.pyc'
+			exclude '**/*.pyo'
+			exclude '**/*.pyd'
+			exclude '**/*.egg-info/**'
+			exclude '.mypy_cache/**'
+			exclude '**/.mypy_cache/**'
+
+			// OS files
+			exclude '.DS_Store'
+			exclude 'Thumbs.db'
+			exclude 'desktop.ini'
+			exclude '**/.DS_Store'
+			exclude '**/Thumbs.db'
+			exclude '**/desktop.ini'
+
+			// Development and testing files
+			exclude '.env'
+			exclude '.reva/**'
+			exclude '**/.env'
+			exclude '**/.reva/**'
+			exclude '**/*.hprof'
+			exclude '**/*.log'
+			exclude '**/*.tmp'
+			exclude '**/*.temp'
+			exclude '.coverage'
+			exclude 'htmlcov/**'
+			exclude '.pytest_cache/**'
+			exclude '**/.coverage'
+			exclude '**/htmlcov/**'
+			exclude '**/.pytest_cache/**'
+		}
+	}
+}
