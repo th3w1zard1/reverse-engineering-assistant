@@ -11,7 +11,7 @@ param(
 Clear-Host
 
 # Function to load .env file from current working directory
-function Load-EnvFile {
+function LoadEnvFile {
     param(
         [string]$EnvPath = ".env"
     )
@@ -50,7 +50,7 @@ function Load-EnvFile {
 }
 
 # Load .env file from current directory first (as fallback)
-$envVars = Load-EnvFile -EnvPath (Join-Path (Get-Location).Path ".env")
+$envVars = LoadEnvFile -EnvPath (Join-Path (Get-Location).Path ".env")
 
 # Function to prompt for path if not provided
 function Get-PathInput {
@@ -65,19 +65,19 @@ function Get-PathInput {
     }
 
     if ($DefaultValue) {
-        $input = Read-Host "$Prompt [$DefaultValue]"
-        if ([string]::IsNullOrWhiteSpace($input)) {
+        $inp = Read-Host "$Prompt [$DefaultValue]"
+        if ([string]::IsNullOrWhiteSpace($inp)) {
             return $DefaultValue
         }
-        return $input
+        return $inp
     } else {
         do {
-            $input = Read-Host $Prompt
-            if ([string]::IsNullOrWhiteSpace($input)) {
+            $inp = Read-Host $Prompt
+            if ([string]::IsNullOrWhiteSpace($inp)) {
                 Write-Host "Path cannot be empty. Please try again." -ForegroundColor Yellow
             }
-        } while ([string]::IsNullOrWhiteSpace($input))
-        return $input
+        } while ([string]::IsNullOrWhiteSpace($inp))
+        return $inp
     }
 }
 
@@ -118,7 +118,7 @@ if (-not (Test-PathExists -Path $ProjectDir)) {
 
 # Load .env file from project directory (overrides current directory values)
 $projectEnvFile = Join-Path $ProjectDir ".env"
-$projectEnvVars = Load-EnvFile -EnvPath $projectEnvFile
+$projectEnvVars = LoadEnvFile -EnvPath $projectEnvFile
 if ($projectEnvVars.Count -gt 0) {
     # Merge project .env values (takes precedence)
     foreach ($key in $projectEnvVars.Keys) {
@@ -160,9 +160,9 @@ if ([string]::IsNullOrWhiteSpace($GradlePath)) {
         foreach ($path in $commonGradlePaths) {
             if ($path -like "*\*") {
                 # Handle wildcard paths
-                $matches = Get-ChildItem -Path (Split-Path $path -Parent) -Filter (Split-Path $path -Leaf) -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($matches) {
-                    $foundGradle = $matches.FullName
+                $matchingItems = Get-ChildItem -Path (Split-Path $path -Parent) -Filter (Split-Path $path -Leaf) -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($matchingItems) {
+                    $foundGradle = $matchingItems.FullName
                     break
                 }
             } elseif (Test-Path -Path $path -PathType Leaf) {
