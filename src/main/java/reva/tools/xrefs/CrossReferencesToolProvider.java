@@ -17,23 +17,43 @@ package reva.tools.xrefs;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
+import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileResults;
+import ghidra.app.decompiler.DecompiledFunction;
+import ghidra.app.decompiler.ClangTokenGroup;
+import ghidra.app.decompiler.ClangLine;
+import ghidra.app.decompiler.ClangToken;
+import ghidra.app.decompiler.component.DecompilerUtils;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.ExternalLocation;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.task.TaskMonitor;
+import ghidra.util.task.TimeoutTaskMonitor;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
+import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 import reva.util.DecompilationContextUtil;
+import reva.util.DecompilationReadTracker;
+import reva.util.RevaInternalServiceRegistry;
 
 /**
  * Tool provider for cross-reference operations.
@@ -41,6 +61,9 @@ import reva.util.DecompilationContextUtil;
  * with optional decompilation context snippets.
  */
 public class CrossReferencesToolProvider extends AbstractToolProvider {
+
+    private static final int DEFAULT_TIMEOUT_SECONDS = 60;
+    private static final int MAX_THUNK_CHAIN_DEPTH = 10;
 
     /**
      * Constructor
@@ -50,217 +73,563 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         super(server);
     }
 
+    /**
+     * Result of a safe decompilation attempt. Encapsulates either a successful
+     * decompilation result or an error message.
+     */
+    private record DecompilationAttempt(
+        DecompileResults results,
+        String errorMessage,
+        boolean success
+    ) {
+        static DecompilationAttempt success(DecompileResults results) {
+            return new DecompilationAttempt(results, null, true);
+        }
+
+        static DecompilationAttempt failure(String message) {
+            return new DecompilationAttempt(null, message, false);
+        }
+    }
+
+    /**
+     * Helper record to track address and thunk information for import references.
+     */
+    private record AddressWithThunkInfo(Address address, Address thunkAddress) {}
+
     @Override
     public void registerTools() {
         registerCrossReferencesTool();
     }
 
     /**
-     * Register the unified cross references tool
+     * Register the get_references tool
      */
     private void registerCrossReferencesTool() {
-        // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to the program to get references from"
+            "description", "Path in the Ghidra Project to the program"
         ));
-        properties.put("location", Map.of(
+        properties.put("target", Map.of(
             "type", "string",
-            "description", "Address or symbol name to get references for (e.g., '0x00400123', 'main', 'FUN_00401000')"
+            "description", "Target address, symbol name, function name, or import name"
+        ));
+        properties.put("mode", Map.of(
+            "type", "string",
+            "description", "Reference mode: 'to', 'from', 'both', 'function', 'referencers_decomp', 'import', 'thunk'",
+            "enum", List.of("to", "from", "both", "function", "referencers_decomp", "import", "thunk"),
+            "default", "both"
         ));
         properties.put("direction", Map.of(
             "type", "string",
-            "description", "Direction of references to retrieve: 'to' (incoming), 'from' (outgoing), or 'both' (default)",
+            "description", "Direction filter when mode='both': 'to', 'from', or 'both'",
             "enum", List.of("to", "from", "both"),
             "default", "both"
         ));
-        properties.put("includeFlow", Map.of(
-            "type", "boolean",
-            "description", "Include flow references (calls, jumps, branches)",
-            "default", true
-        ));
-        properties.put("includeData", Map.of(
-            "type", "boolean",
-            "description", "Include data references (reads, writes)",
-            "default", true
-        ));
-        properties.put("includeContext", Map.of(
-            "type", "boolean",
-            "description", "Include decompilation context snippets for code references",
-            "default", false
-        ));
-        properties.put("contextLines", Map.of(
-            "type", "integer",
-            "description", "Number of lines before and after to include in context snippets",
-            "default", 2
-        ));
         properties.put("offset", Map.of(
             "type", "integer",
-            "description", "Starting offset for pagination (0-based)",
+            "description", "Pagination offset",
             "default", 0
         ));
         properties.put("limit", Map.of(
             "type", "integer",
-            "description", "Maximum number of references to return per direction",
+            "description", "Maximum number of references to return",
             "default", 100
         ));
+        properties.put("max_results", Map.of(
+            "type", "integer",
+            "description", "Alternative limit parameter for import mode",
+            "default", 100
+        ));
+        properties.put("library_name", Map.of(
+            "type", "string",
+            "description", "Optional specific library name to narrow search when mode='import' (case-insensitive)"
+        ));
+        properties.put("start_index", Map.of(
+            "type", "integer",
+            "description", "Starting index for pagination when mode='referencers_decomp' (0-based)",
+            "default", 0
+        ));
+        properties.put("max_referencers", Map.of(
+            "type", "integer",
+            "description", "Maximum number of referencing functions to decompile when mode='referencers_decomp'",
+            "default", 10
+        ));
+        properties.put("include_ref_context", Map.of(
+            "type", "boolean",
+            "description", "Whether to include reference line numbers in decompilation when mode='referencers_decomp'",
+            "default", true
+        ));
+        properties.put("include_data_refs", Map.of(
+            "type", "boolean",
+            "description", "Whether to include data references (reads/writes), not just calls when mode='referencers_decomp'",
+            "default", true
+        ));
 
-        List<String> required = List.of("programPath", "location");
+        List<String> required = List.of("programPath", "target");
 
-        // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-cross-references")
-            .title("Find Cross References")
-            .description("Find all references to or from a memory location, symbol, or function. Returns incoming and/or outgoing references with optional decompilation context.")
+            .name("get_references")
+            .title("Get References")
+            .description("Find and analyze references to/from addresses, symbols, functions, or imports, with optional decompilation of referencers.")
             .inputSchema(createSchema(properties, required))
             .build();
 
-        // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
             try {
-                // Get program and parameters using helper methods
                 Program program = getProgramFromArgs(request);
-                Address address = getAddressFromArgs(request, program, "location");
-                
-                // Get parameters
-                String direction = getOptionalString(request, "direction", "both");
-                boolean includeFlow = getOptionalBoolean(request, "includeFlow", true);
-                boolean includeData = getOptionalBoolean(request, "includeData", true);
-                boolean includeContext = getOptionalBoolean(request, "includeContext", false);
-                int contextLines = getOptionalInt(request, "contextLines", 2);
-                int offset = getOptionalInt(request, "offset", 0);
-                int limit = getOptionalInt(request, "limit", 100);
-                
-                // Validate parameters
-                if (offset < 0) offset = 0;
-                if (limit <= 0) limit = 100;
-                if (limit > 1000) limit = 1000; // Cap at reasonable maximum
-                
-                // Get references based on direction
-                boolean includeTo = direction.equals("to") || direction.equals("both");
-                boolean includeFrom = direction.equals("from") || direction.equals("both");
-                
-                // Prepare result containers
-                List<Map<String, Object>> referencesTo = new ArrayList<>();
-                List<Map<String, Object>> referencesFrom = new ArrayList<>();
-                int totalToCount = 0;
-                int totalFromCount = 0;
-                
-                ReferenceManager refManager = program.getReferenceManager();
-                SymbolTable symbolTable = program.getSymbolTable();
-                
-                // Get references TO this address
-                if (includeTo && !address.isStackAddress() && !address.isRegisterAddress()) {
-                    ReferenceIterator refIter = refManager.getReferencesTo(address);
-                    List<Map<String, Object>> allRefsTo = new ArrayList<>();
-                    
-                    while (refIter.hasNext()) {
-                        Reference ref = refIter.next();
-                        
-                        // Apply filters
-                        if (!includeFlow && ref.getReferenceType().isFlow()) continue;
-                        if (!includeData && !ref.getReferenceType().isFlow()) continue;
-                        
-                        allRefsTo.add(createReferenceInfo(ref, program, includeContext, contextLines, true));
-                    }
-                    
-                    totalToCount = allRefsTo.size();
-                    
-                    // Apply pagination
-                    int endIndex = Math.min(offset + limit, allRefsTo.size());
-                    if (offset < allRefsTo.size()) {
-                        referencesTo = allRefsTo.subList(offset, endIndex);
-                    }
+                String target = getString(request, "target");
+                String mode = getOptionalString(request, "mode", "both");
+
+                switch (mode) {
+                    case "to":
+                        return handleReferencesToMode(program, target, request);
+                    case "from":
+                        return handleReferencesFromMode(program, target, request);
+                    case "both":
+                        return handleReferencesBothMode(program, target, request);
+                    case "function":
+                        return handleReferencesFunctionMode(program, target, request);
+                    case "referencers_decomp":
+                        return handleReferencersDecompiledMode(program, target, request);
+                    case "import":
+                        return handleImportReferencesMode(program, target, request);
+                    case "thunk":
+                        return handleThunkMode(program, target, request);
+                    default:
+                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: to, from, both, function, referencers_decomp, import, thunk");
                 }
-                
-                // Get references FROM this address
-                if (includeFrom) {
-                    List<Map<String, Object>> allRefsFrom = new ArrayList<>();
-                    
-                    // Check if this address is within a function
-                    Function function = program.getFunctionManager().getFunctionContaining(address);
-                    if (function != null) {
-                        // Get all addresses in the function body
-                        AddressSetView functionBody = function.getBody();
-                        for (Address addr : functionBody.getAddresses(true)) {
-                            Reference[] refs = refManager.getReferencesFrom(addr);
-                            for (Reference ref : refs) {
-                                // Apply filters
-                                if (!includeFlow && ref.getReferenceType().isFlow()) continue;
-                                if (!includeData && !ref.getReferenceType().isFlow()) continue;
-                                
-                                allRefsFrom.add(createReferenceInfo(ref, program, includeContext, contextLines, false));
-                            }
-                        }
-                    } else {
-                        // Not in a function, just get references from the specific address
-                        Reference[] refs = refManager.getReferencesFrom(address);
-                        for (Reference ref : refs) {
-                            // Apply filters
-                            if (!includeFlow && ref.getReferenceType().isFlow()) continue;
-                            if (!includeData && !ref.getReferenceType().isFlow()) continue;
-                            
-                            allRefsFrom.add(createReferenceInfo(ref, program, includeContext, contextLines, false));
-                        }
-                    }
-                    
-                    totalFromCount = allRefsFrom.size();
-                    
-                    // Apply pagination
-                    int endIndex = Math.min(offset + limit, allRefsFrom.size());
-                    if (offset < allRefsFrom.size()) {
-                        referencesFrom = allRefsFrom.subList(offset, endIndex);
-                    }
-                }
-                
-                // Get symbol information for the target address
-                Symbol targetSymbol = symbolTable.getPrimarySymbol(address);
-                Map<String, Object> locationInfo = new HashMap<>();
-                locationInfo.put("address", AddressUtil.formatAddress(address));
-                if (targetSymbol != null) {
-                    locationInfo.put("symbol", targetSymbol.getName());
-                    locationInfo.put("symbolType", targetSymbol.getSymbolType().toString());
-                    if (!targetSymbol.isGlobal()) {
-                        locationInfo.put("namespace", targetSymbol.getParentNamespace().getName(true));
-                    }
-                }
-                
-                // Check if this is a function
-                Function targetFunction = program.getFunctionManager().getFunctionContaining(address);
-                if (targetFunction != null) {
-                    locationInfo.put("function", targetFunction.getName());
-                    if (targetFunction.getEntryPoint().equals(address)) {
-                        locationInfo.put("isFunctionEntry", true);
-                    }
-                }
-                
-                // Create result data
-                Map<String, Object> resultData = new HashMap<>();
-                resultData.put("program", program.getName());
-                resultData.put("location", locationInfo);
-                resultData.put("referencesTo", referencesTo);
-                resultData.put("referencesFrom", referencesFrom);
-                resultData.put("pagination", Map.of(
-                    "offset", offset,
-                    "limit", limit,
-                    "totalToCount", totalToCount,
-                    "totalFromCount", totalFromCount,
-                    "hasMoreTo", offset + limit < totalToCount,
-                    "hasMoreFrom", offset + limit < totalFromCount
-                ));
-                
-                return createJsonResult(resultData);
-                
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error getting cross references", e);
-                return createErrorResult("Error getting cross references: " + e.getMessage());
+                logError("Error in get_references", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
     }
-    
+
+    private McpSchema.CallToolResult handleReferencesToMode(Program program, String target, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Address address = AddressUtil.resolveAddressOrSymbol(program, target);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + target);
+        }
+        int offset = getOptionalInt(request, "offset", 0);
+        int limit = getOptionalInt(request, "limit", 100);
+
+        if (offset < 0) offset = 0;
+        if (limit <= 0) limit = 100;
+        if (limit > 1000) limit = 1000;
+
+        ReferenceManager refManager = program.getReferenceManager();
+        List<Map<String, Object>> references = new ArrayList<>();
+
+        if (!address.isStackAddress() && !address.isRegisterAddress()) {
+            ReferenceIterator refIter = refManager.getReferencesTo(address);
+            List<Map<String, Object>> allRefs = new ArrayList<>();
+
+            while (refIter.hasNext()) {
+                Reference ref = refIter.next();
+                allRefs.add(createReferenceInfo(ref, program, false, 2, true));
+            }
+
+            int endIndex = Math.min(offset + limit, allRefs.size());
+            if (offset < allRefs.size()) {
+                references = allRefs.subList(offset, endIndex);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("references", references);
+            result.put("referencesFrom", new ArrayList<>());
+            result.put("totalCount", allRefs.size());
+            result.put("offset", offset);
+            result.put("limit", limit);
+            result.put("hasMore", offset + limit < allRefs.size());
+            return createJsonResult(result);
+        }
+
+        return createJsonResult(Map.of("references", references, "referencesFrom", new ArrayList<>(), "totalCount", 0));
+    }
+
+    private McpSchema.CallToolResult handleReferencesFromMode(Program program, String target, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Address address = AddressUtil.resolveAddressOrSymbol(program, target);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + target);
+        }
+        int offset = getOptionalInt(request, "offset", 0);
+        int limit = getOptionalInt(request, "limit", 100);
+
+        if (offset < 0) offset = 0;
+        if (limit <= 0) limit = 100;
+        if (limit > 1000) limit = 1000;
+
+        ReferenceManager refManager = program.getReferenceManager();
+        List<Map<String, Object>> allRefs = new ArrayList<>();
+
+        Function function = program.getFunctionManager().getFunctionContaining(address);
+        if (function != null) {
+            for (Address addr : function.getBody().getAddresses(true)) {
+                Reference[] refs = refManager.getReferencesFrom(addr);
+                for (Reference ref : refs) {
+                    allRefs.add(createReferenceInfo(ref, program, false, 2, false));
+                }
+            }
+        } else {
+            Reference[] refs = refManager.getReferencesFrom(address);
+            for (Reference ref : refs) {
+                allRefs.add(createReferenceInfo(ref, program, false, 2, false));
+            }
+        }
+
+        int endIndex = Math.min(offset + limit, allRefs.size());
+        List<Map<String, Object>> references = offset < allRefs.size() ? allRefs.subList(offset, endIndex) : new ArrayList<>();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("references", references);
+        result.put("totalCount", allRefs.size());
+        result.put("offset", offset);
+        result.put("limit", limit);
+        result.put("hasMore", offset + limit < allRefs.size());
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleReferencesBothMode(Program program, String target, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Address address = AddressUtil.resolveAddressOrSymbol(program, target);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + target);
+        }
+        String direction = getOptionalString(request, "direction", "both");
+        int offset = getOptionalInt(request, "offset", 0);
+        int limit = getOptionalInt(request, "limit", 100);
+
+        if (offset < 0) offset = 0;
+        if (limit <= 0) limit = 100;
+        if (limit > 1000) limit = 1000;
+
+        boolean includeTo = direction.equals("to") || direction.equals("both");
+        boolean includeFrom = direction.equals("from") || direction.equals("both");
+
+        List<Map<String, Object>> referencesTo = new ArrayList<>();
+        List<Map<String, Object>> referencesFrom = new ArrayList<>();
+        int totalToCount = 0;
+        int totalFromCount = 0;
+
+        ReferenceManager refManager = program.getReferenceManager();
+        SymbolTable symbolTable = program.getSymbolTable();
+
+        if (includeTo && !address.isStackAddress() && !address.isRegisterAddress()) {
+            ReferenceIterator refIter = refManager.getReferencesTo(address);
+            List<Map<String, Object>> allRefsTo = new ArrayList<>();
+
+            while (refIter.hasNext()) {
+                Reference ref = refIter.next();
+                allRefsTo.add(createReferenceInfo(ref, program, false, 2, true));
+            }
+
+            totalToCount = allRefsTo.size();
+            int endIndex = Math.min(offset + limit, allRefsTo.size());
+            if (offset < allRefsTo.size()) {
+                referencesTo = allRefsTo.subList(offset, endIndex);
+            }
+        }
+
+        if (includeFrom) {
+            List<Map<String, Object>> allRefsFrom = new ArrayList<>();
+            Function function = program.getFunctionManager().getFunctionContaining(address);
+            if (function != null) {
+                for (Address addr : function.getBody().getAddresses(true)) {
+                    Reference[] refs = refManager.getReferencesFrom(addr);
+                    for (Reference ref : refs) {
+                        allRefsFrom.add(createReferenceInfo(ref, program, false, 2, false));
+                    }
+                }
+            } else {
+                Reference[] refs = refManager.getReferencesFrom(address);
+                for (Reference ref : refs) {
+                    allRefsFrom.add(createReferenceInfo(ref, program, false, 2, false));
+                }
+            }
+
+            totalFromCount = allRefsFrom.size();
+            int endIndex = Math.min(offset + limit, allRefsFrom.size());
+            if (offset < allRefsFrom.size()) {
+                referencesFrom = allRefsFrom.subList(offset, endIndex);
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("referencesTo", referencesTo);
+        result.put("referencesFrom", referencesFrom);
+        result.put("totalToCount", totalToCount);
+        result.put("totalFromCount", totalFromCount);
+        result.put("offset", offset);
+        result.put("limit", limit);
+        result.put("hasMoreTo", offset + limit < totalToCount);
+        result.put("hasMoreFrom", offset + limit < totalFromCount);
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleReferencesFunctionMode(Program program, String target, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Function function = getFunctionFromArgs(request.arguments(), program, "target");
+        int offset = getOptionalInt(request, "offset", 0);
+        int limit = getOptionalInt(request, "limit", 100);
+
+        if (offset < 0) offset = 0;
+        if (limit <= 0) limit = 100;
+        if (limit > 1000) limit = 1000;
+
+        ReferenceManager refManager = program.getReferenceManager();
+        ReferenceIterator refIter = refManager.getReferencesTo(function.getEntryPoint());
+        List<Map<String, Object>> allRefs = new ArrayList<>();
+
+        while (refIter.hasNext()) {
+            Reference ref = refIter.next();
+            allRefs.add(createReferenceInfo(ref, program, false, 2, true));
+        }
+
+        int endIndex = Math.min(offset + limit, allRefs.size());
+        List<Map<String, Object>> references = offset < allRefs.size() ? allRefs.subList(offset, endIndex) : new ArrayList<>();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("references", references);
+        result.put("totalCount", allRefs.size());
+        result.put("offset", offset);
+        result.put("limit", limit);
+        result.put("hasMore", offset + limit < allRefs.size());
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleReferencersDecompiledMode(Program program, String target, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Address targetAddress = AddressUtil.resolveAddressOrSymbol(program, target);
+        if (targetAddress == null) {
+            return createErrorResult("Could not resolve address or symbol: " + target);
+        }
+
+        int maxReferencers = getOptionalInt(request, "max_referencers", 10);
+        int startIndex = getOptionalInt(request, "start_index", 0);
+        boolean includeRefContext = getOptionalBoolean(request, "include_ref_context", true);
+        boolean includeDataRefs = getOptionalBoolean(request, "include_data_refs", true);
+
+        if (maxReferencers <= 0 || maxReferencers > 50) {
+            return createErrorResult("max_referencers must be between 1 and 50");
+        }
+        if (startIndex < 0) {
+            return createErrorResult("start_index must be non-negative");
+        }
+
+        ReferenceManager refManager = program.getReferenceManager();
+        ReferenceIterator refIter = refManager.getReferencesTo(targetAddress);
+        Set<Function> referencingFunctions = new HashSet<>();
+        Map<Function, List<Map<String, Object>>> refDetails = new HashMap<>();
+        // Also store raw addresses for line number lookup
+        Map<Function, List<Address>> refAddressesMap = new HashMap<>();
+
+        final int MAX_TOTAL_REFERENCERS = 500;
+        while (refIter.hasNext() && referencingFunctions.size() < MAX_TOTAL_REFERENCERS) {
+            Reference ref = refIter.next();
+
+            // Filter by reference type if requested
+            if (!includeDataRefs && !ref.getReferenceType().isFlow()) {
+                continue;
+            }
+
+            Address fromAddr = ref.getFromAddress();
+            Function refFunc = program.getFunctionManager().getFunctionContaining(fromAddr);
+            if (refFunc != null) {
+                referencingFunctions.add(refFunc);
+
+                Map<String, Object> refInfo = new HashMap<>();
+                refInfo.put("fromAddress", AddressUtil.formatAddress(fromAddr));
+                refInfo.put("refType", ref.getReferenceType().toString());
+                refInfo.put("isCall", ref.getReferenceType().isCall());
+                refInfo.put("isData", ref.getReferenceType().isData());
+                refInfo.put("isRead", ref.getReferenceType().isRead());
+                refInfo.put("isWrite", ref.getReferenceType().isWrite());
+
+                refDetails.computeIfAbsent(refFunc, k -> new ArrayList<>()).add(refInfo);
+                // Store raw address for line number lookup
+                refAddressesMap.computeIfAbsent(refFunc, k -> new ArrayList<>()).add(fromAddr);
+            }
+        }
+
+        // Convert to list for pagination
+        List<Function> refList = new ArrayList<>(referencingFunctions);
+        int totalReferencers = refList.size();
+
+        // Apply pagination
+        int endIndex = Math.min(startIndex + maxReferencers, totalReferencers);
+        List<Function> pageRefs = startIndex < totalReferencers
+            ? refList.subList(startIndex, endIndex)
+            : List.of();
+
+        // Get program path for tracking
+        String programPath = program.getDomainFile().getPathname();
+
+        // Decompile each referencing function
+        List<Map<String, Object>> decompiledFunctions = new ArrayList<>();
+        DecompInterface decompiler = createConfiguredDecompilerForReferences(program);
+
+        if (decompiler == null) {
+            return createErrorResult("Failed to initialize decompiler");
+        }
+
+        try {
+            for (Function refFunc : pageRefs) {
+                Map<String, Object> funcResult = new HashMap<>();
+                funcResult.put("functionName", refFunc.getName());
+                funcResult.put("address", AddressUtil.formatAddress(refFunc.getEntryPoint()));
+                funcResult.put("references", refDetails.get(refFunc));
+
+                DecompilationAttempt attempt = decompileFunctionSafelyForReferences(decompiler, refFunc);
+                if (attempt.success()) {
+                    String decompCode = attempt.results().getDecompiledFunction().getC();
+                    funcResult.put("decompilation", decompCode);
+                    funcResult.put("success", true);
+
+                    // Find reference line numbers if requested using pre-collected addresses
+                    if (includeRefContext) {
+                        List<Address> refAddresses = refAddressesMap.get(refFunc);
+                        if (refAddresses != null) {
+                            List<Integer> refLineNumbers = findReferenceLineNumbers(attempt.results(), refAddresses);
+                            funcResult.put("referenceLineNumbers", refLineNumbers);
+                        }
+                    }
+
+                    // Track that this function's decompilation has been read
+                    String functionKey = programPath + ":" + AddressUtil.formatAddress(refFunc.getEntryPoint());
+                    DecompilationReadTracker.markAsRead(functionKey);
+                } else {
+                    funcResult.put("success", false);
+                    funcResult.put("error", attempt.errorMessage());
+                }
+
+                decompiledFunctions.add(funcResult);
+            }
+        } finally {
+            decompiler.dispose();
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("programPath", programPath);
+        result.put("targetAddress", AddressUtil.formatAddress(targetAddress));
+        result.put("resolvedFrom", target);
+        result.put("totalReferencers", totalReferencers);
+        result.put("startIndex", startIndex);
+        result.put("returnedCount", decompiledFunctions.size());
+        result.put("nextStartIndex", startIndex + decompiledFunctions.size());
+        result.put("hasMore", endIndex < totalReferencers);
+        result.put("includeDataRefs", includeDataRefs);
+        result.put("referencers", decompiledFunctions);
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleImportReferencesMode(Program program, String target, CallToolRequest request) {
+        String libraryName = getOptionalString(request, "library_name", null);
+        int maxResults = getOptionalInt(request, "max_results", 100);
+        if (maxResults <= 0) maxResults = 100;
+        if (maxResults > 1000) maxResults = 1000;
+
+        // Find matching imports
+        List<Function> matchingImports = findImportsByName(program, target, libraryName);
+
+        if (matchingImports.isEmpty()) {
+            return createErrorResult("Import not found: " + target +
+                (libraryName != null && !libraryName.isEmpty() ? " in " + libraryName : ""));
+        }
+
+        // Build thunk map once for efficiency: external function -> thunks pointing to it
+        Map<Function, List<Function>> thunkMap = buildThunkMapForReferences(program);
+
+        // Collect references including through thunks
+        List<Map<String, Object>> references = collectImportReferencesWithThunks(
+            program, matchingImports, thunkMap, maxResults);
+
+        // Build matched imports info
+        List<Map<String, Object>> importInfoList = new ArrayList<>();
+        for (Function importFunc : matchingImports) {
+            Map<String, Object> info = buildImportInfoForReferences(importFunc);
+            importInfoList.add(info);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("searchedImport", target);
+        result.put("matchedImports", importInfoList);
+        result.put("referenceCount", references.size());
+        result.put("references", references);
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleThunkMode(Program program, String target, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Address address = AddressUtil.resolveAddressOrSymbol(program, target);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + target);
+        }
+        Function function = program.getFunctionManager().getFunctionAt(address);
+        if (function == null) {
+            function = program.getFunctionManager().getFunctionContaining(address);
+        }
+        if (function == null) {
+            return createErrorResult("No function found at address: " + AddressUtil.formatAddress(address));
+        }
+
+        List<Map<String, Object>> chain = buildThunkChain(function);
+        Map<String, Object> finalTarget = chain.get(chain.size() - 1);
+        boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("startAddress", AddressUtil.formatAddress(address));
+        result.put("chain", chain);
+        result.put("chainLength", chain.size());
+        result.put("finalTarget", finalTarget);
+        result.put("isResolved", isResolved);
+        return createJsonResult(result);
+    }
+
+    private List<Map<String, Object>> buildThunkChain(Function function) {
+        List<Map<String, Object>> chain = new ArrayList<>();
+        Function current = function;
+        int depth = 0;
+
+        while (current != null && depth < MAX_THUNK_CHAIN_DEPTH) {
+            Map<String, Object> info = new HashMap<>();
+            info.put("name", current.getName());
+            Address entryPoint = current.getEntryPoint();
+            if (entryPoint != null) {
+                info.put("address", AddressUtil.formatAddress(entryPoint));
+            }
+            info.put("isThunk", current.isThunk());
+            info.put("isExternal", current.isExternal());
+
+            if (current.isExternal()) {
+                ExternalLocation extLoc = current.getExternalLocation();
+                if (extLoc != null) {
+                    info.put("library", extLoc.getLibraryName());
+                    String origName = extLoc.getOriginalImportedName();
+                    if (origName != null) {
+                        info.put("originalName", origName);
+                    }
+                }
+            }
+
+            chain.add(info);
+
+            if (current.isThunk()) {
+                Function next = current.getThunkedFunction(false);
+                if (next != null && !next.equals(current)) {
+                    current = next;
+                    depth++;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        return chain;
+    }
+
     /**
      * Create reference information map with optional decompilation context
      * @param ref The reference
@@ -270,12 +639,12 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
      * @param isIncoming Whether this is an incoming reference (to) or outgoing (from)
      * @return Map containing reference information
      */
-    private Map<String, Object> createReferenceInfo(Reference ref, Program program, 
+    private Map<String, Object> createReferenceInfo(Reference ref, Program program,
                                                     boolean includeContext, int contextLines,
                                                     boolean isIncoming) {
         Map<String, Object> refInfo = new HashMap<>();
         SymbolTable symbolTable = program.getSymbolTable();
-        
+
         // Basic reference information
         refInfo.put("fromAddress", AddressUtil.formatAddress(ref.getFromAddress()));
         refInfo.put("toAddress", AddressUtil.formatAddress(ref.getToAddress()));
@@ -288,7 +657,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         refInfo.put("isData", ref.getReferenceType().isData());
         refInfo.put("isRead", ref.getReferenceType().isRead());
         refInfo.put("isWrite", ref.getReferenceType().isWrite());
-        
+
         // Add symbol information for both addresses
         Symbol fromSymbol = symbolTable.getPrimarySymbol(ref.getFromAddress());
         if (fromSymbol != null) {
@@ -300,7 +669,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             }
             refInfo.put("fromSymbol", fromSymbolInfo);
         }
-        
+
         Symbol toSymbol = symbolTable.getPrimarySymbol(ref.getToAddress());
         if (toSymbol != null) {
             Map<String, Object> toSymbolInfo = new HashMap<>();
@@ -311,24 +680,24 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             }
             refInfo.put("toSymbol", toSymbolInfo);
         }
-        
+
         // Add function information and optional decompilation context
         Address contextAddress = isIncoming ? ref.getFromAddress() : ref.getToAddress();
         Function contextFunction = program.getFunctionManager().getFunctionContaining(contextAddress);
-        
+
         if (contextFunction != null) {
             Map<String, Object> functionInfo = new HashMap<>();
             functionInfo.put("name", contextFunction.getName());
             functionInfo.put("entry", AddressUtil.formatAddress(contextFunction.getEntryPoint()));
-            
+
             // For incoming references, add decompilation context from the calling function
             if (includeContext && ref.getReferenceType().isFlow()) {
                 int lineNumber = DecompilationContextUtil.getLineNumberForAddress(
                     program, contextFunction, contextAddress);
-                    
+
                 if (lineNumber > 0) {
                     functionInfo.put("line", lineNumber);
-                    
+
                     String context = DecompilationContextUtil.getDecompilationContext(
                         program, contextFunction, lineNumber, contextLines);
                     if (context != null) {
@@ -336,10 +705,244 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
                     }
                 }
             }
-            
+
             refInfo.put(isIncoming ? "fromFunction" : "toFunction", functionInfo);
         }
-        
+
         return refInfo;
+    }
+
+    // ========================================================================
+    // Decompiler Infrastructure for referencers_decomp mode
+    // ========================================================================
+
+    private DecompInterface createConfiguredDecompilerForReferences(Program program) {
+        DecompInterface decompiler = new DecompInterface();
+        decompiler.toggleCCode(true);
+        decompiler.toggleSyntaxTree(true);
+        decompiler.setSimplificationStyle("decompile");
+
+        if (!decompiler.openProgram(program)) {
+            logError("get_references: Failed to initialize decompiler for " + program.getName());
+            decompiler.dispose();
+            return null;
+        }
+        return decompiler;
+    }
+
+    private DecompilationAttempt decompileFunctionSafelyForReferences(
+            DecompInterface decompiler,
+            Function function) {
+        TaskMonitor timeoutMonitor = createTimeoutMonitorForReferences();
+        DecompileResults results = decompiler.decompileFunction(function, 0, timeoutMonitor);
+
+        if (timeoutMonitor.isCancelled()) {
+            String msg = "Decompilation timed out after " + getTimeoutSecondsForReferences() + " seconds";
+            logError("get_references: " + msg + " for " + function.getName());
+            return DecompilationAttempt.failure(msg);
+        }
+
+        if (!results.decompileCompleted()) {
+            String msg = "Decompilation failed: " + results.getErrorMessage();
+            logError("get_references: " + msg + " for " + function.getName());
+            return DecompilationAttempt.failure(msg);
+        }
+
+        return DecompilationAttempt.success(results);
+    }
+
+    private List<Integer> findReferenceLineNumbers(DecompileResults results, List<Address> addresses) {
+        List<Integer> lineNumbers = new ArrayList<>();
+
+        if (results == null || addresses == null || addresses.isEmpty()) {
+            return lineNumbers;
+        }
+
+        ClangTokenGroup markup = results.getCCodeMarkup();
+        if (markup == null) {
+            return lineNumbers;
+        }
+
+        Set<Address> addressSet = new HashSet<>(addresses);
+        List<ClangLine> lines = DecompilerUtils.toLines(markup);
+
+        for (ClangLine line : lines) {
+            for (ClangToken token : line.getAllTokens()) {
+                Address tokenAddr = token.getMinAddress();
+                if (tokenAddr != null && addressSet.contains(tokenAddr)) {
+                    lineNumbers.add(line.getLineNumber());
+                    break; // Only add line once
+                }
+            }
+        }
+
+        return lineNumbers;
+    }
+
+    private TaskMonitor createTimeoutMonitorForReferences() {
+        ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
+        int timeoutSeconds = configManager != null ? configManager.getDecompilerTimeoutSeconds() : DEFAULT_TIMEOUT_SECONDS;
+        return TimeoutTaskMonitor.timeoutIn(timeoutSeconds, TimeUnit.SECONDS);
+    }
+
+    private int getTimeoutSecondsForReferences() {
+        ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
+        return configManager != null ? configManager.getDecompilerTimeoutSeconds() : DEFAULT_TIMEOUT_SECONDS;
+    }
+
+    // ========================================================================
+    // Import/Thunk Helper Methods
+    // ========================================================================
+
+    /**
+     * Find imports by name, optionally filtered by library name.
+     */
+    private List<Function> findImportsByName(Program program, String importName, String libraryName) {
+        List<Function> matches = new ArrayList<>();
+        FunctionIterator externalFunctions = program.getFunctionManager().getExternalFunctions();
+
+        while (externalFunctions.hasNext()) {
+            Function func = externalFunctions.next();
+
+            if (!func.getName().equalsIgnoreCase(importName)) {
+                continue;
+            }
+
+            if (libraryName != null && !libraryName.isEmpty()) {
+                ExternalLocation extLoc = func.getExternalLocation();
+                if (extLoc == null || !extLoc.getLibraryName().equalsIgnoreCase(libraryName)) {
+                    continue;
+                }
+            }
+
+            matches.add(func);
+        }
+
+        return matches;
+    }
+
+    /**
+     * Build a map from external functions to thunks that point to them.
+     * This is O(n) where n = number of functions, done once per request.
+     */
+    private Map<Function, List<Function>> buildThunkMapForReferences(Program program) {
+        Map<Function, List<Function>> thunkMap = new HashMap<>();
+        FunctionIterator allFunctions = program.getFunctionManager().getFunctions(true);
+
+        while (allFunctions.hasNext()) {
+            Function func = allFunctions.next();
+            if (func.isThunk()) {
+                Function target = func.getThunkedFunction(true); // Resolve fully
+                if (target != null && target.isExternal()) {
+                    thunkMap.computeIfAbsent(target, k -> new ArrayList<>()).add(func);
+                }
+            }
+        }
+
+        return thunkMap;
+    }
+
+    /**
+     * Collect import references including references through thunks.
+     */
+    private List<Map<String, Object>> collectImportReferencesWithThunks(
+            Program program,
+            List<Function> matchingImports,
+            Map<Function, List<Function>> thunkMap,
+            int maxResults) {
+
+        List<Map<String, Object>> references = new ArrayList<>();
+        ReferenceManager refManager = program.getReferenceManager();
+        FunctionManager funcManager = program.getFunctionManager();
+        Set<Address> seen = new HashSet<>();
+
+        for (Function importFunc : matchingImports) {
+            if (references.size() >= maxResults) break;
+
+            // Collect all addresses to check: the import and its thunks
+            List<AddressWithThunkInfo> targets = new ArrayList<>();
+
+            Address importAddr = importFunc.getEntryPoint();
+            if (importAddr != null) {
+                targets.add(new AddressWithThunkInfo(importAddr, null));
+            }
+
+            List<Function> thunks = thunkMap.get(importFunc);
+            if (thunks != null) {
+                for (Function thunk : thunks) {
+                    Address thunkAddr = thunk.getEntryPoint();
+                    if (thunkAddr != null) {
+                        targets.add(new AddressWithThunkInfo(thunkAddr, thunkAddr));
+                    }
+                }
+            }
+
+            // Get references to all targets
+            for (AddressWithThunkInfo target : targets) {
+                if (references.size() >= maxResults) break;
+
+                ReferenceIterator refIter = refManager.getReferencesTo(target.address);
+                while (refIter.hasNext() && references.size() < maxResults) {
+                    Reference ref = refIter.next();
+                    Address fromAddr = ref.getFromAddress();
+
+                    if (seen.contains(fromAddr)) continue;
+                    seen.add(fromAddr);
+
+                    Map<String, Object> refInfo = createReferenceInfo(ref, program, false, 2, true);
+
+                    // Add import-specific information
+                    refInfo.put("importName", importFunc.getName());
+                    ExternalLocation extLoc = importFunc.getExternalLocation();
+                    if (extLoc != null) {
+                        refInfo.put("library", extLoc.getLibraryName());
+                    }
+
+                    // Indicate if reference is through a thunk
+                    if (target.thunkAddress != null) {
+                        refInfo.put("viaThunk", true);
+                        refInfo.put("thunkAddress", AddressUtil.formatAddress(target.thunkAddress));
+                    }
+
+                    references.add(refInfo);
+                }
+            }
+        }
+
+        return references;
+    }
+
+    /**
+     * Build import information map.
+     */
+    private Map<String, Object> buildImportInfoForReferences(Function importFunc) {
+        Map<String, Object> info = new HashMap<>();
+        info.put("name", importFunc.getName());
+        Address entryPoint = importFunc.getEntryPoint();
+        if (entryPoint != null) {
+            info.put("address", AddressUtil.formatAddress(entryPoint));
+        }
+
+        ExternalLocation extLoc = importFunc.getExternalLocation();
+        if (extLoc != null) {
+            info.put("library", extLoc.getLibraryName());
+            String originalName = extLoc.getOriginalImportedName();
+            if (originalName != null && !originalName.equals(importFunc.getName())) {
+                info.put("originalName", originalName);
+                if (originalName.startsWith("Ordinal_")) {
+                    try {
+                        info.put("ordinal", Integer.parseInt(originalName.substring(8)));
+                    } catch (NumberFormatException e) {
+                        // Not a valid ordinal format
+                    }
+                }
+            }
+        }
+
+        if (importFunc.getSignature() != null) {
+            info.put("signature", importFunc.getSignature().getPrototypeString());
+        }
+
+        return info;
     }
 }

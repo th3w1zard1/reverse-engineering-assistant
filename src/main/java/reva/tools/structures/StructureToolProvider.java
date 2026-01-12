@@ -25,6 +25,7 @@ import ghidra.app.util.cparser.C.CParser;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.DataIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
@@ -53,1053 +54,625 @@ public class StructureToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        registerParseCStructureTool();
-        registerValidateCStructureTool();
-        registerCreateStructureTool();
-        registerAddStructureFieldTool();
-        registerModifyStructureFieldTool();
-        registerModifyStructureFromCTool();
-        registerGetStructureInfoTool();
-        registerListStructuresTool();
-        registerApplyStructureTool();
-        registerDeleteStructureTool();
-        registerParseCHeaderTool();
+        registerManageStructuresTool();
     }
 
-    /**
-     * Register tool to parse C-style structure definitions
-     */
-    private void registerParseCStructureTool() {
+    private void registerManageStructuresTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("cDefinition", SchemaUtil.createStringProperty("C-style structure definition"));
-        properties.put("category", SchemaUtil.createOptionalStringProperty("Category path (default: /)"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("cDefinition");
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("action", Map.of(
+            "type", "string",
+            "description", "Action to perform: 'parse', 'validate', 'create', 'add_field', 'modify_field', 'modify_from_c', 'info', 'list', 'apply', 'delete', 'parse_header'",
+            "enum", List.of("parse", "validate", "create", "add_field", "modify_field", "modify_from_c", "info", "list", "apply", "delete", "parse_header")
+        ));
+        properties.put("c_definition", SchemaUtil.stringProperty("C-style structure definition when action='parse', 'validate', or 'modify_from_c'"));
+        properties.put("header_content", SchemaUtil.stringProperty("C header file content when action='parse_header'"));
+        properties.put("structure_name", SchemaUtil.stringProperty("Name of the structure"));
+        properties.put("name", SchemaUtil.stringProperty("Name of the structure when action='create'"));
+        properties.put("size", SchemaUtil.integerPropertyWithDefault("Initial size when action='create'", 0));
+        properties.put("type", Map.of(
+            "type", "string",
+            "description", "Structure type when action='create'",
+            "enum", List.of("structure", "union"),
+            "default", "structure"
+        ));
+        properties.put("category", SchemaUtil.stringPropertyWithDefault("Category path", "/"));
+        properties.put("packed", SchemaUtil.booleanPropertyWithDefault("Whether structure should be packed when action='create'", false));
+        properties.put("description", SchemaUtil.stringProperty("Description of the structure when action='create'"));
+        properties.put("field_name", SchemaUtil.stringProperty("Name of the field when action='add_field' or 'modify_field'"));
+        properties.put("data_type", SchemaUtil.stringProperty("Data type when action='add_field'"));
+        properties.put("offset", SchemaUtil.integerProperty("Field offset when action='add_field' or 'modify_field'"));
+        properties.put("comment", SchemaUtil.stringProperty("Field comment when action='add_field'"));
+        properties.put("new_data_type", SchemaUtil.stringProperty("New data type for the field when action='modify_field'"));
+        properties.put("new_field_name", SchemaUtil.stringProperty("New name for the field when action='modify_field'"));
+        properties.put("new_comment", SchemaUtil.stringProperty("New comment for the field when action='modify_field'"));
+        properties.put("new_length", SchemaUtil.integerProperty("New length for the field when action='modify_field'"));
+        properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name to apply structure when action='apply'"));
+        properties.put("clear_existing", SchemaUtil.booleanPropertyWithDefault("Clear existing data when action='apply'", true));
+        properties.put("force", SchemaUtil.booleanPropertyWithDefault("Force deletion even if structure is referenced when action='delete'", false));
+        properties.put("name_filter", SchemaUtil.stringProperty("Filter by name (substring match) when action='list'"));
+        properties.put("include_built_in", SchemaUtil.booleanPropertyWithDefault("Include built-in types when action='list'", false));
+
+        List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("parse-c-structure")
-            .title("Parse C Structure")
-            .description("Parse and create structures from C-style definitions")
+            .name("manage_structures")
+            .title("Manage Structures")
+            .description("Parse, validate, create, modify, query, list, apply, or delete structures. Also parse entire C header files.")
             .inputSchema(createSchema(properties, required))
             .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String cDefinition = getString(request, "cDefinition");
-                String category = getOptionalString(request, "category", "/");
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                CParser parser = new CParser(dtm);
-                
-                int txId = program.startTransaction("Parse C Structure");
-                try {
-                    DataType dt = parser.parse(cDefinition);
-                    if (dt == null) {
-                        throw new Exception("Failed to parse structure definition");
-                    }
-
-                    // Move to specified category
-                    CategoryPath catPath = new CategoryPath(category);
-                    Category cat = dtm.createCategory(catPath);
-                    
-                    // Resolve into the program's DTM
-                    DataType resolved = dtm.resolve(dt, DataTypeConflictHandler.REPLACE_HANDLER);
-                    if (cat != null && resolved.getCategoryPath() != catPath) {
-                        resolved.setName(resolved.getName());
-                        cat.moveDataType(resolved, DataTypeConflictHandler.REPLACE_HANDLER);
-                    }
-                    
-                    program.endTransaction(txId, true);
-                    
-                    // Return structure info
-                    Map<String, Object> result = createStructureInfo(resolved);
-                    result.put("message", "Successfully created structure: " + resolved.getName());
-                    return createJsonResult(result);
-                    
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to parse C structure", e);
-                    return createErrorResult("Failed to parse: " + e.getMessage());
+                String action = getString(request, "action");
+                switch (action) {
+                    case "parse":
+                        return handleParseAction(request);
+                    case "validate":
+                        return handleValidateAction(request);
+                    case "create":
+                        return handleCreateAction(request);
+                    case "add_field":
+                        return handleAddFieldAction(request);
+                    case "modify_field":
+                        return handleModifyFieldAction(request);
+                    case "modify_from_c":
+                        return handleModifyFromCAction(request);
+                    case "info":
+                        return handleInfoAction(request);
+                    case "list":
+                        return handleListAction(request);
+                    case "apply":
+                        return handleApplyAction(request);
+                    case "delete":
+                        return handleDeleteAction(request);
+                    case "parse_header":
+                        return handleParseHeaderAction(request);
+                    default:
+                        return createErrorResult("Invalid action: " + action);
                 }
             } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
+                logError("Error in manage_structures", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
     }
 
-    /**
-     * Register tool to validate C-style structure definitions without creating them
-     */
-    private void registerValidateCStructureTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("cDefinition", SchemaUtil.createStringProperty("C-style structure definition to validate"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("cDefinition");
+    private McpSchema.CallToolResult handleParseAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String cDefinition = getOptionalString(request, "c_definition", getOptionalString(request, "cDefinition", null));
+        if (cDefinition == null) {
+            return createErrorResult("c_definition is required for action='parse'");
+        }
+        String category = getOptionalString(request, "category", "/");
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("validate-c-structure")
-            .title("Validate C Structure")
-            .description("Validate C-style structure definition without creating it")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        DataTypeManager dtm = program.getDataTypeManager();
+        CParser parser = new CParser(dtm);
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                String cDefinition = getString(request, "cDefinition");
-                
-                // Create a temporary parser with a standalone DTM
-                DataTypeManager tempDtm = new StandAloneDataTypeManager("temp");
-                CParser parser = new CParser(tempDtm);
-                
-                try {
-                    DataType dt = parser.parse(cDefinition);
-                    if (dt == null) {
-                        return createErrorResult("Invalid structure definition");
-                    }
-                    
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("valid", true);
-                    result.put("parsedType", dt.getName());
-                    result.put("displayName", dt.getDisplayName());
-                    result.put("size", dt.getLength());
-                    
-                    if (dt instanceof Structure) {
-                        Structure struct = (Structure) dt;
-                        result.put("fieldCount", struct.getNumComponents());
-                        result.put("isUnion", false);
-                    } else if (dt instanceof Union) {
-                        Union union = (Union) dt;
-                        result.put("fieldCount", union.getNumComponents());
-                        result.put("isUnion", true);
-                    }
-                    
-                    return createJsonResult(result);
-                    
-                } catch (Exception e) {
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("valid", false);
-                    result.put("error", e.getMessage());
-                    return createJsonResult(result);
-                } finally {
-                    tempDtm.close();
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
+        int txId = program.startTransaction("Parse C Structure");
+        try {
+            DataType dt = parser.parse(cDefinition);
+            if (dt == null) {
+                throw new Exception("Failed to parse structure definition");
             }
-        });
+
+            CategoryPath catPath = new CategoryPath(category);
+            Category cat = dtm.createCategory(catPath);
+
+            DataType resolved = dtm.resolve(dt, DataTypeConflictHandler.REPLACE_HANDLER);
+            if (cat != null && resolved.getCategoryPath() != catPath) {
+                resolved.setName(resolved.getName());
+                cat.moveDataType(resolved, DataTypeConflictHandler.REPLACE_HANDLER);
+            }
+
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Parse C structure");
+
+            Map<String, Object> result = createStructureInfo(resolved);
+            result.put("message", "Successfully created structure: " + resolved.getName());
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            Msg.error(this, "Failed to parse C structure", e);
+            return createErrorResult("Failed to parse: " + e.getMessage());
+        }
     }
 
-    /**
-     * Register tool to create an empty structure
-     */
-    private void registerCreateStructureTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("name", SchemaUtil.createStringProperty("Name of the structure"));
-        properties.put("size", SchemaUtil.createOptionalNumberProperty("Initial size (0 for auto-sizing)"));
-        properties.put("type", SchemaUtil.createOptionalStringProperty("Type: 'structure' or 'union' (default: structure)"));
-        properties.put("category", SchemaUtil.createOptionalStringProperty("Category path (default: /)"));
-        properties.put("packed", SchemaUtil.createOptionalBooleanProperty("Whether structure should be packed"));
-        properties.put("description", SchemaUtil.createOptionalStringProperty("Description of the structure"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("name");
+    private McpSchema.CallToolResult handleValidateAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String cDefinition = getOptionalString(request, "c_definition", getOptionalString(request, "cDefinition", null));
+        if (cDefinition == null) {
+            return createErrorResult("c_definition is required for action='validate'");
+        }
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("create-structure")
-            .title("Create Structure")
-            .description("Create a new empty structure or union")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        try {
+            Program program = getProgramFromArgs(request);
+            DataTypeManager dtm = program.getDataTypeManager();
+            CParser parser = new CParser(dtm);
+            DataType dt = parser.parse(cDefinition);
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String name = getString(request, "name");
-                int size = getOptionalInt(request, "size", 0);
-                String type = getOptionalString(request, "type", "structure");
-                String category = getOptionalString(request, "category", "/");
-                boolean packed = getOptionalBoolean(request, "packed", false);
-                String description = getOptionalString(request, "description", null);
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                CategoryPath catPath = new CategoryPath(category);
-                
-                int txId = program.startTransaction("Create Structure");
-                try {
-                    // Create category if needed
-                    dtm.createCategory(catPath);
-                    
-                    // Create structure or union
-                    Composite composite;
-                    if ("union".equalsIgnoreCase(type)) {
-                        composite = new UnionDataType(catPath, name, dtm);
-                    } else {
-                        composite = new StructureDataType(catPath, name, size, dtm);
-                        if (packed && composite instanceof Structure) {
-                            ((Structure) composite).setPackingEnabled(true);
-                        }
-                    }
-                    
-                    if (description != null) {
-                        composite.setDescription(description);
-                    }
-                    
-                    // Add to DTM
-                    DataType resolved = dtm.addDataType(composite, DataTypeConflictHandler.REPLACE_HANDLER);
-                    
-                    program.endTransaction(txId, true);
-                    
-                    Map<String, Object> result = createStructureInfo(resolved);
-                    result.put("message", "Successfully created " + type + ": " + name);
-                    return createJsonResult(result);
-                    
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to create structure", e);
-                    return createErrorResult("Failed to create structure: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
+            Map<String, Object> result = new HashMap<>();
+            if (dt != null) {
+                result.put("valid", true);
+                result.put("parsedType", dt.getName());
+                result.put("type", dt.getClass().getSimpleName());
+            } else {
+                result.put("valid", false);
+                result.put("error", "Failed to parse structure definition");
             }
-        });
+            return createJsonResult(result);
+        } catch (Exception e) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("valid", false);
+            result.put("error", e.getMessage());
+            return createJsonResult(result);
+        }
     }
 
-    /**
-     * Register tool to add fields to structures
-     */
-    private void registerAddStructureFieldTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure"));
-        properties.put("fieldName", SchemaUtil.createStringProperty("Name of the field"));
-        properties.put("dataType", SchemaUtil.createStringProperty("Data type (e.g., 'int', 'char[32]')"));
-        properties.put("offset", SchemaUtil.createOptionalNumberProperty("Offset (for structures, omit to append)"));
-        properties.put("comment", SchemaUtil.createOptionalStringProperty("Field comment"));
-        
-        // Bitfield support
-        Map<String, Object> bitfieldProps = new HashMap<>();
-        bitfieldProps.put("bitSize", SchemaUtil.createNumberProperty("Size in bits"));
-        bitfieldProps.put("bitOffset", SchemaUtil.createOptionalNumberProperty("Bit offset within byte"));
-        properties.put("bitfield", SchemaUtil.createOptionalObjectProperty("Bitfield configuration", bitfieldProps));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("structureName");
-        required.add("fieldName");
-        required.add("dataType");
+    private McpSchema.CallToolResult handleCreateAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String name = getOptionalString(request, "name", null);
+        if (name == null) {
+            return createErrorResult("name is required for action='create'");
+        }
+        int size = getOptionalInt(request, "size", 0);
+        String type = getOptionalString(request, "type", "structure");
+        String category = getOptionalString(request, "category", "/");
+        boolean packed = getOptionalBoolean(request, "packed", false);
+        String description = getOptionalString(request, "description", null);
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("add-structure-field")
-            .title("Add Structure Field")
-            .description("Add a field to an existing structure")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        DataTypeManager dtm = program.getDataTypeManager();
+        CategoryPath catPath = new CategoryPath(category);
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String structureName = getString(request, "structureName");
-                String fieldName = getString(request, "fieldName");
-                String dataTypeStr = getString(request, "dataType");
+        int txId = program.startTransaction("Create Structure");
+        try {
+            Category cat = dtm.createCategory(catPath);
+            Composite composite;
+            if ("union".equals(type)) {
+                composite = new UnionDataType(catPath, name);
+            } else {
+                composite = new StructureDataType(catPath, name, size);
+                if (packed) {
+                    ((Structure) composite).setPackingEnabled(true);
+                }
+            }
+
+            if (description != null && !description.trim().isEmpty()) {
+                composite.setDescription(description);
+            }
+
+            DataType resolved = dtm.resolve(composite, DataTypeConflictHandler.REPLACE_HANDLER);
+            if (cat != null && resolved.getCategoryPath() != catPath) {
+                resolved.setName(resolved.getName());
+                cat.moveDataType(resolved, DataTypeConflictHandler.REPLACE_HANDLER);
+            }
+
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Create structure");
+
+            Map<String, Object> result = createStructureInfo(resolved);
+            result.put("message", "Successfully created structure: " + resolved.getName());
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to create structure: " + e.getMessage());
+        }
+    }
+
+    private McpSchema.CallToolResult handleAddFieldAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String structureName = getOptionalString(request, "structure_name", getOptionalString(request, "structureName", null));
+        if (structureName == null) {
+            return createErrorResult("structure_name is required for action='add_field'");
+        }
+        String fieldName = getOptionalString(request, "field_name", getOptionalString(request, "fieldName", null));
+        if (fieldName == null) {
+            return createErrorResult("field_name is required for action='add_field'");
+        }
+        String dataTypeStr = getOptionalString(request, "data_type", getOptionalString(request, "dataType", null));
+        if (dataTypeStr == null) {
+            return createErrorResult("data_type is required for action='add_field'");
+        }
+        Integer offset = getOptionalInteger(request.arguments(), "offset", null);
+        String comment = getOptionalString(request, "comment", null);
+
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType dt = dtm.getDataType(structureName);
+        if (dt == null) {
+            dt = findDataTypeByName(dtm, structureName);
+        }
+        if (dt == null) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
+        if (!(dt instanceof Composite)) {
+            return createErrorResult("Data type is not a structure or union: " + structureName);
+        }
+
+        Composite composite = (Composite) dt;
+        if (!(composite instanceof Structure)) {
+            return createErrorResult("add_field is only supported for structures, not unions");
+        }
+        Structure struct = (Structure) composite;
+
+        DataTypeParser parser = new DataTypeParser(dtm, dtm, null, AllowedDataTypes.ALL);
+        DataType fieldType;
+        try {
+            fieldType = parser.parse(dataTypeStr);
+        } catch (Exception e) {
+            return createErrorResult("Failed to parse data type: " + e.getMessage());
+        }
+        if (fieldType == null) {
+            return createErrorResult("Could not parse data type: " + dataTypeStr);
+        }
+
+        int txId = program.startTransaction("Add Structure Field");
+        try {
+            DataTypeComponent component;
+            if (offset != null) {
+                component = struct.insertAtOffset(offset, fieldType, fieldType.getLength(), fieldName, comment);
+            } else {
+                component = struct.add(fieldType, fieldName, comment);
+            }
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Add structure field");
+
+            Map<String, Object> result = createStructureInfo(struct);
+            result.put("message", "Successfully added field: " + fieldName);
+            result.put("fieldOrdinal", component.getOrdinal());
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to add field: " + e.getMessage());
+        }
+    }
+
+    private McpSchema.CallToolResult handleModifyFieldAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String structureName = getOptionalString(request, "structure_name", getOptionalString(request, "structureName", null));
+        if (structureName == null) {
+            return createErrorResult("structure_name is required for action='modify_field'");
+        }
+        String fieldName = getOptionalString(request, "field_name", getOptionalString(request, "fieldName", null));
+        String newDataTypeStr = getOptionalString(request, "new_data_type", getOptionalString(request, "newDataType", null));
+        String newFieldName = getOptionalString(request, "new_field_name", getOptionalString(request, "newFieldName", null));
+        String newComment = getOptionalString(request, "new_comment", getOptionalString(request, "newComment", null));
+        Integer newLength = getOptionalInteger(request.arguments(), "new_length", null);
+
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType dt = findDataTypeByName(dtm, structureName);
+        if (dt == null || !(dt instanceof Structure)) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
+
+        Structure struct = (Structure) dt;
+        int txId = program.startTransaction("Modify Structure Field");
+        try {
+            DataTypeComponent targetComponent = null;
+            int targetOrdinal = -1;
+
+            if (fieldName != null) {
+                for (int i = 0; i < struct.getNumComponents(); i++) {
+                    DataTypeComponent comp = struct.getComponent(i);
+                    if (fieldName.equals(comp.getFieldName())) {
+                        targetComponent = comp;
+                        targetOrdinal = i;
+                        break;
+                    }
+                }
+            } else {
+                // If no fieldName provided, must use offset to identify field
                 Integer offset = getOptionalInteger(request.arguments(), "offset", null);
-                String comment = getOptionalString(request, "comment", null);
-                Map<String, Object> bitfield = getOptionalMap(request.arguments(), "bitfield", null);
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                
-                // Find the structure
-                DataType dt = dtm.getDataType(structureName);
-                if (dt == null) {
-                    // Search in all categories
-                    dt = findDataTypeByName(dtm, structureName);
-                }
-                
-                if (dt == null) {
-                    return createErrorResult("Structure not found: " + structureName);
-                }
-                
-                if (!(dt instanceof Composite)) {
-                    return createErrorResult("Data type is not a structure or union: " + structureName);
-                }
-                
-                Composite composite = (Composite) dt;
-                
-                // Parse the field data type
-                DataType fieldType = null;
-                try {
-                    // First try using the program's own DTM directly for better test compatibility
-                    DataTypeParser parser = new DataTypeParser(dtm, dtm, null, AllowedDataTypes.ALL);
-                    fieldType = parser.parse(dataTypeStr);
-                } catch (Exception e) {
-                    // Fallback to the utility method
-                    try {
-                        fieldType = DataTypeParserUtil.parseDataTypeObjectFromString(dataTypeStr, "");
-                    } catch (Exception e2) {
-                        // Ignore fallback failure
-                    }
-                }
-                
-                if (fieldType == null) {
-                    return createErrorResult("Invalid data type: " + dataTypeStr);
-                }
-                
-                int txId = program.startTransaction("Add Structure Field");
-                try {
-                    if (bitfield != null) {
-                        // Handle bitfield
-                        if (!(composite instanceof Structure)) {
-                            throw new Exception("Bitfields are only supported in structures, not unions");
-                        }
-                        Structure struct = (Structure) composite;
-                        int bitSize = getInt(bitfield, "bitSize");
-                        
-                        if (offset != null) {
-                            int bitOffset = getOptionalInt(bitfield, "bitOffset", 0);
-                            struct.insertBitFieldAt(offset, fieldType.getLength(), bitOffset, 
-                                fieldType, bitSize, fieldName, comment);
-                        } else {
-                            struct.addBitField(fieldType, bitSize, fieldName, comment);
-                        }
-                    } else {
-                        // Regular field
-                        if (composite instanceof Structure) {
-                            Structure struct = (Structure) composite;
-                            if (offset != null) {
-                                struct.insertAtOffset(offset, fieldType, fieldType.getLength(), 
-                                    fieldName, comment);
-                            } else {
-                                struct.add(fieldType, fieldName, comment);
-                            }
-                        } else if (composite instanceof Union) {
-                            Union union = (Union) composite;
-                            union.add(fieldType, fieldName, comment);
-                        }
-                    }
-                    
-                    program.endTransaction(txId, true);
-                    
-                    Map<String, Object> result = createStructureInfo(composite);
-                    result.put("message", "Successfully added field: " + fieldName);
-                    return createJsonResult(result);
-                    
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to add field", e);
-                    return createErrorResult("Failed to add field: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
-            }
-        });
-    }
-
-    /**
-     * Register tool to modify existing structure fields
-     */
-    private void registerModifyStructureFieldTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure"));
-        properties.put("fieldName", SchemaUtil.createOptionalStringProperty("Name of the field to modify (use this OR offset)"));
-        properties.put("offset", SchemaUtil.createOptionalNumberProperty("Offset of the field to modify (use this OR fieldName)"));
-        properties.put("newDataType", SchemaUtil.createOptionalStringProperty("New data type for the field"));
-        properties.put("newFieldName", SchemaUtil.createOptionalStringProperty("New name for the field"));
-        properties.put("newComment", SchemaUtil.createOptionalStringProperty("New comment for the field"));
-        properties.put("newLength", SchemaUtil.createOptionalNumberProperty("New length for the field (advanced)"));
-
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("structureName");
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("modify-structure-field")
-            .title("Modify Structure Field")
-            .description("Modify an existing field in a structure. Supports changing data type, name, comment, and length. " +
-                         "Identify the field by name OR offset. At least one modification parameter (newDataType, newFieldName, newComment, or newLength) is required.")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String structureName = getString(request, "structureName");
-                String fieldName = getOptionalString(request, "fieldName", null);
-                Integer offset = getOptionalInteger(request.arguments(), "offset", null);
-                String newDataTypeStr = getOptionalString(request, "newDataType", null);
-                String newFieldName = getOptionalString(request, "newFieldName", null);
-                String newComment = getOptionalString(request, "newComment", null);
-                Integer newLength = getOptionalInteger(request.arguments(), "newLength", null);
-
-                // Validate: must have either fieldName or offset
-                if (fieldName == null && offset == null) {
-                    return createErrorResult("Must specify either fieldName or offset to identify the field to modify");
-                }
-
-                // Validate: must have at least one modification
-                if (newDataTypeStr == null && newFieldName == null && newComment == null && newLength == null) {
-                    return createErrorResult("Must specify at least one modification (newDataType, newFieldName, newComment, or newLength)");
-                }
-
-                DataTypeManager dtm = program.getDataTypeManager();
-
-                // Find the structure
-                DataType dt = findDataTypeByName(dtm, structureName);
-                if (dt == null) {
-                    return createErrorResult("Structure not found: " + structureName);
-                }
-
-                if (!(dt instanceof Structure)) {
-                    return createErrorResult("Data type is not a structure: " + structureName + " (unions not supported for field modification)");
-                }
-
-                Structure struct = (Structure) dt;
-
-                // Find the field component
-                DataTypeComponent targetComponent = null;
-                int targetOrdinal = -1;
-
                 if (offset != null) {
-                    // Find by offset
                     targetComponent = struct.getComponentAt(offset);
-                    if (targetComponent == null) {
-                        return createErrorResult("No field found at offset " + offset + " in structure " + structureName);
-                    }
-                    targetOrdinal = targetComponent.getOrdinal();
-                } else {
-                    // Find by name
-                    for (int i = 0; i < struct.getNumComponents(); i++) {
-                        DataTypeComponent comp = struct.getComponent(i);
-                        if (fieldName.equals(comp.getFieldName())) {
-                            targetComponent = comp;
-                            targetOrdinal = i;
-                            break;
-                        }
-                    }
-                    if (targetComponent == null) {
-                        return createErrorResult("Field not found: " + fieldName + " in structure " + structureName);
+                    if (targetComponent != null) {
+                        targetOrdinal = targetComponent.getOrdinal();
                     }
                 }
-
-                // Determine what we're replacing with
-                DataType replacementDataType = targetComponent.getDataType();
-                String replacementFieldName = targetComponent.getFieldName();
-                String replacementComment = targetComponent.getComment();
-                int replacementLength = targetComponent.getLength();
-
-                // Parse new data type if provided
-                if (newDataTypeStr != null) {
-                    try {
-                        // First try using the program's own DTM directly
-                        DataTypeParser parser = new DataTypeParser(dtm, dtm, null, AllowedDataTypes.ALL);
-                        replacementDataType = parser.parse(newDataTypeStr);
-                    } catch (Exception e) {
-                        // Fallback to the utility method
-                        try {
-                            replacementDataType = DataTypeParserUtil.parseDataTypeObjectFromString(newDataTypeStr, "");
-                        } catch (Exception e2) {
-                            return createErrorResult("Invalid data type: " + newDataTypeStr);
-                        }
-                    }
-
-                    if (replacementDataType == null) {
-                        return createErrorResult("Invalid data type: " + newDataTypeStr);
-                    }
-
-                    // Update length to match new data type if not explicitly provided
-                    if (newLength == null) {
-                        replacementLength = replacementDataType.getLength();
-                    }
-                }
-
-                // Apply new field name if provided
-                if (newFieldName != null) {
-                    replacementFieldName = newFieldName;
-                }
-
-                // Apply new comment if provided
-                if (newComment != null) {
-                    replacementComment = newComment;
-                }
-
-                // Apply new length if provided
-                if (newLength != null) {
-                    replacementLength = newLength;
-                }
-
-                int txId = program.startTransaction("Modify Structure Field");
-                try {
-                    // Use replace() to update the field
-                    struct.replace(targetOrdinal, replacementDataType, replacementLength,
-                                   replacementFieldName, replacementComment);
-
-                    program.endTransaction(txId, true);
-
-                    Map<String, Object> result = createDetailedStructureInfo(struct);
-                    result.put("message", "Successfully modified field in structure: " + structureName);
-                    result.put("modifiedField", replacementFieldName);
-                    return createJsonResult(result);
-
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to modify field", e);
-                    return createErrorResult("Failed to modify field: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
             }
-        });
+
+            if (targetComponent == null) {
+                return createErrorResult("Field not found: " + (fieldName != null ? fieldName : "at specified offset"));
+            }
+
+            // Collect replacement values
+            DataType replacementType = targetComponent.getDataType();
+            String replacementName = targetComponent.getFieldName();
+            String replacementComment = targetComponent.getComment();
+            int replacementLength = targetComponent.getLength();
+
+            if (newDataTypeStr != null) {
+                DataTypeParser parser = new DataTypeParser(dtm, dtm, null, AllowedDataTypes.ALL);
+                DataType newType = parser.parse(newDataTypeStr);
+                if (newType == null) {
+                    return createErrorResult("Failed to parse new data type: " + newDataTypeStr);
+                }
+                replacementType = newType;
+                if (newLength == null) {
+                    replacementLength = newType.getLength();
+                }
+            }
+            if (newFieldName != null) {
+                replacementName = newFieldName;
+            }
+            if (newComment != null) {
+                replacementComment = newComment;
+            }
+            if (newLength != null) {
+                replacementLength = newLength;
+            }
+
+            // Replace the component
+            struct.replace(targetOrdinal, replacementType, replacementLength, replacementName, replacementComment);
+
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Modify structure field");
+
+            Map<String, Object> result = createStructureInfo(struct);
+            result.put("message", "Successfully modified field");
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to modify field: " + e.getMessage());
+        }
     }
 
-    /**
-     * Register tool to modify a structure using a C definition
-     */
-    private void registerModifyStructureFromCTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("cDefinition", SchemaUtil.createStringProperty("Complete C structure definition with modifications"));
+    private McpSchema.CallToolResult handleModifyFromCAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String cDefinition = getOptionalString(request, "c_definition", getOptionalString(request, "cDefinition", null));
+        if (cDefinition == null) {
+            return createErrorResult("c_definition is required for action='modify_from_c'");
+        }
 
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("cDefinition");
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType parsedDt;
+        try {
+            CParser parser = new CParser(dtm);
+            parsedDt = parser.parse(cDefinition);
+        } catch (Exception e) {
+            return createErrorResult("Failed to parse C definition: " + e.getMessage());
+        }
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("modify-structure-from-c")
-            .title("Modify Structure from C")
-            .description("Modify an existing structure using a C-style definition. " +
-                         "The structure name must match an existing structure. " +
-                         "Fields will be added, modified, or removed to match the definition. " +
-                         "Best practice: Read the structure with get-structure-info before modifying to understand the current layout.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        if (parsedDt == null || !(parsedDt instanceof Structure)) {
+            return createErrorResult("Parsed definition is not a structure");
+        }
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String cDefinition = getString(request, "cDefinition");
+        Structure parsedStruct = (Structure) parsedDt;
+        String structureName = parsedStruct.getName();
+        DataType existingDt = findDataTypeByName(dtm, structureName);
+        if (existingDt == null || !(existingDt instanceof Structure)) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
 
-                DataTypeManager dtm = program.getDataTypeManager();
-
-                // Parse the C definition
-                DataType parsedDt = null;
-                try {
-                    CParser parser = new CParser(dtm);
-                    parsedDt = parser.parse(cDefinition);
-                } catch (Exception e) {
-                    return createErrorResult("Failed to parse C definition: " + e.getMessage());
-                }
-
-                if (parsedDt == null) {
-                    return createErrorResult("Failed to parse structure definition");
-                }
-
-                if (!(parsedDt instanceof Structure)) {
-                    return createErrorResult("Parsed definition is not a structure (unions not supported for modification)");
-                }
-
-                Structure parsedStruct = (Structure) parsedDt;
-                String structureName = parsedStruct.getName();
-
-                // Find existing structure
-                DataType existingDt = findDataTypeByName(dtm, structureName);
-                if (existingDt == null) {
-                    return createErrorResult("Structure not found: " + structureName + ". Use parse-c-structure to create a new structure instead.");
-                }
-
-                if (!(existingDt instanceof Structure)) {
-                    return createErrorResult("Existing data type is not a structure: " + structureName);
-                }
-
-                Structure existingStruct = (Structure) existingDt;
-
-                int txId = program.startTransaction("Modify Structure from C");
-                try {
-                    // Clear existing structure and rebuild from parsed definition
-                    // We'll do this by replacing all components
-
-                    // First, remove all existing components
-                    while (existingStruct.getNumComponents() > 0) {
-                        existingStruct.delete(0);
-                    }
-
-                    // Now add all components from the parsed structure
-                    for (int i = 0; i < parsedStruct.getNumComponents(); i++) {
-                        DataTypeComponent comp = parsedStruct.getComponent(i);
-                        DataType fieldType = comp.getDataType();
-
-                        // Resolve the field type in the program's DTM
-                        fieldType = dtm.resolve(fieldType, DataTypeConflictHandler.DEFAULT_HANDLER);
-
-                        if (comp.isBitFieldComponent()) {
-                            // Handle bitfield
-                            BitFieldDataType bitfield = (BitFieldDataType) fieldType;
-                            existingStruct.addBitField(
-                                bitfield.getBaseDataType(),
-                                bitfield.getBitSize(),
-                                comp.getFieldName(),
-                                comp.getComment()
-                            );
-                        } else {
-                            // Regular field
-                            existingStruct.add(fieldType, comp.getFieldName(), comp.getComment());
-                        }
-                    }
-
-                    // Copy other properties
-                    if (parsedStruct.getDescription() != null) {
-                        existingStruct.setDescription(parsedStruct.getDescription());
-                    }
-                    existingStruct.setPackingEnabled(parsedStruct.isPackingEnabled());
-
-                    program.endTransaction(txId, true);
-
-                    Map<String, Object> result = createDetailedStructureInfo(existingStruct);
-                    result.put("message", "Successfully modified structure from C definition: " + structureName);
-                    result.put("fieldsCount", existingStruct.getNumComponents());
-                    return createJsonResult(result);
-
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to modify structure from C", e);
-                    return createErrorResult("Failed to modify structure: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
+        Structure existingStruct = (Structure) existingDt;
+        int txId = program.startTransaction("Modify Structure from C");
+        try {
+            existingStruct.deleteAll();
+            for (DataTypeComponent comp : parsedStruct.getComponents()) {
+                existingStruct.add(comp.getDataType(), comp.getLength(), comp.getFieldName(), comp.getComment());
             }
-        });
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Modify structure from C");
+
+            Map<String, Object> result = createStructureInfo(existingStruct);
+            result.put("message", "Successfully modified structure from C definition: " + existingStruct.getName());
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to modify structure: " + e.getMessage());
+        }
     }
 
-    /**
-     * Register tool to get structure information
-     */
-    private void registerGetStructureInfoTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("structureName");
+    private McpSchema.CallToolResult handleInfoAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String structureName = getOptionalString(request, "structure_name", getOptionalString(request, "structureName", null));
+        if (structureName == null) {
+            return createErrorResult("structure_name is required for action='info'");
+        }
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-structure-info")
-            .title("Get Structure Info")
-            .description("Get detailed information about a structure")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType dt = findDataTypeByName(dtm, structureName);
+        if (dt == null || !(dt instanceof Composite)) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String structureName = getString(request, "structureName");
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                DataType dt = findDataTypeByName(dtm, structureName);
-                
-                if (dt == null) {
-                    return createErrorResult("Structure not found: " + structureName);
-                }
-                
-                if (!(dt instanceof Composite)) {
-                    return createErrorResult("Data type is not a structure or union: " + structureName);
-                }
-                
-                return createJsonResult(createDetailedStructureInfo((Composite) dt));
-                
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
-            }
-        });
+        Map<String, Object> result = createDetailedStructureInfo((Composite) dt);
+        return createJsonResult(result);
     }
 
-    /**
-     * Register tool to list structures
-     */
-    private void registerListStructuresTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("category", SchemaUtil.createOptionalStringProperty("Filter by category path"));
-        properties.put("nameFilter", SchemaUtil.createOptionalStringProperty("Filter by name (substring match)"));
-        properties.put("includeBuiltIn", SchemaUtil.createOptionalBooleanProperty("Include built-in types"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
+    private McpSchema.CallToolResult handleListAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String nameFilter = getOptionalString(request, "name_filter", getOptionalString(request, "nameFilter", null));
+        boolean includeBuiltIn = getOptionalBoolean(request, "include_built_in", getOptionalBoolean(request, "includeBuiltIn", false));
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-structures")
-            .title("List Structures")
-            .description("List all structures in a program")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        DataTypeManager dtm = program.getDataTypeManager();
+        List<Map<String, Object>> structures = new ArrayList<>();
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String categoryFilter = getOptionalString(request, "category", null);
-                String nameFilter = getOptionalString(request, "nameFilter", null);
-                boolean includeBuiltIn = getOptionalBoolean(request, "includeBuiltIn", false);
+        Iterator<DataType> iter = dtm.getAllDataTypes();
+        while (iter.hasNext()) {
+            DataType dt = iter.next();
+            if (!(dt instanceof Composite)) continue;
+            if (!includeBuiltIn && dt.getCategoryPath().toString().startsWith("/")) {
+                if (dt.getCategoryPath().getName().equals("BuiltInTypes")) continue;
+            }
+            if (nameFilter != null && !dt.getName().toLowerCase().contains(nameFilter.toLowerCase())) {
+                continue;
+            }
+            structures.add(createStructureInfo(dt));
+        }
 
-                DataTypeManager dtm = program.getDataTypeManager();
-                List<Map<String, Object>> structures = new ArrayList<>();
-                
-                // Get all data types
-                Iterator<DataType> iter = dtm.getAllDataTypes();
-                while (iter.hasNext()) {
-                    DataType dt = iter.next();
-                    if (!(dt instanceof Composite)) {
-                        continue;
-                    }
-                    
-                    // Apply filters
-                    if (!includeBuiltIn && dt.getSourceArchive().getName().equals("BuiltInTypes")) {
-                        continue;
-                    }
-                    
-                    if (categoryFilter != null && 
-                        !dt.getCategoryPath().getPath().startsWith(categoryFilter)) {
-                        continue;
-                    }
-                    
-                    if (nameFilter != null && 
-                        !dt.getName().toLowerCase().contains(nameFilter.toLowerCase())) {
-                        continue;
-                    }
-                    
-                    structures.add(createStructureInfo(dt));
+        Map<String, Object> result = new HashMap<>();
+        result.put("structures", structures);
+        result.put("count", structures.size());
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleApplyAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String structureName = getOptionalString(request, "structure_name", getOptionalString(request, "structureName", null));
+        if (structureName == null) {
+            return createErrorResult("structure_name is required for action='apply'");
+        }
+        String addressOrSymbol = getOptionalString(request, "address_or_symbol", getOptionalString(request, "addressOrSymbol", null));
+        if (addressOrSymbol == null) {
+            return createErrorResult("address_or_symbol is required for action='apply'");
+        }
+        boolean clearExisting = getOptionalBoolean(request, "clear_existing", getOptionalBoolean(request, "clearExisting", true));
+
+        Address address = AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + addressOrSymbol);
+        }
+
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType dt = findDataTypeByName(dtm, structureName);
+        if (dt == null || !(dt instanceof Composite)) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
+
+        int txId = program.startTransaction("Apply Structure");
+        try {
+            Listing listing = program.getListing();
+            if (clearExisting) {
+                listing.clearCodeUnits(address, address.add(dt.getLength() - 1), false);
+            }
+            listing.createData(address, dt);
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Apply structure");
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("structureName", structureName);
+            result.put("address", AddressUtil.formatAddress(address));
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to apply structure: " + e.getMessage());
+        }
+    }
+
+    private McpSchema.CallToolResult handleDeleteAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String structureName = getOptionalString(request, "structure_name", getOptionalString(request, "structureName", null));
+        if (structureName == null) {
+            return createErrorResult("structure_name is required for action='delete'");
+        }
+        boolean force = getOptionalBoolean(request, "force", false);
+
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType dt = findDataTypeByName(dtm, structureName);
+        if (dt == null) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
+
+        // Check for references manually (DataTypeManager doesn't have getReferenceCount)
+        if (!force) {
+            // Check function signatures and variables
+            List<String> functionReferences = new ArrayList<>();
+            ghidra.program.model.listing.FunctionIterator functions = program.getFunctionManager().getFunctions(true);
+            while (functions.hasNext()) {
+                ghidra.program.model.listing.Function func = functions.next();
+                if (func.getReturnType().isEquivalent(dt)) {
+                    functionReferences.add(func.getName() + " (return type)");
                 }
-                
+                for (ghidra.program.model.listing.Parameter param : func.getParameters()) {
+                    if (param.getDataType().isEquivalent(dt)) {
+                        functionReferences.add(func.getName() + " (parameter: " + param.getName() + ")");
+                    }
+                }
+                for (ghidra.program.model.listing.Variable var : func.getAllVariables()) {
+                    if (var.getDataType().isEquivalent(dt)) {
+                        functionReferences.add(func.getName() + " (variable: " + var.getName() + ")");
+                    }
+                }
+            }
+
+            // Check memory instances
+            List<String> memoryReferences = new ArrayList<>();
+            Listing listing = program.getListing();
+            ghidra.program.model.listing.DataIterator dataIter = listing.getDefinedData(true);
+            while (dataIter.hasNext()) {
+                Data data = dataIter.next();
+                if (data.getDataType().isEquivalent(dt)) {
+                    memoryReferences.add(AddressUtil.formatAddress(data.getAddress()));
+                }
+            }
+
+            int totalReferences = functionReferences.size() + memoryReferences.size();
+            if (totalReferences > 0) {
                 Map<String, Object> result = new HashMap<>();
-                result.put("count", structures.size());
-                result.put("structures", structures);
-                
+                result.put("deleted", false);
+                result.put("error", "Structure is referenced. Use force=true to delete anyway.");
+                result.put("referenceCount", totalReferences);
+                Map<String, Object> refs = new HashMap<>();
+                refs.put("functions", functionReferences);
+                refs.put("memoryLocations", memoryReferences);
+                result.put("references", refs);
                 return createJsonResult(result);
-                
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
             }
-        });
+        }
+
+        int txId = program.startTransaction("Delete Structure");
+        try {
+            boolean removed = dtm.remove(dt);
+            if (!removed) {
+                program.endTransaction(txId, false);
+                return createErrorResult("Failed to delete structure (may be locked or in use by another process)");
+            }
+
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Delete structure");
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("deleted", true);
+            result.put("message", "Successfully deleted structure: " + structureName);
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to delete structure: " + e.getMessage());
+        }
     }
 
-    /**
-     * Register tool to apply structure at address
-     */
-    private void registerApplyStructureTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure"));
-        properties.put("addressOrSymbol", SchemaUtil.createStringProperty("Address or symbol name to apply structure"));
-        properties.put("clearExisting", SchemaUtil.createOptionalBooleanProperty("Clear existing data"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("structureName");
-        required.add("addressOrSymbol");
+    private McpSchema.CallToolResult handleParseHeaderAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String headerContent = getOptionalString(request, "header_content", getOptionalString(request, "headerContent", null));
+        if (headerContent == null) {
+            return createErrorResult("header_content is required for action='parse_header'");
+        }
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("apply-structure")
-            .title("Apply Structure")
-            .description("Apply a structure at a specific address")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        DataTypeManager dtm = program.getDataTypeManager();
+        CParser parser = new CParser(dtm);
+        List<Map<String, Object>> createdTypes = new ArrayList<>();
 
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String structureName = getString(request, "structureName");
-                Address address = getAddressFromArgs(request, program, "addressOrSymbol");
-                boolean clearExisting = getOptionalBoolean(request, "clearExisting", true);
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                DataType dt = findDataTypeByName(dtm, structureName);
-                
-                if (dt == null) {
-                    return createErrorResult("Structure not found: " + structureName);
-                }
-                
-                if (!(dt instanceof Composite)) {
-                    return createErrorResult("Data type is not a structure or union: " + structureName);
-                }
-                
-                // Check if address is in valid memory
-                Memory memory = program.getMemory();
-                if (!memory.contains(address)) {
-                    return createErrorResult("Address is not in valid memory: " + AddressUtil.formatAddress(address));
-                }
-                
-                int txId = program.startTransaction("Apply Structure");
-                try {
-                    Listing listing = program.getListing();
-                    
-                    if (clearExisting) {
-                        // Clear existing data
-                        Data existingData = listing.getDataAt(address);
-                        if (existingData != null) {
-                            listing.clearCodeUnits(address, address.add(existingData.getLength() - 1), false);
+        int txId = program.startTransaction("Parse C Header");
+        try {
+            String[] lines = headerContent.split("\n");
+            StringBuilder currentDefinition = new StringBuilder();
+            for (String line : lines) {
+                currentDefinition.append(line).append("\n");
+                if (line.trim().endsWith("}") || line.trim().endsWith("};")) {
+                    try {
+                        DataType dt = parser.parse(currentDefinition.toString());
+                        if (dt != null) {
+                            DataType resolved = dtm.resolve(dt, DataTypeConflictHandler.REPLACE_HANDLER);
+                            createdTypes.add(createStructureInfo(resolved));
                         }
+                    } catch (Exception e) {
+                        // Skip failed parse, continue with next
                     }
-                    
-                    // Create data
-                    Data data = listing.createData(address, dt);
-                    
-                    program.endTransaction(txId, true);
-                    
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("message", "Successfully applied structure at " + AddressUtil.formatAddress(address));
-                    result.put("address", AddressUtil.formatAddress(address));
-                    result.put("structureName", dt.getName());
-                    result.put("size", data.getLength());
-                    
-                    return createJsonResult(result);
-                    
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to apply structure", e);
-                    return createErrorResult("Failed to apply structure: " + e.getMessage());
+                    currentDefinition = new StringBuilder();
                 }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
             }
-        });
-    }
 
-    /**
-     * Register tool to delete a structure with reference checking
-     */
-    private void registerDeleteStructureTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("structureName", SchemaUtil.createStringProperty("Name of the structure to delete"));
-        properties.put("force", SchemaUtil.createOptionalBooleanProperty("Force deletion even if structure is referenced (default: false)"));
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Parse C header");
 
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("structureName");
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("delete-structure")
-            .title("Delete Structure")
-            .description("Delete a structure from the program. " +
-                         "Checks for references (function signatures, variables, memory) before deletion. " +
-                         "Use force=true to delete anyway despite references.")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String structureName = getString(request, "structureName");
-                boolean force = getOptionalBoolean(request, "force", false);
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                DataType dt = findDataTypeByName(dtm, structureName);
-
-                if (dt == null) {
-                    return createErrorResult("Structure not found: " + structureName);
-                }
-
-                // Check for references to this structure
-                List<String> functionReferences = new ArrayList<>();
-                List<String> memoryReferences = new ArrayList<>();
-
-                // Check function parameters and return types
-                ghidra.program.model.listing.FunctionIterator functions = program.getFunctionManager().getFunctions(true);
-                while (functions.hasNext()) {
-                    ghidra.program.model.listing.Function func = functions.next();
-
-                    // Check return type
-                    if (func.getReturnType().isEquivalent(dt)) {
-                        functionReferences.add(func.getName() + " (return type)");
-                    }
-
-                    // Check parameters
-                    for (ghidra.program.model.listing.Parameter param : func.getParameters()) {
-                        if (param.getDataType().isEquivalent(dt)) {
-                            functionReferences.add(func.getName() + " (parameter: " + param.getName() + ")");
-                        }
-                    }
-
-                    // Check local variables
-                    for (ghidra.program.model.listing.Variable var : func.getAllVariables()) {
-                        if (var.getDataType().isEquivalent(dt)) {
-                            functionReferences.add(func.getName() + " (variable: " + var.getName() + ")");
-                        }
-                    }
-                }
-
-                // Check memory for applied instances
-                Listing listing = program.getListing();
-                ghidra.program.model.listing.DataIterator dataIter = listing.getDefinedData(true);
-                while (dataIter.hasNext()) {
-                    Data data = dataIter.next();
-                    if (data.getDataType().isEquivalent(dt)) {
-                        memoryReferences.add(AddressUtil.formatAddress(data.getAddress()));
-                    }
-                }
-
-                int totalReferences = functionReferences.size() + memoryReferences.size();
-
-                // If references exist and not forcing, return warning
-                if (totalReferences > 0 && !force) {
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("canDelete", false);
-                    result.put("deleted", false);
-
-                    Map<String, Object> references = new HashMap<>();
-                    references.put("count", totalReferences);
-                    references.put("functions", functionReferences);
-                    references.put("memoryLocations", memoryReferences);
-                    result.put("references", references);
-
-                    result.put("warning", "Structure '" + structureName + "' is referenced in " +
-                               functionReferences.size() + " function(s) and " +
-                               memoryReferences.size() + " memory location(s). " +
-                               "Use force=true to delete anyway.");
-
-                    return createJsonResult(result);
-                }
-
-                // Proceed with deletion
-                int txId = program.startTransaction("Delete Structure");
-                try {
-                    boolean removed = dtm.remove(dt);
-
-                    program.endTransaction(txId, true);
-
-                    if (removed) {
-                        Map<String, Object> result = new HashMap<>();
-                        result.put("message", "Successfully deleted structure: " + structureName);
-                        result.put("deleted", true);
-                        result.put("hadReferences", totalReferences > 0);
-                        result.put("referencesCleared", totalReferences);
-                        return createJsonResult(result);
-                    } else {
-                        return createErrorResult("Failed to delete structure (may be locked or in use by another process)");
-                    }
-
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to delete structure", e);
-                    return createErrorResult("Failed to delete structure: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
-            }
-        });
-    }
-
-    /**
-     * Register tool to parse C header files
-     */
-    private void registerParseCHeaderTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.createStringProperty("Path of the program"));
-        properties.put("headerContent", SchemaUtil.createStringProperty("C header file content"));
-        properties.put("category", SchemaUtil.createOptionalStringProperty("Category path (default: /)"));
-        
-        List<String> required = new ArrayList<>();
-        required.add("programPath");
-        required.add("headerContent");
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("parse-c-header")
-            .title("Parse C Header")
-            .description("Parse an entire C header file and create all structures")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get program and parameters using helper methods
-                Program program = getProgramFromArgs(request);
-                String headerContent = getString(request, "headerContent");
-                String category = getOptionalString(request, "category", "/");
-
-                DataTypeManager dtm = program.getDataTypeManager();
-                CParser parser = new CParser(dtm);
-                
-                int txId = program.startTransaction("Parse C Header");
-                List<Map<String, Object>> createdTypes = new ArrayList<>();
-                
-                try {
-                    // Parse the entire header content as one unit to handle dependencies
-                    CategoryPath catPath = new CategoryPath(category);
-                    Category cat = dtm.createCategory(catPath);
-                    
-                    // Use CParser to parse the entire header content
-                    DataType dt = parser.parse(headerContent);
-                    if (dt != null) {
-                        DataType resolved = dtm.resolve(dt, DataTypeConflictHandler.REPLACE_HANDLER);
-                        if (cat != null && resolved.getCategoryPath() != catPath) {
-                            resolved.setName(resolved.getName());
-                            cat.moveDataType(resolved, DataTypeConflictHandler.REPLACE_HANDLER);
-                        }
-                        createdTypes.add(createStructureInfo(resolved));
-                    }
-                    
-                    // If single parse didn't work, try parsing line by line
-                    if (createdTypes.isEmpty()) {
-                        String[] lines = headerContent.split("\n");
-                        StringBuilder currentDef = new StringBuilder();
-                        
-                        for (String line : lines) {
-                            line = line.trim();
-                            if (line.isEmpty()) continue;
-                            
-                            currentDef.append(line).append("\n");
-                            
-                            // If line ends with semicolon, try to parse this definition
-                            if (line.endsWith(";")) {
-                                try {
-                                    DataType lineDt = parser.parse(currentDef.toString());
-                                    if (lineDt != null) {
-                                        DataType resolved = dtm.resolve(lineDt, DataTypeConflictHandler.REPLACE_HANDLER);
-                                        if (cat != null && resolved.getCategoryPath() != catPath) {
-                                            resolved.setName(resolved.getName());
-                                            cat.moveDataType(resolved, DataTypeConflictHandler.REPLACE_HANDLER);
-                                        }
-                                        createdTypes.add(createStructureInfo(resolved));
-                                    }
-                                } catch (Exception e) {
-                                    // Log but continue with other definitions
-                                    Msg.warn(this, "Failed to parse definition: " + currentDef.toString().substring(0, Math.min(50, currentDef.length())) + "...");
-                                }
-                                currentDef = new StringBuilder(); // Reset for next definition
-                            }
-                        }
-                    }
-                    
-                    program.endTransaction(txId, true);
-                    
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("message", "Successfully parsed header file");
-                    result.put("createdCount", createdTypes.size());
-                    result.put("createdTypes", createdTypes);
-                    return createJsonResult(result);
-                    
-                } catch (Exception e) {
-                    program.endTransaction(txId, false);
-                    Msg.error(this, "Failed to parse header", e);
-                    return createErrorResult("Failed to parse header: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                return createErrorResult("Error: " + e.getMessage());
-            }
-        });
+            Map<String, Object> result = new HashMap<>();
+            result.put("createdTypes", createdTypes);
+            result.put("count", createdTypes.size());
+            return createJsonResult(result);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            return createErrorResult("Failed to parse header: " + e.getMessage());
+        }
     }
 
     /**
@@ -1111,7 +684,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         if (dt != null) {
             return dt;
         }
-        
+
         // Search all categories
         Iterator<DataType> iter = dtm.getAllDataTypes();
         while (iter.hasNext()) {
@@ -1120,7 +693,7 @@ public class StructureToolProvider extends AbstractToolProvider {
                 return dataType;
             }
         }
-        
+
         return null;
     }
 
@@ -1129,19 +702,19 @@ public class StructureToolProvider extends AbstractToolProvider {
      */
     private Map<String, Object> createStructureInfo(DataType dt) {
         Map<String, Object> info = DataTypeParserUtil.createDataTypeInfo(dt);
-        
+
         if (dt instanceof Composite) {
             Composite composite = (Composite) dt;
             info.put("isUnion", dt instanceof Union);
             info.put("numComponents", composite.getNumComponents());
-            
+
             if (dt instanceof Structure) {
                 Structure struct = (Structure) dt;
                 info.put("isPacked", struct.isPackingEnabled());
                 // hasFlexibleArray check would go here if method exists
             }
         }
-        
+
         return info;
     }
 
@@ -1181,8 +754,8 @@ public class StructureToolProvider extends AbstractToolProvider {
                 fieldInfo.put("ordinal", startOrdinal);
                 fieldInfo.put("offset", startOffset);
                 fieldInfo.put("length", totalLength);
-                fieldInfo.put("fieldName", "<undefined>");
-                fieldInfo.put("dataType", "undefined");
+                fieldInfo.put("field_name", "<undefined>");
+                fieldInfo.put("data_type", "undefined");
                 fieldInfo.put("dataTypeSize", totalLength);
                 fieldInfo.put("isBitfield", false);
                 fieldInfo.put("isCondensed", true);
@@ -1196,11 +769,13 @@ public class StructureToolProvider extends AbstractToolProvider {
                 fieldInfo.put("ordinal", comp.getOrdinal());
                 fieldInfo.put("offset", comp.getOffset());
                 fieldInfo.put("length", comp.getLength());
-                fieldInfo.put("fieldName", comp.getFieldName());
-                fieldInfo.put("comment", comp.getComment());
+                fieldInfo.put("field_name", comp.getFieldName());
+                if (comp.getComment() != null && !comp.getComment().isEmpty()) {
+                    fieldInfo.put("comment", comp.getComment());
+                }
 
                 DataType fieldType = comp.getDataType();
-                fieldInfo.put("dataType", fieldType.getDisplayName());
+                fieldInfo.put("data_type", fieldType.getDisplayName());
                 fieldInfo.put("dataTypeSize", fieldType.getLength());
 
                 // Check if it's a bitfield

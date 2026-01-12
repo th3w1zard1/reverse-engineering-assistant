@@ -49,325 +49,251 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        registerGetDataTypeArchivesTool();
-        registerGetDataTypesTool();
-        registerGetDataTypeByStringTool();
+        registerManageDataTypesTool();
     }
 
-    /**
-     * Register a tool to get data type archives for a specific program
-     */
-    private void registerGetDataTypeArchivesTool() {
-        // Define schema for the tool
+    private void registerManageDataTypesTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("programPath", Map.of("type", "string", "description", "Path to the program in the Ghidra Project"));
+        properties.put("action", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to get data type archives for"
+            "description", "Action to perform: 'archives', 'list', 'by_string', 'apply'",
+            "enum", List.of("archives", "list", "by_string", "apply")
         ));
-        List<String> required = List.of("programPath");
+        properties.put("archive_name", Map.of("type", "string", "description", "Name of the data type archive when action='list', 'by_string', or 'apply'"));
+        properties.put("category_path", Map.of("type", "string", "description", "Path to category to list data types from when action='list'", "default", "/"));
+        properties.put("include_subcategories", Map.of("type", "boolean", "description", "Whether to include data types from subcategories when action='list'", "default", false));
+        properties.put("start_index", Map.of("type", "integer", "description", "Starting index for pagination when action='list'", "default", 0));
+        properties.put("max_count", Map.of("type", "integer", "description", "Maximum number of data types to return when action='list'", "default", 100));
+        properties.put("data_type_string", Map.of("type", "string", "description", "String representation of the data type when action='by_string' or 'apply'"));
+        properties.put("address_or_symbol", Map.of("type", "string", "description", "Address or symbol name to apply the data type to when action='apply'"));
 
-        // Create the tool
+        List<String> required = List.of("programPath", "action");
+
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-data-type-archives")
-            .title("Get Data Type Archives")
-            .description("Get data type archives for a specific program")
+            .name("manage_data_types")
+            .title("Manage Data Types")
+            .description("Get data type archives, list data types, get data type by string representation, or apply data types to addresses/symbols.")
             .inputSchema(createSchema(properties, required))
             .build();
 
-        // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get the validated program using the standard helper
-            Program targetProgram = getProgramFromArgs(request);
-
-            // Create result data
-            List<Map<String, Object>> archivesData = new ArrayList<>();
-
-            // Always add built-in data type manager first
-            DataTypeManager builtInDTM = BuiltInDataTypeManager.getDataTypeManager();
-            Map<String, Object> builtInInfo = new HashMap<>();
-            builtInInfo.put("name", builtInDTM.getName());
-            builtInInfo.put("type", "BUILT_IN");
-            builtInInfo.put("id", builtInDTM.getUniversalID() != null ? builtInDTM.getUniversalID().getValue() : null);
-            builtInInfo.put("dataTypeCount", builtInDTM.getDataTypeCount(true));
-            builtInInfo.put("categoryCount", builtInDTM.getCategoryCount());
-            archivesData.add(builtInInfo);
-
-            // Add the specified program first
-            
-            DataTypeManager dtm = targetProgram.getDataTypeManager();
-            Map<String, Object> archiveInfo = new HashMap<>();
-            archiveInfo.put("name", dtm.getName());
-            archiveInfo.put("type", "PROGRAM");
-            archiveInfo.put("id", dtm.getUniversalID() != null ? dtm.getUniversalID().getValue() : null);
-            archiveInfo.put("dataTypeCount", dtm.getDataTypeCount(true));
-            archiveInfo.put("categoryCount", dtm.getCategoryCount());
-            archiveInfo.put("programPath", targetProgram.getDomainFile().getPathname());
-            archivesData.add(archiveInfo);
-
-            // Add any other open programs 
-            List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
-            for (Program program : openPrograms) {
-                // Skip if this is the target program (already added)
-                if (program.getDomainFile().getPathname().equals(targetProgram.getDomainFile().getPathname())) {
-                    continue;
-                }
-
-                DataTypeManager programDtm = program.getDataTypeManager();
-
-                Map<String, Object> programArchiveInfo = new HashMap<>();
-                programArchiveInfo.put("name", programDtm.getName());
-                programArchiveInfo.put("type", "PROGRAM");
-                programArchiveInfo.put("id", programDtm.getUniversalID() != null ? programDtm.getUniversalID().getValue() : null);
-                programArchiveInfo.put("dataTypeCount", programDtm.getDataTypeCount(true));
-                programArchiveInfo.put("categoryCount", programDtm.getCategoryCount());
-                programArchiveInfo.put("programPath", program.getDomainFile().getPathname());
-
-                archivesData.add(programArchiveInfo);
-            }
-
-            // Try to add standalone data type managers if RevaPlugin is available
-            // This is optional - if not available, we still have built-in and program types
-            reva.plugin.RevaPlugin plugin = RevaInternalServiceRegistry.getService(reva.plugin.RevaPlugin.class);
-            if (plugin != null) {
-                DataTypeArchiveService archiveService = plugin.getTool().getService(DataTypeArchiveService.class);
-                if (archiveService != null) {
-                    // Get all data type managers
-                    DataTypeManager[] managers = archiveService.getDataTypeManagers();
-
-                    // Add standalone data type managers
-                    for (DataTypeManager standaloneDtm : managers) {
-                        // Skip if this is a program data type manager (already added)
-                        boolean isProgramDTM = false;
-                        for (Program program : openPrograms) {
-                            if (standaloneDtm == program.getDataTypeManager()) {
-                                isProgramDTM = true;
-                                break;
-                            }
-                        }
-                        if (isProgramDTM) {
-                            continue;
-                        }
-
-                        Map<String, Object> standaloneArchiveInfo = new HashMap<>();
-                        standaloneArchiveInfo.put("name", standaloneDtm.getName());
-                        standaloneArchiveInfo.put("type", standaloneDtm.getType().toString());
-                        standaloneArchiveInfo.put("id", standaloneDtm.getUniversalID() != null ? standaloneDtm.getUniversalID().getValue() : null);
-                        standaloneArchiveInfo.put("dataTypeCount", standaloneDtm.getDataTypeCount(true));
-                        standaloneArchiveInfo.put("categoryCount", standaloneDtm.getCategoryCount());
-
-                        archivesData.add(standaloneArchiveInfo);
-                    }
-                }
-            }
-
-            // Create metadata about the result
-            Map<String, Object> metadataInfo = new HashMap<>();
-            metadataInfo.put("count", archivesData.size());
-
-            // Create combined result
-            List<Object> resultData = new ArrayList<>();
-            resultData.add(metadataInfo);
-            resultData.addAll(archivesData);
-
-            return createMultiJsonResult(resultData);
-        });
-    }
-
-    /**
-     * Register a tool to get data types from an archive
-     */
-    private void registerGetDataTypesTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to get data types from"
-        ));
-        properties.put("archiveName", Map.of(
-            "type", "string",
-            "description", "Name of the data type archive"
-        ));
-        properties.put("categoryPath", Map.of(
-            "type", "string",
-            "description", "Path to category to list data types from (e.g., '/Structure'). Use '/' for root category.",
-            "default", "/"
-        ));
-        properties.put("includeSubcategories", Map.of(
-            "type", "boolean",
-            "description", "Whether to include data types from subcategories",
-            "default", false
-        ));
-        properties.put("startIndex", Map.of(
-            "type", "integer",
-            "description", "Starting index for pagination (0-based)",
-            "default", 0
-        ));
-        properties.put("maxCount", Map.of(
-            "type", "integer",
-            "description", "Maximum number of data types to return",
-            "default", 100
-        ));
-
-        List<String> required = List.of("programPath", "archiveName");
-
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-data-types")
-            .title("Get Data Types")
-            .description("Get data types from a data type archive")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            // Get the validated program using the standard helper
-            Program targetProgram = getProgramFromArgs(request);
-            
-            // Get the required archive name parameter
-            String archiveName;
             try {
-                archiveName = getString(request, "archiveName");
-            } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
-            }
-
-            // Get pagination parameters
-            String categoryPath = getOptionalString(request, "categoryPath", "/");
-            boolean includeSubcategories = getOptionalBoolean(request, "includeSubcategories", false);
-            int startIndex = getOptionalInt(request, "startIndex", 0);
-            int maxCount = getOptionalInt(request, "maxCount", 100);
-
-            // Get the program path for the data type manager lookup
-            String programPath = targetProgram.getDomainFile().getPathname();
-            
-            // Find the data type manager for the specified program
-            DataTypeManager dtm = DataTypeParserUtil.findDataTypeManager(archiveName, programPath);
-            if (dtm == null) {
-                return createErrorResult("Data type archive not found: " + archiveName);
-            }
-
-            // Get the category
-            Category category;
-            if (categoryPath.equals("/")) {
-                category = dtm.getRootCategory();
-            } else {
-                // Create a CategoryPath from the string path
-                ghidra.program.model.data.CategoryPath path = new ghidra.program.model.data.CategoryPath(categoryPath);
-                category = dtm.getCategory(path);
-                if (category == null) {
-                    return createErrorResult("Category not found: " + categoryPath);
+                String action = getString(request, "action");
+                switch (action) {
+                    case "archives":
+                        return handleArchivesAction(request);
+                    case "list":
+                        return handleListAction(request);
+                    case "by_string":
+                        return handleByStringAction(request);
+                    case "apply":
+                        return handleApplyAction(request);
+                    default:
+                        return createErrorResult("Invalid action: " + action);
                 }
-            }
-
-            // Create result data
-            List<Map<String, Object>> dataTypesData = new ArrayList<>();
-
-            // Add data types with pagination
-            List<DataType> dataTypes = new ArrayList<>();
-            if (includeSubcategories) {
-                addDataTypesRecursively(category, dataTypes);
-            } else {
-                for (DataType dt : category.getDataTypes()) {
-                    dataTypes.add(dt);
-                }
-            }
-
-            // Apply pagination
-            int endIndex = Math.min(startIndex + maxCount, dataTypes.size());
-            if (startIndex < dataTypes.size()) {
-                for (int i = startIndex; i < endIndex; i++) {
-                    DataType dt = dataTypes.get(i);
-                    Map<String, Object> dataTypeInfo = createDataTypeInfo(dt);
-                    dataTypesData.add(dataTypeInfo);
-                }
-            }
-
-            // Create metadata about the result
-            Map<String, Object> metadataInfo = new HashMap<>();
-            metadataInfo.put("archiveName", archiveName);
-            metadataInfo.put("categoryPath", categoryPath);
-            metadataInfo.put("includeSubcategories", includeSubcategories);
-            metadataInfo.put("startIndex", startIndex);
-            metadataInfo.put("totalCount", dataTypes.size());
-            metadataInfo.put("returnedCount", dataTypesData.size());
-
-            // Create combined result
-            List<Object> resultData = new ArrayList<>();
-            resultData.add(metadataInfo);
-            resultData.addAll(dataTypesData);
-
-            return createMultiJsonResult(resultData);
-        });
-    }
-
-    /**
-     * Register a tool to get a data type by string representation (e.g., "char**")
-     */
-    private void registerGetDataTypeByStringTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to search for data types in"
-        ));
-        properties.put("dataTypeString", Map.of(
-            "type", "string",
-            "description", "String representation of the data type (e.g., 'char**', 'int[10]')"
-        ));
-        properties.put("archiveName", Map.of(
-            "type", "string",
-            "description", "Optional name of the data type archive to search in. If not provided, all archives will be searched.",
-            "default", ""
-        ));
-
-        List<String> required = List.of("programPath", "dataTypeString");
-
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-data-type-by-string")
-            .title("Get Data Type by String")
-            .description("Get a data type by its string representation")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            // Get the validated program using the standard helper
-            Program targetProgram = getProgramFromArgs(request);
-            
-            // Get the required data type string parameter
-            String dataTypeString;
-            try {
-                dataTypeString = getString(request, "dataTypeString");
-            } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
-            }
-
-            // Get the optional archive name
-            String archiveName = getOptionalString(request, "archiveName", "");
-
-            // Get the program path for the data type manager lookup
-            String programPath = targetProgram.getDomainFile().getPathname();
-
-            try {
-                // Use the utility class to parse the data type with program context
-                Map<String, Object> result = DataTypeParserUtil.parseDataTypeFromString(dataTypeString, archiveName, programPath);
-
-                if (result == null) {
-                    return createErrorResult("Could not find or parse data type: " + dataTypeString);
-                }
-
-                return createJsonResult(result);
-            } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
-            } catch (IllegalStateException e) {
-                Msg.error(this, "Data type archive service is not available", e);
-                return createErrorResult("Data type archive service is not available");
             } catch (Exception e) {
-                Msg.error(this, "Error parsing data type: " + dataTypeString, e);
-                return createErrorResult("Error parsing data type: " + e.getMessage());
+                logError("Error in manage_data_types", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
+    }
+
+    private McpSchema.CallToolResult handleArchivesAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program targetProgram = getProgramFromArgs(request);
+        List<Map<String, Object>> archivesData = new ArrayList<>();
+
+        DataTypeManager builtInDTM = BuiltInDataTypeManager.getDataTypeManager();
+        Map<String, Object> builtInInfo = new HashMap<>();
+        builtInInfo.put("name", builtInDTM.getName());
+        builtInInfo.put("type", "BUILT_IN");
+        builtInInfo.put("id", builtInDTM.getUniversalID() != null ? builtInDTM.getUniversalID().getValue() : null);
+        builtInInfo.put("dataTypeCount", builtInDTM.getDataTypeCount(true));
+        builtInInfo.put("categoryCount", builtInDTM.getCategoryCount());
+        archivesData.add(builtInInfo);
+
+        DataTypeManager dtm = targetProgram.getDataTypeManager();
+        Map<String, Object> archiveInfo = new HashMap<>();
+        archiveInfo.put("name", dtm.getName());
+        archiveInfo.put("type", "PROGRAM");
+        archiveInfo.put("id", dtm.getUniversalID() != null ? dtm.getUniversalID().getValue() : null);
+        archiveInfo.put("dataTypeCount", dtm.getDataTypeCount(true));
+        archiveInfo.put("categoryCount", dtm.getCategoryCount());
+        archiveInfo.put("programPath", targetProgram.getDomainFile().getPathname());
+        archivesData.add(archiveInfo);
+
+        List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
+        for (Program program : openPrograms) {
+            if (program.getDomainFile().getPathname().equals(targetProgram.getDomainFile().getPathname())) {
+                continue;
+            }
+            DataTypeManager programDtm = program.getDataTypeManager();
+            Map<String, Object> programArchiveInfo = new HashMap<>();
+            programArchiveInfo.put("name", programDtm.getName());
+            programArchiveInfo.put("type", "PROGRAM");
+            programArchiveInfo.put("id", programDtm.getUniversalID() != null ? programDtm.getUniversalID().getValue() : null);
+            programArchiveInfo.put("dataTypeCount", programDtm.getDataTypeCount(true));
+            programArchiveInfo.put("categoryCount", programDtm.getCategoryCount());
+            programArchiveInfo.put("programPath", program.getDomainFile().getPathname());
+            archivesData.add(programArchiveInfo);
+        }
+
+        reva.plugin.RevaPlugin plugin = RevaInternalServiceRegistry.getService(reva.plugin.RevaPlugin.class);
+        if (plugin != null) {
+            DataTypeArchiveService archiveService = plugin.getTool().getService(DataTypeArchiveService.class);
+            if (archiveService != null) {
+                DataTypeManager[] managers = archiveService.getDataTypeManagers();
+                for (DataTypeManager standaloneDtm : managers) {
+                    boolean isProgramDTM = false;
+                    for (Program program : openPrograms) {
+                        if (standaloneDtm == program.getDataTypeManager()) {
+                            isProgramDTM = true;
+                            break;
+                        }
+                    }
+                    if (isProgramDTM) continue;
+                    Map<String, Object> standaloneArchiveInfo = new HashMap<>();
+                    standaloneArchiveInfo.put("name", standaloneDtm.getName());
+                    standaloneArchiveInfo.put("type", standaloneDtm.getType().toString());
+                    standaloneArchiveInfo.put("id", standaloneDtm.getUniversalID() != null ? standaloneDtm.getUniversalID().getValue() : null);
+                    standaloneArchiveInfo.put("dataTypeCount", standaloneDtm.getDataTypeCount(true));
+                    standaloneArchiveInfo.put("categoryCount", standaloneDtm.getCategoryCount());
+                    archivesData.add(standaloneArchiveInfo);
+                }
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("archives", archivesData);
+        result.put("count", archivesData.size());
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleListAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program targetProgram = getProgramFromArgs(request);
+        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", null));
+        if (archiveName == null) {
+            return createErrorResult("archive_name is required for action='list'");
+        }
+        String categoryPath = getOptionalString(request, "category_path", getOptionalString(request, "categoryPath", "/"));
+        boolean includeSubcategories = getOptionalBoolean(request, "include_subcategories", getOptionalBoolean(request, "includeSubcategories", false));
+        int startIndex = getOptionalInt(request, "start_index", getOptionalInt(request, "startIndex", 0));
+        int maxCount = getOptionalInt(request, "max_count", getOptionalInt(request, "maxCount", 100));
+
+        String programPath = targetProgram.getDomainFile().getPathname();
+        DataTypeManager dtm = DataTypeParserUtil.findDataTypeManager(archiveName, programPath);
+        if (dtm == null) {
+            return createErrorResult("Data type archive not found: " + archiveName);
+        }
+
+        Category category;
+        if (categoryPath.equals("/")) {
+            category = dtm.getRootCategory();
+        } else {
+            ghidra.program.model.data.CategoryPath path = new ghidra.program.model.data.CategoryPath(categoryPath);
+            category = dtm.getCategory(path);
+            if (category == null) {
+                return createErrorResult("Category not found: " + categoryPath);
+            }
+        }
+
+        List<DataType> dataTypes = new ArrayList<>();
+        if (includeSubcategories) {
+            addDataTypesRecursively(category, dataTypes);
+        } else {
+            for (DataType dt : category.getDataTypes()) {
+                dataTypes.add(dt);
+            }
+        }
+
+        int endIndex = Math.min(startIndex + maxCount, dataTypes.size());
+        List<Map<String, Object>> dataTypesData = new ArrayList<>();
+        if (startIndex < dataTypes.size()) {
+            for (int i = startIndex; i < endIndex; i++) {
+                dataTypesData.add(createDataTypeInfo(dataTypes.get(i)));
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("archiveName", archiveName);
+        result.put("categoryPath", categoryPath);
+        result.put("includeSubcategories", includeSubcategories);
+        result.put("startIndex", startIndex);
+        result.put("totalCount", dataTypes.size());
+        result.put("returnedCount", dataTypesData.size());
+        result.put("dataTypes", dataTypesData);
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleByStringAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program targetProgram = getProgramFromArgs(request);
+        String dataTypeString = getOptionalString(request, "data_type_string", getOptionalString(request, "dataTypeString", null));
+        if (dataTypeString == null) {
+            return createErrorResult("data_type_string is required for action='by_string'");
+        }
+        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", ""));
+
+        String programPath = targetProgram.getDomainFile().getPathname();
+        try {
+            Map<String, Object> result = DataTypeParserUtil.parseDataTypeFromString(dataTypeString, archiveName, programPath);
+            if (result == null) {
+                return createErrorResult("Could not find or parse data type: " + dataTypeString);
+            }
+            return createJsonResult(result);
+        } catch (Exception e) {
+            return createErrorResult("Error parsing data type: " + e.getMessage());
+        }
+    }
+
+    private McpSchema.CallToolResult handleApplyAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String dataTypeString = getOptionalString(request, "data_type_string", getOptionalString(request, "dataTypeString", null));
+        if (dataTypeString == null) {
+            return createErrorResult("data_type_string is required for action='apply'");
+        }
+        String addressOrSymbol = getOptionalString(request, "address_or_symbol", getOptionalString(request, "addressOrSymbol", null));
+        if (addressOrSymbol == null) {
+            return createErrorResult("address_or_symbol is required for action='apply'");
+        }
+        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", ""));
+
+        ghidra.program.model.address.Address address = reva.util.AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + addressOrSymbol);
+        }
+
+        try {
+            ghidra.program.model.data.DataType dataType = reva.util.DataTypeParserUtil.parseDataTypeObjectFromString(dataTypeString, archiveName);
+            if (dataType == null) {
+                return createErrorResult("Could not find data type: " + dataTypeString);
+            }
+
+            int transactionID = program.startTransaction("Apply Data Type");
+            boolean success = false;
+            try {
+                ghidra.program.model.listing.Listing listing = program.getListing();
+                if (listing.getDataAt(address) != null) {
+                    listing.clearCodeUnits(address, address.add(dataType.getLength() - 1), false);
+                }
+                ghidra.program.model.listing.Data createdData = listing.createData(address, dataType);
+                if (createdData == null) {
+                    throw new Exception("Failed to create data at address: " + address);
+                }
+                success = true;
+                autoSaveProgram(program, "Apply data type");
+                Map<String, Object> resultData = new HashMap<>();
+                resultData.put("success", true);
+                resultData.put("address", reva.util.AddressUtil.formatAddress(address));
+                resultData.put("dataType", dataType.getName());
+                resultData.put("dataTypeDisplayName", dataType.getDisplayName());
+                resultData.put("length", dataType.getLength());
+                return createJsonResult(resultData);
+            } finally {
+                program.endTransaction(transactionID, success);
+            }
+        } catch (Exception e) {
+            return createErrorResult("Error applying data type: " + e.getMessage());
+        }
     }
 
     /**

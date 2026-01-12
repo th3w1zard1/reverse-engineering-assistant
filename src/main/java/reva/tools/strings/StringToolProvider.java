@@ -35,11 +35,13 @@ import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceIterator;
 import ghidra.program.model.symbol.ReferenceManager;
+import ghidra.util.Msg;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 import reva.util.SimilarityComparator;
+import reva.util.ToolLogCollector;
 
 
 
@@ -69,362 +71,328 @@ public class StringToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        registerStringsCountTool();
-        registerStringsTool();
-        registerStringsBySimilarityTool();
-        registerStringsRegexSearchTool();
+        registerManageStringsTool();
     }
 
-    /**
-     * Register a tool to get the count of strings in a program
-     */
-    private void registerStringsCountTool() {
-        // Define schema for the tool
+    private void registerManageStringsTool() {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to the program to get string count from"
+            "description", "Path in the Ghidra Project to the program"
         ));
-
-        List<String> required = List.of("programPath");
-
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-strings-count")
-            .title("Get Strings Count")
-            .description("Get the total count of strings in the program (use this before calling get-strings to plan pagination)")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            // Get program using helper method
-            Program program = getProgramFromArgs(request);
-
-            // Count the strings
-            int count = 0;
-            DataIterator dataIterator = program.getListing().getDefinedData(true);
-            for (Data data : dataIterator) {
-                if (data.getValue() instanceof String) {
-                    count++;
-                }
-            }
-
-            // Create result data
-            Map<String, Object> countData = new HashMap<>();
-            countData.put("count", count);
-
-            return createJsonResult(countData);
-        });
-    }
-
-    /**
-     * Register a tool to get strings from a program with pagination
-     */
-    private void registerStringsTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("mode", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to the program to get strings from"
+            "description", "Operation mode: 'list', 'regex', 'count', or 'similarity'",
+            "enum", List.of("list", "regex", "count", "similarity"),
+            "default", "list"
         ));
-        properties.put("startIndex", Map.of(
+        properties.put("pattern", Map.of(
+            "type", "string",
+            "description", "Regular expression pattern to search for when mode='regex'"
+        ));
+        properties.put("search_string", Map.of(
+            "type", "string",
+            "description", "String to compare against for similarity when mode='similarity'"
+        ));
+        properties.put("filter", Map.of(
+            "type", "string",
+            "description", "Optional filter to match within string content when mode='list'"
+        ));
+        properties.put("start_index", Map.of(
             "type", "integer",
-            "description", "Starting index for pagination (0-based)",
+            "description", "Starting index for pagination when mode='list' or 'similarity' (0-based)",
             "default", 0
         ));
-        properties.put("maxCount", Map.of(
+        properties.put("max_count", Map.of(
             "type", "integer",
-            "description", "Maximum number of strings to return (recommended to use get-strings-count first and request chunks of 100 at most)",
+            "description", "Maximum number of strings to return when mode='list' or 'similarity'",
             "default", 100
         ));
-        properties.put("includeReferencingFunctions", Map.of(
+        properties.put("offset", Map.of(
+            "type", "integer",
+            "description", "Alternative pagination offset when mode='list'",
+            "default", 0
+        ));
+        properties.put("limit", Map.of(
+            "type", "integer",
+            "description", "Alternative pagination limit when mode='list'",
+            "default", 2000
+        ));
+        properties.put("max_results", Map.of(
+            "type", "integer",
+            "description", "Maximum number of results to return when mode='regex'",
+            "default", 100
+        ));
+        properties.put("include_referencing_functions", Map.of(
             "type", "boolean",
-            "description", "Include list of functions that reference each string (max 100 per string).",
+            "description", "Include list of functions that reference each string when mode='list' or 'similarity'",
             "default", false
         ));
 
         List<String> required = List.of("programPath");
 
-        // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-strings")
-            .title("Get Strings")
-            .description("Get strings from the selected program with pagination (use get-strings-count first to determine total count)")
+            .name("manage_strings")
+            .title("Manage Strings")
+            .description("List, search, count, or find similar strings in the program.")
             .inputSchema(createSchema(properties, required))
             .build();
 
-        // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get program and pagination parameters using helper methods
-            Program program = getProgramFromArgs(request);
-            PaginationParams pagination = getPaginationParams(request);
-            boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
+            try {
+                Program program = getProgramFromArgs(request);
+                String mode = getOptionalString(request, "mode", "list");
 
-            // Get strings with pagination
+                switch (mode) {
+                    case "count":
+                        return handleStringsCount(program);
+                    case "list":
+                        return handleStringsList(program, request);
+                    case "regex":
+                        return handleStringsRegex(program, request);
+                    case "similarity":
+                        return handleStringsSimilarity(program, request);
+                    default:
+                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: list, regex, count, similarity");
+                }
+            } catch (IllegalArgumentException e) {
+                return createErrorResult(e.getMessage());
+            } catch (Exception e) {
+                logError("Error in manage_strings", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private McpSchema.CallToolResult handleStringsCount(Program program) {
+        int count = 0;
+        DataIterator dataIterator = program.getListing().getDefinedData(true);
+        for (Data data : dataIterator) {
+            if (data.getValue() instanceof String) {
+                count++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("count", count);
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleStringsList(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        int startIndex = getOptionalInt(request, "start_index",
+            getOptionalInt(request, "startIndex",
+                getOptionalInt(request, "offset", 0)));
+        int maxCount = getOptionalInt(request, "max_count",
+            getOptionalInt(request, "maxCount",
+                getOptionalInt(request, "limit", 2000)));
+        boolean includeReferencingFunctions = getOptionalBoolean(request, "include_referencing_functions",
+            getOptionalBoolean(request, "includeReferencingFunctions", false));
+        String filter = getOptionalString(request, "filter", null);
+
+        ToolLogCollector logCollector = new ToolLogCollector();
+        logCollector.start();
+
+        try {
             List<Map<String, Object>> stringData = new ArrayList<>();
             DataIterator dataIterator = program.getListing().getDefinedData(true);
             int currentIndex = 0;
+            int iterationCount = 0;
+            final int MAX_ITERATIONS = 1000000;
 
             for (Data data : dataIterator) {
+                iterationCount++;
+                if (iterationCount > MAX_ITERATIONS) {
+                    String logMsg = String.format(
+                        "String iteration limit reached (%d iterations) for program %s. " +
+                        "Only %d strings found before limit.",
+                        MAX_ITERATIONS, program.getName(), stringData.size()
+                    );
+                    Msg.warn(this, logMsg);
+                    logCollector.addLog("WARN", logMsg);
+                    break;
+                }
+
                 if (!(data.getValue() instanceof String)) {
                     continue;
                 }
 
-                // Skip strings before the start index
-                if (currentIndex++ < pagination.startIndex()) {
+                if (filter != null && !filter.isEmpty()) {
+                    String stringValue = (String) data.getValue();
+                    if (!stringValue.contains(filter)) {
+                        continue;
+                    }
+                }
+
+                if (currentIndex++ < startIndex) {
                     continue;
                 }
 
-                // Stop after we've collected maxCount strings
-                if (stringData.size() >= pagination.maxCount()) {
+                if (stringData.size() >= maxCount) {
                     break;
                 }
 
-                // Collect string data
                 Map<String, Object> stringInfo = getStringInfo(data, program, includeReferencingFunctions);
                 if (stringInfo != null) {
                     stringData.add(stringInfo);
                 }
             }
 
-            // Create pagination metadata
             Map<String, Object> paginationInfo = new HashMap<>();
-            paginationInfo.put("startIndex", pagination.startIndex());
-            paginationInfo.put("requestedCount", pagination.maxCount());
+            paginationInfo.put("startIndex", startIndex);
+            paginationInfo.put("requestedCount", maxCount);
             paginationInfo.put("actualCount", stringData.size());
-            paginationInfo.put("nextStartIndex", pagination.startIndex() + stringData.size());
+            paginationInfo.put("nextStartIndex", startIndex + stringData.size());
+            if (logCollector.hasLogs()) {
+                ToolLogCollector.addLogsToResult(paginationInfo, logCollector);
+            }
+            logCollector.stop();
 
-            // Return as a single JSON array with pagination info first, then string data
             List<Object> resultData = new ArrayList<>();
             resultData.add(paginationInfo);
             resultData.addAll(stringData);
             return createJsonResult(resultData);
-        });
+        } catch (Exception e) {
+            logCollector.stop();
+            throw e;
+        }
     }
 
-    /**
-     * Register a tool to get strings from a program with pagination, sorted by similarity.
-     */
-    private void registerStringsBySimilarityTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program to get strings from"
-        ));
+    private McpSchema.CallToolResult handleStringsRegex(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String patternStr = getOptionalString(request, "pattern", null);
+        if (patternStr == null) {
+            patternStr = getOptionalString(request, "regexPattern", null);
+        }
+        if (patternStr == null) {
+            return createErrorResult("pattern is required when mode='regex'");
+        }
+        int maxResults = getOptionalInt(request, "max_results",
+            getOptionalInt(request, "maxResults", 100));
+        int startIndex = getOptionalInt(request, "start_index",
+            getOptionalInt(request, "startIndex", 0));
+        boolean includeReferencingFunctions = getOptionalBoolean(request, "include_referencing_functions",
+            getOptionalBoolean(request, "includeReferencingFunctions", false));
 
-        properties.put("searchString", Map.of(
-            "type", "string",
-            "description", "String to compare against for similarity (scored by longest common substring length between the search string and each string in the program)"
-        ));
+        if (patternStr.trim().isEmpty()) {
+            return createErrorResult("Pattern cannot be empty when mode='regex'");
+        }
 
-        properties.put("startIndex", Map.of(
-            "type", "integer",
-            "description", "Starting index for pagination (0-based)",
-            "default", 0
-        ));
-        properties.put("maxCount", Map.of(
-            "type", "integer",
-            "description", "Maximum number of strings to return (recommended to use get-strings-count first and request chunks of 100 at most)",
-            "default", 100
-        ));
-        properties.put("includeReferencingFunctions", Map.of(
-            "type", "boolean",
-            "description", "Include list of functions that reference each string (max 100 per string).",
-            "default", false
-        ));
+        Pattern pattern;
+        try {
+            pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE);
+        } catch (PatternSyntaxException e) {
+            return createErrorResult("Invalid regex pattern: " + e.getMessage());
+        }
 
-        List<String> required = List.of("programPath","searchString");
+        List<Map<String, Object>> matchingStrings = new ArrayList<>();
+        DataIterator dataIterator = program.getListing().getDefinedData(true);
+        int matchesFound = 0;
+        boolean searchComplete = true;
 
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-strings-by-similarity")
-            .title("Get Strings by Similarity")
-            .description("Get strings from the selected program with pagination, sorted by similarity to a given string (use get-strings-count first to determine total count)")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            // Get program and parameters using helper methods
-            Program program = getProgramFromArgs(request);
-            String searchString = getString(request, "searchString");
-            PaginationParams pagination = getPaginationParams(request);
-            boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
-
-            if (searchString.trim().isEmpty()) {
-                return createErrorResult("Search string cannot be empty");
+        for (Data data : dataIterator) {
+            if (!(data.getValue() instanceof String)) {
+                continue;
             }
 
-            // Phase 1: Collect all strings WITHOUT referencing functions (for performance)
-            // Store Address objects temporarily for Phase 4 to avoid string parsing round-trip
-            DataIterator dataIterator = program.getListing().getDefinedData(true);
-            List<Map<String, Object>> allStringData = new ArrayList<>();
-
-            for (Data data : dataIterator) {
-                if (data.getValue() instanceof String) {
-                    // Collect basic string data without references
-                    Map<String, Object> stringInfo = getStringInfo(data);
-                    if (stringInfo != null) {
-                        // Store Address object temporarily for Phase 4
-                        stringInfo.put(TEMP_ADDRESS_KEY, data.getAddress());
-                        allStringData.add(stringInfo);
-                    }
-                }
-            }
-
-            // Phase 2: Sort by similarity (SimilarityComparator handles null values internally)
-            Collections.sort(allStringData, new SimilarityComparator<Map<String, Object>>(searchString, new SimilarityComparator.StringExtractor<Map<String, Object>>() {
-                @Override
-                public String extract(Map<String, Object> item) {
-                    return (String) item.get("content");
-                }
-            }));
-
-            // Phase 3: Paginate
-            int startIdx = Math.min(pagination.startIndex(), allStringData.size());
-            int endIdx = Math.min(pagination.startIndex() + pagination.maxCount(), allStringData.size());
-            List<Map<String, Object>> paginatedStringData = new ArrayList<>(allStringData.subList(startIdx, endIdx));
-            boolean searchComplete = endIdx >= allStringData.size();
-
-            // Phase 4: Add referencing functions ONLY for paginated results (performance optimization)
-            for (Map<String, Object> stringInfo : paginatedStringData) {
-                // Remove temporary Address object (not JSON-serializable)
-                Address address = (Address) stringInfo.remove(TEMP_ADDRESS_KEY);
-
-                if (includeReferencingFunctions && address != null) {
-                    List<Map<String, String>> referencingFunctions = getReferencingFunctions(program, address);
-                    stringInfo.put("referencingFunctions", referencingFunctions);
-                    stringInfo.put("referenceCount", referencingFunctions.size());
-                }
-            }
-
-            // Create pagination metadata
-            Map<String, Object> paginationInfo = new HashMap<>();
-            paginationInfo.put("searchComplete", searchComplete);
-            paginationInfo.put("startIndex", pagination.startIndex());
-            paginationInfo.put("requestedCount", pagination.maxCount());
-            paginationInfo.put("actualCount", paginatedStringData.size());
-            paginationInfo.put("nextStartIndex", pagination.startIndex() + paginatedStringData.size());
-
-            List<Object> resultData = new ArrayList<>();
-            resultData.add(paginationInfo);
-            resultData.addAll(paginatedStringData);
-            return createJsonResult(resultData);
-        });
-    }
-
-    /**
-     * Register a tool to search strings using regex pattern
-     */
-    private void registerStringsRegexSearchTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program to search strings in"
-        ));
-        properties.put("regexPattern", Map.of(
-            "type", "string",
-            "description", "Regular expression pattern to search for in strings"
-        ));
-        properties.put("startIndex", Map.of(
-            "type", "integer",
-            "description", "Starting index for pagination (0-based)",
-            "default", 0
-        ));
-        properties.put("maxCount", Map.of(
-            "type", "integer",
-            "description", "Maximum number of matching strings to return",
-            "default", 100
-        ));
-        properties.put("includeReferencingFunctions", Map.of(
-            "type", "boolean",
-            "description", "Include list of functions that reference each string (max 100 per string).",
-            "default", false
-        ));
-
-        List<String> required = List.of("programPath", "regexPattern");
-
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("search-strings-regex")
-            .title("Search Strings by Regex")
-            .description("Search for strings matching a regex pattern in the program (use this only if you know the string is contained in the program, otherwise use get-strings-by-similarity)")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            // Get program and parameters using helper methods
-            Program program = getProgramFromArgs(request);
-            String regexPattern = getString(request, "regexPattern");
-            PaginationParams pagination = getPaginationParams(request);
-            boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
-
-            if (regexPattern.trim().isEmpty()) {
-                return createErrorResult("Regex pattern cannot be empty");
-            }
-
-            // Compile the regex pattern
-            Pattern pattern;
-            try {
-                pattern = Pattern.compile(regexPattern);
-            } catch (PatternSyntaxException e) {
-                return createErrorResult("Invalid regex pattern: " + e.getMessage());
-            }
-
-            // Search strings matching the regex pattern
-            List<Map<String, Object>> matchingStrings = new ArrayList<>();
-            DataIterator dataIterator = program.getListing().getDefinedData(true);
-            int matchesFound = 0;
-            boolean searchComplete = true;
-
-            for (Data data : dataIterator) {
-                if (!(data.getValue() instanceof String)) {
+            String stringValue = (String) data.getValue();
+            if (pattern.matcher(stringValue).find()) {
+                if (matchesFound++ < startIndex) {
                     continue;
                 }
 
-                String stringValue = (String) data.getValue();
+                if (matchingStrings.size() >= maxResults) {
+                    searchComplete = false;
+                    break;
+                }
 
-                // Check if string matches the regex pattern
-                if (pattern.matcher(stringValue).find()) {
-                    // Skip matches before the start index
-                    if (matchesFound++ < pagination.startIndex()) {
-                        continue;
-                    }
-
-                    // Stop after we've collected maxCount matches
-                    if (matchingStrings.size() >= pagination.maxCount()) {
-                        searchComplete = false;
-                        break;
-                    }
-
-                    // Collect matching string data
-                    Map<String, Object> stringInfo = getStringInfo(data, program, includeReferencingFunctions);
-                    if (stringInfo != null) {
-                        matchingStrings.add(stringInfo);
-                    }
+                Map<String, Object> stringInfo = getStringInfo(data, program, includeReferencingFunctions);
+                if (stringInfo != null) {
+                    matchingStrings.add(stringInfo);
                 }
             }
+        }
 
-            // Create result metadata
-            Map<String, Object> searchMetadata = new HashMap<>();
-            searchMetadata.put("regexPattern", regexPattern);
-            searchMetadata.put("searchComplete", searchComplete);
-            searchMetadata.put("startIndex", pagination.startIndex());
-            searchMetadata.put("requestedCount", pagination.maxCount());
-            searchMetadata.put("actualCount", matchingStrings.size());
-            searchMetadata.put("nextStartIndex", pagination.startIndex() + matchingStrings.size());
+        Map<String, Object> searchMetadata = new HashMap<>();
+        searchMetadata.put("regexPattern", patternStr);
+        searchMetadata.put("searchComplete", searchComplete);
+        searchMetadata.put("startIndex", startIndex);
+        searchMetadata.put("requestedCount", maxResults);
+        searchMetadata.put("actualCount", matchingStrings.size());
+        searchMetadata.put("nextStartIndex", startIndex + matchingStrings.size());
 
-            // Return as a single JSON array with metadata first, then matching strings
-            List<Object> resultData = new ArrayList<>();
-            resultData.add(searchMetadata);
-            resultData.addAll(matchingStrings);
-            return createJsonResult(resultData);
-        });
+        List<Object> resultData = new ArrayList<>();
+        resultData.add(searchMetadata);
+        resultData.addAll(matchingStrings);
+        return createJsonResult(resultData);
     }
+
+    private McpSchema.CallToolResult handleStringsSimilarity(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String searchString = getOptionalString(request, "search_string", null);
+        if (searchString == null) {
+            searchString = getOptionalString(request, "searchString", null);
+        }
+        if (searchString == null) {
+            return createErrorResult("search_string is required when mode='similarity'");
+        }
+        int startIndex = getOptionalInt(request, "start_index",
+            getOptionalInt(request, "startIndex", 0));
+        int maxCount = getOptionalInt(request, "max_count",
+            getOptionalInt(request, "maxCount", 100));
+        boolean includeReferencingFunctions = getOptionalBoolean(request, "include_referencing_functions",
+            getOptionalBoolean(request, "includeReferencingFunctions", false));
+
+        if (searchString.trim().isEmpty()) {
+            return createErrorResult("search_string cannot be empty when mode='similarity'");
+        }
+
+        DataIterator dataIterator = program.getListing().getDefinedData(true);
+        List<Map<String, Object>> allStringData = new ArrayList<>();
+
+        for (Data data : dataIterator) {
+            if (data.getValue() instanceof String) {
+                Map<String, Object> stringInfo = getStringInfo(data);
+                if (stringInfo != null) {
+                    stringInfo.put(TEMP_ADDRESS_KEY, data.getAddress());
+                    allStringData.add(stringInfo);
+                }
+            }
+        }
+
+        Collections.sort(allStringData, new SimilarityComparator<Map<String, Object>>(searchString, new SimilarityComparator.StringExtractor<Map<String, Object>>() {
+            @Override
+            public String extract(Map<String, Object> item) {
+                return (String) item.get("content");
+            }
+        }));
+
+        int startIdx = Math.min(startIndex, allStringData.size());
+        int endIdx = Math.min(startIndex + maxCount, allStringData.size());
+        List<Map<String, Object>> paginatedStringData = new ArrayList<>(allStringData.subList(startIdx, endIdx));
+        boolean searchComplete = endIdx >= allStringData.size();
+
+        for (Map<String, Object> stringInfo : paginatedStringData) {
+            Address address = (Address) stringInfo.remove(TEMP_ADDRESS_KEY);
+            if (includeReferencingFunctions && address != null) {
+                List<Map<String, String>> referencingFunctions = getReferencingFunctions(program, address);
+                stringInfo.put("referencingFunctions", referencingFunctions);
+                stringInfo.put("referenceCount", referencingFunctions.size());
+            }
+        }
+
+        Map<String, Object> paginationInfo = new HashMap<>();
+        paginationInfo.put("searchComplete", searchComplete);
+        paginationInfo.put("startIndex", startIndex);
+        paginationInfo.put("requestedCount", maxCount);
+        paginationInfo.put("actualCount", paginatedStringData.size());
+        paginationInfo.put("nextStartIndex", startIndex + paginatedStringData.size());
+
+        List<Object> resultData = new ArrayList<>();
+        resultData.add(paginationInfo);
+        resultData.addAll(paginatedStringData);
+        return createJsonResult(resultData);
+    }
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
 
     /**
      * Extract string information from a Ghidra Data object

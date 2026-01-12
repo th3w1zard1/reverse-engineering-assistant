@@ -52,13 +52,13 @@ task distributeExtension {
 
 task install(type: Exec) {
     dependsOn buildExtension
-    
+
     group = "Installation"
     description = "Installs the zip package in installed Ghidra's default extension directory"
 
     workingDir ghidraInstallDir + '/Ghidra/Extensions'
     commandLine 'unzip', '-o', "${buildExtension.destinationDirectory.getAsFile().get().getAbsolutePath()}/${buildExtension.archiveBaseName.get()}.${buildExtension.archiveExtension.get()}"
-    
+
     doLast {
         logger.quiet("Installed ReVa")
     }
@@ -149,6 +149,41 @@ task integrationTest(type: Test) {
 
 	// Exclude suite classes
 	exclude '**/*Suite*'
+
+	// Clean test results before running to avoid file locking issues on Windows
+	// This handles cases where files from previous test runs are still locked
+	doFirst {
+		def testResultsDir = project.file("${project.buildDir}/test-results/integrationTest")
+		if (testResultsDir.exists()) {
+			// On Windows, file handles may remain open briefly after program.release()
+			// Try multiple times with delays to allow handles to close
+			def maxRetries = 3
+			def retryDelay = 200
+			def deleted = false
+			def lastException = null
+
+			for (int i = 0; i < maxRetries && !deleted; i++) {
+				try {
+					if (i > 0) {
+						Thread.sleep(retryDelay * i)
+					}
+					testResultsDir.deleteDir()
+					deleted = true
+				} catch (Exception e) {
+					lastException = e
+					if (i < maxRetries - 1) {
+						logger.debug("Retry ${i + 1}/${maxRetries - 1}: Could not delete test results directory, will retry...")
+					}
+				}
+			}
+
+			if (!deleted) {
+				// If still locked after retries, log warning but continue
+				// Gradle will handle the conflict or use a different location
+				logger.warn("Could not delete test results directory after ${maxRetries} attempts: ${lastException?.message ?: 'unknown error'}. Tests will continue.")
+			}
+		}
+	}
 }
 
 // Make check depend on integrationTest

@@ -45,7 +45,7 @@ public class CommentToolProviderIntegrationTest extends RevaIntegrationTestBase 
     @Before
     public void setUpTestData() throws Exception {
         programPath = program.getDomainFile().getPathname();
-        
+
         // Open the program in the tool's ProgramManager so it can be found by RevaProgramManager
         env.open(program);
 
@@ -74,11 +74,12 @@ public class CommentToolProviderIntegrationTest extends RevaIntegrationTestBase 
                 // Set a comment
                 Map<String, Object> setArgs = new HashMap<>();
                 setArgs.put("programPath", programPath);
-                setArgs.put("addressOrSymbol", addressStr);
-                setArgs.put("commentType", "eol");
+                setArgs.put("action", "set");
+                setArgs.put("address_or_symbol", addressStr);
+                setArgs.put("comment_type", "eol");
                 setArgs.put("comment", "Test comment");
 
-                CallToolRequest setRequest = new CallToolRequest("set-comment", setArgs);
+                CallToolRequest setRequest = new CallToolRequest("manage_comments", setArgs);
                 CallToolResult setResult = client.callTool(setRequest);
                 assertFalse("Set comment should succeed", setResult.isError());
 
@@ -90,9 +91,10 @@ public class CommentToolProviderIntegrationTest extends RevaIntegrationTestBase 
                 // Get the comment using the tool
                 Map<String, Object> getArgs = new HashMap<>();
                 getArgs.put("programPath", programPath);
-                getArgs.put("addressOrSymbol", addressStr);
+                getArgs.put("action", "get");
+                getArgs.put("address_or_symbol", addressStr);
 
-                CallToolRequest getRequest = new CallToolRequest("get-comments", getArgs);
+                CallToolRequest getRequest = new CallToolRequest("manage_comments", getArgs);
                 CallToolResult getResult = client.callTool(getRequest);
                 assertFalse("Get comments should succeed", getResult.isError());
 
@@ -100,7 +102,7 @@ public class CommentToolProviderIntegrationTest extends RevaIntegrationTestBase 
                 String jsonResponse = ((TextContent) getResult.content().get(0)).text();
                 JsonNode responseNode = objectMapper.readTree(jsonResponse);
                 JsonNode commentsNode = responseNode.get("comments");
-                
+
                 assertEquals("Should have one comment", 1, commentsNode.size());
                 assertEquals("Comment text should match", "Test comment", commentsNode.get(0).get("comment").asText());
                 assertEquals("Comment type should match", "eol", commentsNode.get(0).get("commentType").asText());

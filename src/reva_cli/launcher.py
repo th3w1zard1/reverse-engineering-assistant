@@ -4,9 +4,16 @@ Java ReVa launcher wrapper for Python CLI.
 Handles PyGhidra initialization, ReVa server startup, and project management.
 """
 
+from __future__ import annotations
+
 import sys
-from typing import Optional
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reva.headless import (  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
+        RevaHeadlessLauncher,
+    )
 
 
 class ReVaLauncher:
@@ -16,7 +23,11 @@ class ReVaLauncher:
     Projects are created per-session and cleaned up on exit.
     """
 
-    def __init__(self, config_file: Optional[Path] = None, use_random_port: bool = True):
+    def __init__(
+        self,
+        config_file: Path | None = None,
+        use_random_port: bool = True,
+    ):
         """
         Initialize ReVa launcher.
 
@@ -24,11 +35,11 @@ class ReVaLauncher:
             config_file: Optional configuration file path
             use_random_port: Whether to use random available port (default: True)
         """
-        self.config_file = config_file
-        self.use_random_port = use_random_port
-        self.java_launcher = None
-        self.port = None
-        self.temp_project_dir = None
+        self.config_file: Path | None = config_file
+        self.use_random_port: bool = use_random_port
+        self.java_launcher: RevaHeadlessLauncher | None = None
+        self.port: int | None = None
+        self.temp_project_dir: Path | None = None
 
     def start(self) -> int:
         """
@@ -42,10 +53,16 @@ class ReVaLauncher:
         """
         try:
             # Import ReVa launcher (PyGhidra already initialized by CLI)
-            from reva.headless import RevaHeadlessLauncher
-            from java.io import File
-            from .project_manager import ProjectManager
             import tempfile
+
+            from java.io import (  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
+                File,
+            )
+            from reva.headless import (  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
+                RevaHeadlessLauncher,
+            )
+
+            from .project_manager import ProjectManager
 
             # Stdio mode: ephemeral projects in temp directory (session-scoped, auto-cleanup)
             # Keeps working directory clean - no .reva creation in cwd
@@ -69,7 +86,7 @@ class ReVaLauncher:
                     java_config_file,
                     self.use_random_port,
                     java_project_location,
-                    project_name
+                    project_name,
                 )
             else:
                 print("Using default configuration", file=sys.stderr)
@@ -79,28 +96,29 @@ class ReVaLauncher:
                     True,  # autoInitializeGhidra
                     self.use_random_port,
                     java_project_location,
-                    project_name
+                    project_name,
                 )
 
             # Start server
             print("Starting ReVa MCP server...", file=sys.stderr)
-            self.java_launcher.start()
+            self.java_launcher.start()  # pyright: ignore[reportOptionalMemberAccess]
 
             # Wait for server to be ready
-            if self.java_launcher.waitForServer(30000):
-                self.port = self.java_launcher.getPort()
+            if self.java_launcher.waitForServer(30000):  # pyright: ignore[reportOptionalMemberAccess]
+                self.port = self.java_launcher.getPort()  # pyright: ignore[reportOptionalMemberAccess]
                 print(f"ReVa server ready on port {self.port}", file=sys.stderr)
-                return self.port
+                return self.port  # pyright: ignore[reportReturnType]
             else:
                 raise RuntimeError("Server failed to start within timeout")
 
         except Exception as e:
             print(f"Error starting ReVa server: {e}", file=sys.stderr)
             import traceback
+
             traceback.print_exc(file=sys.stderr)
             raise
 
-    def get_port(self) -> Optional[int]:
+    def get_port(self) -> int | None:
         """
         Get the server port.
 
@@ -136,8 +154,12 @@ class ReVaLauncher:
         if self.temp_project_dir and self.temp_project_dir.exists():
             try:
                 import shutil
+
                 shutil.rmtree(self.temp_project_dir)
-                print(f"Cleaned up temporary project directory: {self.temp_project_dir}", file=sys.stderr)
+                print(
+                    f"Cleaned up temporary project directory: {self.temp_project_dir}",
+                    file=sys.stderr,
+                )
             except Exception as e:
                 print(f"Error cleaning up temporary directory: {e}", file=sys.stderr)
             finally:

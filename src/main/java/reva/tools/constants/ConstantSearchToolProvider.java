@@ -47,157 +47,118 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        registerFindConstantUsesTool();
-        registerFindConstantsInRangeTool();
-        registerListCommonConstantsTool();
+        registerSearchConstantsTool();
     }
 
     // ========================================================================
     // Tool Registration
     // ========================================================================
 
-    private void registerFindConstantUsesTool() {
+    private void registerSearchConstantsTool() {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
+        ));
+        properties.put("mode", Map.of(
+            "type", "string",
+            "description", "Search mode: 'specific', 'range', or 'common'",
+            "enum", List.of("specific", "range", "common")
         ));
         properties.put("value", Map.of(
             "type", "string",
-            "description", "The constant value to search for. Supports decimal (123), hex (0x7b), " +
-                "negative (-1), or named constants. For hex, use 0x prefix."
+            "description", "Constant value to search for when mode='specific' (supports hex with 0x, decimal, negative)"
         ));
-        properties.put("maxResults", Map.of(
+        properties.put("min_value", Map.of(
+            "type", "string",
+            "description", "Minimum value when mode='range' or filter minimum when mode='common' (inclusive, supports hex/decimal)"
+        ));
+        properties.put("max_value", Map.of(
+            "type", "string",
+            "description", "Maximum value when mode='range' (inclusive, supports hex/decimal)"
+        ));
+        properties.put("max_results", Map.of(
             "type", "integer",
-            "description", "Maximum number of results to return (default: 500)",
+            "description", "Maximum number of results to return when mode='specific' or 'range'",
             "default", DEFAULT_MAX_RESULTS
         ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-constant-uses")
-            .title("Find Constant Uses")
-            .description("Find all locations where a specific constant value is used as an " +
-                "immediate operand in instructions. Useful for finding magic numbers, " +
-                "error codes, buffer sizes, or other significant values.")
-            .inputSchema(createSchema(properties, List.of("programPath", "value")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            String valueStr = getString(request, "value");
-            int maxResults = getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS);
-
-            long value;
-            try {
-                value = parseConstantValue(valueStr);
-            } catch (NumberFormatException e) {
-                return createErrorResult("Invalid constant value: '" + valueStr +
-                    "'. Use decimal (123), hex (0x7b), or negative (-1) format.");
-            }
-
-            return findConstantUses(program, value, maxResults);
-        });
-    }
-
-    private void registerFindConstantsInRangeTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("minValue", Map.of(
-            "type", "string",
-            "description", "Minimum value (inclusive). Supports decimal or hex (0x) format."
-        ));
-        properties.put("maxValue", Map.of(
-            "type", "string",
-            "description", "Maximum value (inclusive). Supports decimal or hex (0x) format."
-        ));
-        properties.put("maxResults", Map.of(
-            "type", "integer",
-            "description", "Maximum number of results to return (default: 500)",
-            "default", DEFAULT_MAX_RESULTS
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-constants-in-range")
-            .title("Find Constants in Range")
-            .description("Find all constant values within a specified range. Useful for finding " +
-                "error codes (e.g., 400-599 for HTTP errors), enum values, or constants " +
-                "that fall within expected bounds.")
-            .inputSchema(createSchema(properties, List.of("programPath", "minValue", "maxValue")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            String minStr = getString(request, "minValue");
-            String maxStr = getString(request, "maxValue");
-            int maxResults = getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS);
-
-            long minValue, maxValue;
-            try {
-                minValue = parseConstantValue(minStr);
-                maxValue = parseConstantValue(maxStr);
-            } catch (NumberFormatException e) {
-                return createErrorResult("Invalid value format. Use decimal (123) or hex (0x7b).");
-            }
-
-            if (minValue > maxValue) {
-                return createErrorResult("minValue must be less than or equal to maxValue");
-            }
-
-            return findConstantsInRange(program, minValue, maxValue, maxResults);
-        });
-    }
-
-    private void registerListCommonConstantsTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("topN", Map.of(
-            "type", "integer",
-            "description", "Number of most common constants to return (default: 50)",
-            "default", DEFAULT_TOP_CONSTANTS
-        ));
-        properties.put("minValue", Map.of(
-            "type", "string",
-            "description", "Optional minimum value to consider (filters out small constants)"
-        ));
-        properties.put("includeSmallValues", Map.of(
+        properties.put("include_small_values", Map.of(
             "type", "boolean",
-            "description", "Include small values (0-255) which are often noise (default: false)",
+            "description", "Include small values (0-255) which are often noise when mode='common'",
             "default", false
         ));
+        properties.put("top_n", Map.of(
+            "type", "integer",
+            "description", "Number of most common constants to return when mode='common'",
+            "default", DEFAULT_TOP_CONSTANTS
+        ));
+
+        List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-common-constants")
-            .title("List Common Constants")
-            .description("Find the most frequently used constant values in the program. " +
-                "Helps identify important magic numbers, sizes, flags, or other significant values. " +
-                "By default filters out small values (0-255) which are often noise.")
-            .inputSchema(createSchema(properties, List.of("programPath")))
+            .name("search_constants")
+            .title("Search Constants")
+            .description("Find specific constants, constants in ranges, or list the most common constants in the program.")
+            .inputSchema(createSchema(properties, required))
             .build();
 
         registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            int topN = getOptionalInt(request, "topN", DEFAULT_TOP_CONSTANTS);
-            boolean includeSmallValues = getOptionalBoolean(request, "includeSmallValues", false);
+            try {
+                Program program = getProgramFromArgs(request);
+                String mode = getString(request, "mode");
 
-            String minValueStr = getOptionalString(request, "minValue", null);
-            Long minValue = null;  // null means no explicit minimum
-            if (minValueStr != null && !minValueStr.isEmpty()) {
-                try {
-                    minValue = parseConstantValue(minValueStr);
-                } catch (NumberFormatException e) {
-                    return createErrorResult("Invalid minValue format.");
+                switch (mode) {
+                    case "specific":
+                        String valueStr = getString(request, "value");
+                        long value;
+                        try {
+                            value = parseConstantValue(valueStr);
+                        } catch (NumberFormatException e) {
+                            return createErrorResult("Invalid constant value: '" + valueStr +
+                                "'. Use decimal (123), hex (0x7b), or negative (-1) format.");
+                        }
+                        int maxResults = getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS);
+                        return findConstantUses(program, value, maxResults);
+                    case "range":
+                        String minStr = getString(request, "min_value");
+                        String maxStr = getString(request, "max_value");
+                        long minValue, maxValue;
+                        try {
+                            minValue = parseConstantValue(minStr);
+                            maxValue = parseConstantValue(maxStr);
+                        } catch (NumberFormatException e) {
+                            return createErrorResult("Invalid value format. Use decimal (123) or hex (0x7b).");
+                        }
+                        if (minValue > maxValue) {
+                            return createErrorResult("min_value must be less than or equal to max_value");
+                        }
+                        int maxResultsRange = getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS);
+                        return findConstantsInRange(program, minValue, maxValue, maxResultsRange);
+                    case "common":
+                        int topN = getOptionalInt(request, "top_n", DEFAULT_TOP_CONSTANTS);
+                        boolean includeSmallValues = getOptionalBoolean(request, "include_small_values", false);
+                        String minValueStr = getOptionalString(request, "min_value", null);
+                        Long minValueCommon = null;
+                        if (minValueStr != null && !minValueStr.isEmpty()) {
+                            try {
+                                minValueCommon = parseConstantValue(minValueStr);
+                            } catch (NumberFormatException e) {
+                                return createErrorResult("Invalid min_value format.");
+                            }
+                        }
+                        return listCommonConstants(program, topN, minValueCommon, includeSmallValues);
+                    default:
+                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: specific, range, common");
                 }
+            } catch (IllegalArgumentException e) {
+                return createErrorResult(e.getMessage());
+            } catch (Exception e) {
+                logError("Error in search_constants", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
             }
-
-            return listCommonConstants(program, topN, minValue, includeSmallValues);
         });
     }
+
 
     // ========================================================================
     // Core Analysis Methods

@@ -48,6 +48,28 @@ public class MemoryUtil {
     }
 
     /**
+     * Format a byte array as an ASCII string (non-printable chars shown as '.')
+     * @param bytes The byte array
+     * @return An ASCII string representation
+     */
+    public static String formatAsciiString(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+
+        StringBuilder asciiBuilder = new StringBuilder();
+        for (byte b : bytes) {
+            char c = (char) (b & 0xFF);
+            if (c >= 32 && c <= 126) {
+                asciiBuilder.append(c);
+            } else {
+                asciiBuilder.append('.');
+            }
+        }
+        return asciiBuilder.toString();
+    }
+
+    /**
      * Convert a byte array to a list of integer values (0-255)
      * @param bytes The byte array
      * @return List of integer values

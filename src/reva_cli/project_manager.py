@@ -5,16 +5,25 @@ Handles creation and management of Ghidra projects in .reva/projects/
 within the current working directory, similar to how .git or .vscode work.
 """
 
-import os
+from __future__ import annotations
+
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ghidra.base.project import (  # pyright: ignore[reportMissingModuleSource]
+        GhidraProject,
+    )
+    from ghidra.program.model.listing import (  # pyright: ignore[reportMissingModuleSource]
+        Program,
+    )
 
 
 class ProjectManager:
     """Manages Ghidra project creation and lifecycle for ReVa CLI."""
 
-    def __init__(self, projects_dir: Optional[Path] = None):
+    def __init__(self, projects_dir: Path | None = None):
         """
         Initialize project manager.
 
@@ -27,8 +36,8 @@ class ProjectManager:
             self.projects_dir = Path(projects_dir)
 
         # Don't create directory here - defer until first tool use (lazy initialization)
-        self.project = None
-        self._opened_programs = []
+        self.project: GhidraProject | None = None
+        self._opened_programs: list[Program] = []
         self._initialized = False
 
     def _ensure_initialized(self):
@@ -62,7 +71,9 @@ class ProjectManager:
 
         # Sanitize project name for Ghidra
         # Remove invalid characters and replace with underscores
-        sanitized = "".join(c if c.isalnum() or c in "._-" else "_" for c in project_name)
+        sanitized = "".join(
+            c if c.isalnum() or c in "._-" else "_" for c in project_name
+        )
 
         # Ensure name is not empty
         if not sanitized or sanitized.startswith("."):
@@ -70,7 +81,7 @@ class ProjectManager:
 
         return sanitized
 
-    def get_or_create_project(self) -> Tuple[str, Path]:
+    def get_or_create_project(self) -> tuple[str, Path]:
         """
         Get or create Ghidra project for current working directory.
 
@@ -85,7 +96,7 @@ class ProjectManager:
 
         return project_name, project_path
 
-    def open_project(self) -> "Project":
+    def open_project(self) -> GhidraProject:
         """
         Open or create Ghidra project using PyGhidra.
 
@@ -96,8 +107,12 @@ class ProjectManager:
             ImportError: If Ghidra/PyGhidra not available
         """
         try:
-            from ghidra.base.project import GhidraProject
-            from ghidra.framework.model import ProjectLocator
+            from ghidra.base.project import (  # pyright: ignore[reportMissingModuleSource]
+                GhidraProject,
+            )
+            from ghidra.framework.model import (  # pyright: ignore[reportMissingModuleSource]
+                ProjectLocator,
+            )
         except ImportError as e:
             raise ImportError(
                 "Ghidra modules not available. Ensure PyGhidra is installed and Ghidra is initialized."
@@ -109,17 +124,29 @@ class ProjectManager:
         project_locator = ProjectLocator(str(project_path), project_name)
 
         # Try to open existing project or create new one
-        if project_locator.getProjectDir().exists() and project_locator.getMarkerFile().exists():
+        if (
+            project_locator.getProjectDir().exists()
+            and project_locator.getMarkerFile().exists()
+        ):
             print(f"Opening existing project: {project_name}", file=sys.stderr)
-            self.project = GhidraProject.openProject(str(project_path), project_name, True)
+            self.project = GhidraProject.openProject(
+                str(project_path), project_name, True
+            )
         else:
-            print(f"Creating new project: {project_name} at {project_path}", file=sys.stderr)
+            print(
+                f"Creating new project: {project_name} at {project_path}",
+                file=sys.stderr,
+            )
             project_path.mkdir(parents=True, exist_ok=True)
-            self.project = GhidraProject.createProject(str(project_path), project_name, False)
+            self.project = GhidraProject.createProject(
+                str(project_path), project_name, False
+            )
 
         return self.project
 
-    def import_binary(self, binary_path: Path, program_name: Optional[str] = None):
+    def import_binary(
+        self, binary_path: Path, program_name: str | None = None
+    ) -> Program | None:
         """
         Import a binary file into the opened project.
 
@@ -144,12 +171,12 @@ class ProjectManager:
             print(f"Importing binary: {binary_path} as {program_name}", file=sys.stderr)
 
             # Use GhidraProject's importProgram method (auto-detects language/loader)
-            program = self.project.importProgram(str(binary_path))
+            program = self.project.importProgram(str(binary_path))  # pyright: ignore[reportOptionalMemberAccess, reportArgumentType]
 
             if program:
                 # Save with custom name if specified
                 if program_name != binary_path.name:
-                    self.project.saveAs(program, "/", program_name, True)
+                    self.project.saveAs(program, "/", program_name, True)  # pyright: ignore[reportOptionalMemberAccess]
 
                 self._opened_programs.append(program)
                 print(f"Successfully imported: {program_name}", file=sys.stderr)
@@ -161,6 +188,7 @@ class ProjectManager:
         except Exception as e:
             print(f"Error importing binary {binary_path}: {e}", file=sys.stderr)
             import traceback
+
             traceback.print_exc(file=sys.stderr)
             return None
 

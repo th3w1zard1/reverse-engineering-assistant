@@ -99,7 +99,7 @@ public abstract class RevaIntegrationTestBase extends AbstractGhidraHeadedIntegr
         // Check if an MCP server is already running from the main plugin
         McpServerManager existingServerManager = reva.util.RevaInternalServiceRegistry.getService(McpServerManager.class);
         ConfigManager existingConfigManager = reva.util.RevaInternalServiceRegistry.getService(ConfigManager.class);
-        
+
         if (existingServerManager != null && existingServerManager.isServerRunning()) {
             // If there's already a running server, reuse it instead of shutting it down
             System.out.println("Found existing MCP server, reusing it for tests...");
@@ -107,7 +107,7 @@ public abstract class RevaIntegrationTestBase extends AbstractGhidraHeadedIntegr
             sharedConfigManager = existingConfigManager;
             return;
         }
-        
+
         // Clear any existing services if they're not running
         if (existingServerManager != null) {
             reva.util.RevaInternalServiceRegistry.unregisterService(McpServerManager.class);
@@ -320,6 +320,8 @@ public abstract class RevaIntegrationTestBase extends AbstractGhidraHeadedIntegr
         program = createDefaultProgram(getName(), "x86:LE:32:default", this);
 
         // Add a memory block to the program for tests that expect it
+        // Note: Memory blocks created with createInitializedBlock are not executable by default
+        // Tests that need executable memory should create their own executable blocks
         if (program.getMemory().getBlocks().length == 0) {
             int txId = program.startTransaction("Add test memory");
             try {

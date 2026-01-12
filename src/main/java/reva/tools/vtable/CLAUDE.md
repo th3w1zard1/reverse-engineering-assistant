@@ -8,41 +8,49 @@ The `reva.tools.vtable` package provides tools for analyzing virtual function ta
 
 ## Key Tools for Vtable Analysis
 
-The VtableToolProvider implements three main tools:
+### analyze_vtables
 
-### 1. analyze-vtable
-- **Purpose**: Analyze a vtable at a given address to extract function pointers
-- **Parameters**:
-  - `programPath` (required)
-  - `vtableAddress` (required) - Address of the vtable to analyze
-  - `maxEntries` (optional, default: 200, max: 1000) - Maximum vtable entries to read
-- **Returns**: JSON object with vtable structure, slot indices, offsets, and function information
-- **Use Case**: Understanding vtable layout and discovering virtual methods
+**Consolidated tool that replaces:** `analyze-vtable`, `find-vtable-callers`, `find-vtables-containing-function`
 
-### 2. find-vtable-callers
-- **Purpose**: Find all indirect calls that could invoke a function via its vtable slot
-- **Parameters**:
-  - `programPath` (required)
-  - `functionAddress` (required) - Address or name of the virtual function
-  - `vtableAddress` (optional) - Specific vtable address (will search if not provided)
-  - `maxResults` (optional, default: 500, max: 10000) - Maximum caller results
-- **Returns**: JSON with vtable slot information and potential caller sites
-- **Use Case**: Discovering where virtual methods are actually invoked
-- **Note**: Offset patterns optimized for x86/x64 instruction formats
+Analyze vtables, find vtable callers, or find vtables containing a specific function.
 
-### 3. find-vtables-containing-function
-- **Purpose**: Find all vtables that contain a pointer to a given function
-- **Parameters**:
-  - `programPath` (required)
-  - `functionAddress` (required) - Address or name of function to search for
-- **Returns**: JSON with all vtables containing the function, slot indices, and possible class names
-- **Use Case**: Identifying which classes implement a particular virtual method
+**Parameters:**
+- `programPath` (required) - Path to the program in the Ghidra Project
+- `mode` (required) - Analysis mode: 'analyze', 'callers', or 'containing'
+- `vtable_address` (required for mode='analyze', optional for mode='callers') - Address of the vtable to analyze
+- `vtableAddress` (alternative parameter name)
+- `function_address` (required for mode='callers'/'containing') - Address or name of the virtual function
+- `functionAddress` (alternative parameter name)
+- `max_entries` (optional for mode='analyze', default: 200, max: 1000) - Maximum number of vtable entries to read
+- `maxEntries` (alternative parameter name)
+- `max_results` (optional for mode='callers', default: 500, max: 10000) - Maximum number of caller results
+- `maxResults` (alternative parameter name)
+
+**Modes:**
+
+1. **mode='analyze'** - Analyze a vtable at a given address to extract function pointers
+   - **Required**: `vtable_address`
+   - **Optional**: `max_entries` (default: 200)
+   - **Returns**: JSON object with vtable structure, slot indices, offsets, function information, and structure metadata
+   - **Use Case**: Understanding vtable layout and discovering virtual methods
+
+2. **mode='callers'** - Find all indirect calls that could invoke a function via its vtable slot
+   - **Required**: `function_address`
+   - **Optional**: `vtable_address` (searches all vtables if not provided), `max_results` (default: 500)
+   - **Returns**: JSON with vtable slot information and potential caller sites
+   - **Use Case**: Discovering where virtual methods are actually invoked
+   - **Note**: Offset patterns optimized for x86/x64 instruction formats
+
+3. **mode='containing'** - Find all vtables that contain a pointer to a given function
+   - **Required**: `function_address`
+   - **Returns**: JSON with all vtables containing the function, slot indices, offsets, and possible class names
+   - **Use Case**: Identifying which classes implement a particular virtual method
 
 ## Vtable Detection and Analysis Patterns
 
 ### Structure-Based vs Memory-Based Analysis
 
-The `analyze-vtable` tool uses two analysis strategies:
+The `analyze_vtables` tool (mode='analyze') uses two analysis strategies:
 
 **Structure-Based Analysis** (preferred when available):
 ```java
@@ -229,7 +237,7 @@ private List<VtableSlotInfo> findVtableSlotsForFunction(Program program, Address
 
 ## Response Formats
 
-### analyze-vtable Response
+### analyze_vtables (mode='analyze') Response
 ```json
 {
     "programPath": "/binary.exe",
@@ -260,7 +268,7 @@ When no structure is defined:
 }
 ```
 
-### find-vtable-callers Response
+### analyze_vtables (mode='callers') Response
 ```json
 {
     "programPath": "/binary.exe",
@@ -288,7 +296,7 @@ When no structure is defined:
 }
 ```
 
-### find-vtables-containing-function Response
+### analyze_vtables (mode='containing') Response
 ```json
 {
     "programPath": "/binary.exe",
@@ -372,16 +380,16 @@ for (int i = 0; i < 5; i++) {
 ## Common Usage Patterns
 
 ### Virtual Method Investigation Workflow
-1. `analyze-vtable` at a known vtable address to understand structure
-2. `find-vtables-containing-function` for a specific virtual method
-3. `find-vtable-callers` to discover all potential call sites
+1. `analyze_vtables` with mode='analyze' at a known vtable address to understand structure
+2. `analyze_vtables` with mode='containing' for a specific virtual method
+3. `analyze_vtables` with mode='callers' to discover all potential call sites
 4. Verify each call site manually to confirm vtable usage
 
 ### Class Hierarchy Discovery
 1. Identify vtable addresses through symbols or RTTI
-2. Use `analyze-vtable` on each discovered vtable
+2. Use `analyze_vtables` with mode='analyze' on each discovered vtable
 3. Compare vtable structures to identify inheritance relationships
-4. Use `find-vtables-containing-function` to track method overrides
+4. Use `analyze_vtables` with mode='containing' to track method overrides
 
 ## Important Notes
 

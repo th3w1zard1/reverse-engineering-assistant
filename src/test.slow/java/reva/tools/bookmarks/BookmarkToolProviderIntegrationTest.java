@@ -45,7 +45,7 @@ public class BookmarkToolProviderIntegrationTest extends RevaIntegrationTestBase
     @Before
     public void setUpTestData() throws Exception {
         programPath = program.getDomainFile().getPathname();
-        
+
         // Open the program in the tool's ProgramManager so it can be found by RevaProgramManager
         env.open(program);
 
@@ -74,12 +74,13 @@ public class BookmarkToolProviderIntegrationTest extends RevaIntegrationTestBase
                 // Set a bookmark
                 Map<String, Object> setArgs = new HashMap<>();
                 setArgs.put("programPath", programPath);
-                setArgs.put("addressOrSymbol", addressStr);
+                setArgs.put("action", "set");
+                setArgs.put("address_or_symbol", addressStr);
                 setArgs.put("type", "Note");
                 setArgs.put("category", "Analysis");
                 setArgs.put("comment", "Test bookmark");
 
-                CallToolRequest setRequest = new CallToolRequest("set-bookmark", setArgs);
+                CallToolRequest setRequest = new CallToolRequest("manage_bookmarks", setArgs);
                 CallToolResult setResult = client.callTool(setRequest);
                 assertFalse("Set bookmark should succeed", setResult.isError());
 
@@ -92,9 +93,10 @@ public class BookmarkToolProviderIntegrationTest extends RevaIntegrationTestBase
                 // Get the bookmark using the tool
                 Map<String, Object> getArgs = new HashMap<>();
                 getArgs.put("programPath", programPath);
-                getArgs.put("addressOrSymbol", addressStr);
+                getArgs.put("action", "get");
+                getArgs.put("address_or_symbol", addressStr);
 
-                CallToolRequest getRequest = new CallToolRequest("get-bookmarks", getArgs);
+                CallToolRequest getRequest = new CallToolRequest("manage_bookmarks", getArgs);
                 CallToolResult getResult = client.callTool(getRequest);
                 assertFalse("Get bookmarks should succeed", getResult.isError());
 
@@ -102,7 +104,7 @@ public class BookmarkToolProviderIntegrationTest extends RevaIntegrationTestBase
                 String jsonResponse = ((TextContent) getResult.content().get(0)).text();
                 JsonNode responseNode = objectMapper.readTree(jsonResponse);
                 JsonNode bookmarksNode = responseNode.get("bookmarks");
-                
+
                 assertEquals("Should have one bookmark", 1, bookmarksNode.size());
                 assertEquals("Bookmark comment should match", "Test bookmark", bookmarksNode.get(0).get("comment").asText());
                 assertEquals("Bookmark type should match", "Note", bookmarksNode.get(0).get("type").asText());

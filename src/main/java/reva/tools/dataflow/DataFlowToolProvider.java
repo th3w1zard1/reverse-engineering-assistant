@@ -53,123 +53,88 @@ public class DataFlowToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        registerTraceBackwardTool();
-        registerTraceForwardTool();
-        registerFindVariableAccessesTool();
+        registerAnalyzeDataFlowTool();
     }
 
     // ========================================================================
     // Tool Registration
     // ========================================================================
 
-    private void registerTraceBackwardTool() {
+    private void registerAnalyzeDataFlowTool() {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
-        properties.put("address", Map.of(
-            "type", "string",
-            "description", "Address within a function to trace backward from"
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("trace-data-flow-backward")
-            .title("Trace Data Flow Backward")
-            .description("Trace where a value at an address comes from. " +
-                "Follows the data dependency chain backward to find origins " +
-                "(constants, parameters, memory loads, etc.).")
-            .inputSchema(createSchema(properties, List.of("programPath", "address")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address address = getAddressFromArgs(request, program, "address");
-
-            Function function = program.getFunctionManager().getFunctionContaining(address);
-            if (function == null) {
-                return createErrorResult("No function contains address: " +
-                    AddressUtil.formatAddress(address));
-            }
-
-            return traceDataFlow(program, function, address, SliceDirection.BACKWARD);
-        });
-    }
-
-    private void registerTraceForwardTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("address", Map.of(
-            "type", "string",
-            "description", "Address within a function to trace forward from"
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("trace-data-flow-forward")
-            .title("Trace Data Flow Forward")
-            .description("Trace where a value at an address flows to. " +
-                "Follows the data dependency chain forward to find uses " +
-                "(stores, function calls, returns, etc.).")
-            .inputSchema(createSchema(properties, List.of("programPath", "address")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address address = getAddressFromArgs(request, program, "address");
-
-            Function function = program.getFunctionManager().getFunctionContaining(address);
-            if (function == null) {
-                return createErrorResult("No function contains address: " +
-                    AddressUtil.formatAddress(address));
-            }
-
-            return traceDataFlow(program, function, address, SliceDirection.FORWARD);
-        });
-    }
-
-    private void registerFindVariableAccessesTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("functionAddress", Map.of(
+        properties.put("function_address", Map.of(
             "type", "string",
             "description", "Address of the function to analyze"
         ));
-        properties.put("variableName", Map.of(
+        properties.put("start_address", Map.of(
             "type", "string",
-            "description", "Name of the variable to find accesses for"
+            "description", "Address within the function to trace from when direction='backward' or 'forward'"
+        ));
+        properties.put("variable_name", Map.of(
+            "type", "string",
+            "description", "Name of the variable to find accesses for when direction='variable_accesses'"
+        ));
+        properties.put("direction", Map.of(
+            "type", "string",
+            "description", "Analysis direction: 'backward', 'forward', or 'variable_accesses'",
+            "enum", List.of("backward", "forward", "variable_accesses")
         ));
 
+        List<String> required = List.of("programPath", "function_address", "direction");
+
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-variable-accesses")
-            .title("Find Variable Accesses")
-            .description("Find all reads and writes to a variable within a function. " +
-                "Useful for understanding how a variable is used throughout a function.")
-            .inputSchema(createSchema(properties, List.of("programPath", "functionAddress", "variableName")))
+            .name("analyze_data_flow")
+            .title("Analyze Data Flow")
+            .description("Trace data flow backward (origins), forward (uses), or find variable accesses within a function.")
+            .inputSchema(createSchema(properties, required))
             .build();
 
         registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address functionAddress = getAddressFromArgs(request, program, "functionAddress");
-            String variableName = getString(request, "variableName");
+            try {
+                Program program = getProgramFromArgs(request);
+                String direction = getString(request, "direction");
 
-            Function function = program.getFunctionManager().getFunctionAt(functionAddress);
-            if (function == null) {
-                function = program.getFunctionManager().getFunctionContaining(functionAddress);
-            }
-            if (function == null) {
-                return createErrorResult("No function at address: " +
-                    AddressUtil.formatAddress(functionAddress));
-            }
+                Address functionAddress = getAddressFromArgs(request, program, "function_address");
+                Function function = program.getFunctionManager().getFunctionAt(functionAddress);
+                if (function == null) {
+                    function = program.getFunctionManager().getFunctionContaining(functionAddress);
+                }
+                if (function == null) {
+                    return createErrorResult("No function found at address: " + AddressUtil.formatAddress(functionAddress));
+                }
 
-            return findVariableAccesses(program, function, variableName);
+                switch (direction) {
+                    case "backward":
+                    case "forward":
+                        String startAddressStr = getString(request, "start_address");
+                        Address startAddress = AddressUtil.resolveAddressOrSymbol(program, startAddressStr);
+                        if (startAddress == null) {
+                            return createErrorResult("Could not resolve start_address: " + startAddressStr);
+                        }
+                        if (!function.getBody().contains(startAddress)) {
+                            return createErrorResult("start_address is not within the function");
+                        }
+                        SliceDirection sliceDir = direction.equals("backward") ? SliceDirection.BACKWARD : SliceDirection.FORWARD;
+                        return traceDataFlow(program, function, startAddress, sliceDir);
+                    case "variable_accesses":
+                        String variableName = getString(request, "variable_name");
+                        return findVariableAccesses(program, function, variableName);
+                    default:
+                        return createErrorResult("Invalid direction: " + direction + ". Valid directions are: backward, forward, variable_accesses");
+                }
+            } catch (IllegalArgumentException e) {
+                return createErrorResult(e.getMessage());
+            } catch (Exception e) {
+                logError("Error in analyze_data_flow", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
+            }
         });
     }
+
 
     // ========================================================================
     // Core Analysis Methods

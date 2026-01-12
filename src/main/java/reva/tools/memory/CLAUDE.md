@@ -8,8 +8,37 @@ The `reva.tools.memory` package provides MCP tools for memory analysis and manip
 
 ## Key Tools
 
-- `get-memory-blocks` - List all memory blocks with properties and permissions
-- `read-memory` - Read memory content at specific addresses with flexible formatting
+### inspect_memory
+
+**Consolidated tool that replaces:** `get-memory-blocks`, `read-memory`, `get-data-at-address`, `list-data-items`, `list-segments`
+
+Inspect memory blocks, read memory, get data information, list data items, or list memory segments.
+
+**Parameters:**
+- `programPath` (required) - Path to the program in the Ghidra Project
+- `mode` (required) - Inspection mode: 'blocks', 'read', 'data_at', 'data_items', or 'segments'
+- `address` (required for mode='read' or 'data_at') - Address to read from or query
+- `length` (optional for mode='read', default: 16) - Number of bytes to read
+- `offset` (optional for mode='data_items' or 'segments', default: 0) - Pagination offset
+- `limit` (optional for mode='data_items' or 'segments', default: 100) - Maximum number of items to return
+
+**Modes:**
+
+1. **mode='blocks'** - List all memory blocks with properties and permissions
+   - **Returns**: List of memory blocks with properties (R/W/X, size, initialized, mapped, overlay, volatile)
+
+2. **mode='read'** - Read memory content at specific addresses
+   - **Returns**: Hex dump of memory content with ASCII representation
+   - **Length**: Clamped to maximum of 10000 bytes
+
+3. **mode='data_at'** - Get data information at a specific address
+   - **Returns**: Data type, size, label, value information, hex bytes, and representation
+
+4. **mode='data_items'** - List defined data labels and their values
+   - **Returns**: Paginated list of data items with address, data type, length, representation, label, and value
+
+5. **mode='segments'** - List all memory segments in the program
+   - **Returns**: Paginated list of memory segments (same as blocks but with pagination support)
 
 ## Memory Block Analysis
 

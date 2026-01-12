@@ -33,18 +33,18 @@ import io.modelcontextprotocol.spec.McpError;
  * functionality requires a Ghidra environment.
  */
 public class DecompilerToolProviderTest {
-    
+
     @Mock
     private McpSyncServer mockServer;
-    
+
     private DecompilerToolProvider toolProvider;
-    
+
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         toolProvider = new DecompilerToolProvider(mockServer);
     }
-    
+
     @Test
     public void testRegisterTools() throws McpError {
         // Test that tools can be registered without throwing exceptions
@@ -54,7 +54,7 @@ public class DecompilerToolProviderTest {
             fail("Tool registration should not throw exception: " + e.getMessage());
         }
     }
-    
+
     @Test
     public void testValidateChangeDataTypesParameters() {
         // Test parameter validation for the change-variable-datatypes tool
@@ -62,14 +62,14 @@ public class DecompilerToolProviderTest {
         validArgs.put("programPath", "/test/program");
         validArgs.put("functionName", "testFunction");
         validArgs.put("datatypeMappings", Map.of("var1", "int", "var2", "char*"));
-        
+
         // Valid parameters should not throw
         try {
             validateChangeDataTypesArgs(validArgs);
         } catch (Exception e) {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
-        
+
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
         missingProgram.remove("programPath");
@@ -79,7 +79,7 @@ public class DecompilerToolProviderTest {
         } catch (IllegalArgumentException e) {
             // Expected
         }
-        
+
         // Missing functionName should throw
         Map<String, Object> missingFunction = new HashMap<>(validArgs);
         missingFunction.remove("functionName");
@@ -89,7 +89,7 @@ public class DecompilerToolProviderTest {
         } catch (IllegalArgumentException e) {
             // Expected
         }
-        
+
         // Missing datatypeMappings should throw
         Map<String, Object> missingMappings = new HashMap<>(validArgs);
         missingMappings.remove("datatypeMappings");
@@ -99,7 +99,7 @@ public class DecompilerToolProviderTest {
         } catch (IllegalArgumentException e) {
             // Expected
         }
-        
+
         // Empty datatypeMappings should throw
         Map<String, Object> emptyMappings = new HashMap<>(validArgs);
         emptyMappings.put("datatypeMappings", new HashMap<>());
@@ -110,7 +110,7 @@ public class DecompilerToolProviderTest {
             // Expected
         }
     }
-    
+
     @Test
     public void testValidateRenameVariablesParameters() {
         // Test parameter validation for the rename-variables tool
@@ -118,14 +118,14 @@ public class DecompilerToolProviderTest {
         validArgs.put("programPath", "/test/program");
         validArgs.put("functionName", "testFunction");
         validArgs.put("variableMappings", Map.of("oldVar", "newVar"));
-        
+
         // Valid parameters should not throw
         try {
             validateRenameVariablesArgs(validArgs);
         } catch (Exception e) {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
-        
+
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
         missingProgram.remove("programPath");
@@ -136,21 +136,21 @@ public class DecompilerToolProviderTest {
             // Expected
         }
     }
-    
+
     @Test
     public void testValidateGetDecompiledFunctionParameters() {
         // Test parameter validation for the get-decompiled-function tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("functionName", "testFunction");
-        
+
         // Valid parameters should not throw
         try {
             validateGetDecompiledFunctionArgs(validArgs);
         } catch (Exception e) {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
-        
+
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
         missingProgram.remove("programPath");
@@ -160,7 +160,7 @@ public class DecompilerToolProviderTest {
         } catch (IllegalArgumentException e) {
             // Expected
         }
-        
+
         // Missing functionName should throw
         Map<String, Object> missingFunction = new HashMap<>(validArgs);
         missingFunction.remove("functionName");
@@ -171,7 +171,7 @@ public class DecompilerToolProviderTest {
             // Expected
         }
     }
-    
+
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateChangeDataTypesArgs(Map<String, Object> args) {
         if (args.get("programPath") == null) {
@@ -186,7 +186,7 @@ public class DecompilerToolProviderTest {
             throw new IllegalArgumentException("No datatype mappings provided");
         }
     }
-    
+
     private void validateRenameVariablesArgs(Map<String, Object> args) {
         if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
@@ -200,7 +200,7 @@ public class DecompilerToolProviderTest {
             throw new IllegalArgumentException("No variable mappings provided");
         }
     }
-    
+
     private void validateGetDecompiledFunctionArgs(Map<String, Object> args) {
         if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
@@ -208,5 +208,24 @@ public class DecompilerToolProviderTest {
         if (args.get("functionName") == null) {
             throw new IllegalArgumentException("No function name provided");
         }
+    }
+
+    @Test
+    public void testInheritance() {
+        // Test that DecompilerToolProvider extends AbstractToolProvider
+        assertTrue("DecompilerToolProvider should extend AbstractToolProvider",
+            reva.tools.AbstractToolProvider.class.isAssignableFrom(DecompilerToolProvider.class));
+    }
+
+    @Test
+    public void testToolProviderInterface() {
+        // Test that DecompilerToolProvider implements ToolProvider interface
+        assertTrue("DecompilerToolProvider should implement ToolProvider",
+            reva.tools.ToolProvider.class.isAssignableFrom(DecompilerToolProvider.class));
+    }
+
+    @Test
+    public void testConstructor() {
+        assertNotNull("DecompilerToolProvider should be created", toolProvider);
     }
 }

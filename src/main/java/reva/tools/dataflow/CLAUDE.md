@@ -8,32 +8,34 @@ The `reva.tools.dataflow` package provides comprehensive data flow analysis capa
 
 ## Key Tools for Data Flow Analysis
 
-The DataFlowToolProvider implements three main tools:
+The DataFlowToolProvider implements a single consolidated tool:
 
-### 1. trace-data-flow-backward
-- **Purpose**: Trace where a value at an address comes from
-- **Parameters**:
-  - `programPath` (required) - Path to the program in Ghidra project
-  - `address` (required) - Address within a function to trace backward from
-- **Returns**: JSON object with operation list and terminators showing origins
-- **Use Case**: Finding the source of a value (constants, parameters, memory loads, etc.)
+### analyze_data_flow
 
-### 2. trace-data-flow-forward
-- **Purpose**: Trace where a value at an address flows to
-- **Parameters**:
-  - `programPath` (required) - Path to the program in Ghidra project
-  - `address` (required) - Address within a function to trace forward from
-- **Returns**: JSON object with operation list and terminators showing uses
-- **Use Case**: Finding where a value is used (stores, function calls, returns, etc.)
+**Consolidated tool that replaces:** `trace-data-flow-backward`, `trace-data-flow-forward`, `find-variable-accesses`
 
-### 3. find-variable-accesses
-- **Purpose**: Find all reads and writes to a variable within a function
-- **Parameters**:
-  - `programPath` (required) - Path to the program in Ghidra project
-  - `functionAddress` (required) - Address of the function to analyze
-  - `variableName` (required) - Name of the variable to find accesses for
-- **Returns**: JSON object with all read/write accesses to the variable
-- **Use Case**: Understanding how a variable is used throughout a function
+Trace data flow backward (origins), forward (uses), or find variable accesses within a function.
+
+**Parameters:**
+- `programPath` (required) - Path to the program in Ghidra project
+- `function_address` (required) - Address of the function to analyze
+- `direction` (required) - Analysis direction: 'backward', 'forward', or 'variable_accesses'
+- `start_address` (required for backward/forward modes) - Address within the function to trace from
+- `variable_name` (required for variable_accesses mode) - Name of the variable to find accesses for
+
+**Modes:**
+
+1. **direction='backward'** - Trace where a value at an address comes from
+   - **Returns**: JSON object with operation list and terminators showing origins (constants, parameters, memory loads, etc.)
+   - **Use Case**: Finding the source of a value
+
+2. **direction='forward'** - Trace where a value at an address flows to
+   - **Returns**: JSON object with operation list and terminators showing uses (stores, function calls, returns, etc.)
+   - **Use Case**: Finding where a value is used
+
+3. **direction='variable_accesses'** - Find all reads and writes to a variable within a function
+   - **Returns**: JSON object with all read/write accesses to the variable
+   - **Use Case**: Understanding how a variable is used throughout a function
 
 ## Critical Implementation Patterns
 
@@ -473,7 +475,7 @@ private Map<String, Object> findForwardTerminator(PcodeOp op) {
 
 ### Data Flow Trace Response
 
-Structure for trace-data-flow-backward and trace-data-flow-forward:
+Structure for analyze_data_flow with direction='backward' or 'forward':
 ```json
 {
     "programPath": "/example.exe",
@@ -516,7 +518,7 @@ Structure for trace-data-flow-backward and trace-data-flow-forward:
 
 ### Variable Accesses Response
 
-Structure for find-variable-accesses:
+Structure for analyze_data_flow with direction='variable_accesses':
 ```json
 {
     "programPath": "/example.exe",

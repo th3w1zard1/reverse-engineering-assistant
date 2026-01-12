@@ -47,7 +47,20 @@ You can ask questions like:
 - What does the function at address 0x80000 do?
 - This is a CTF problem. Write a pwntools script to get the flag.
 
-# Installation
+## Table of Contents
+
+- [Installation](#installation)
+- [Usage](#usage)
+- [Assistant Mode](#assistant-mode)
+  - [Claude Code (Assistant)](#claude-code-assistant)
+  - [VSCode (Assistant)](#vscode-assistant)
+- [Headless Mode](#headless-mode)
+  - [Claude Code (Headless)](#claude-code-headless)
+  - [PyGhidra Integration](#pyghidra-integration)
+- [Claude Code Marketplace](#claude-code-marketplace)
+- [Support](#support)
+
+## Installation
 
 > NOTE: ReVa only supports Ghidra 12.0 and above!
 
@@ -66,7 +79,7 @@ After installing the extension you need to activate it in two places:
 1. In the Project view, open the File menu and select "Configure". Click the "Configure all plugins" button on the top right of the menu (it looks like a plug). Check the "ReVa Application Plugin"
 2. In the Code Browser tool (Click the Dragon icon or open a File), open the File menu and select "Configure". Click the "Configure all plugins" button on the top right of the menu (it looks like a plug). Check the "ReVa Plugin". Then Press File and select "Save Tool". This will enable ReVa by default.
 
-# Usage
+## Usage
 
 There are two ways to use ReVa, with the Ghidra UI in assistant mode or in headless mode. Headless mode is ideal for automation and CI/CD pipelines, while the assistant mode is great for interactive analysis.
 
@@ -78,14 +91,14 @@ to work on its own.
 
 You select which mode with the MCP configuration in your MCP client.
 
-### Assistant Mode
+## Assistant Mode
 
 In assistant mode, you run Ghidra with ReVa installed and connect your MCP client to the ReVa MCP server running in Ghidra. You must first start Ghidra and open a project.
 
 ReVa uses the [streamable MCP transport](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http)
 and will listen on port `8080` by default, you can change this in the Ghidra settings from the project view. This allows many clients to connect to the same UI for interactive use.
 
-#### Claude Code
+### Claude Code (Assistant)
 
 Claude Code is the recommended client for ReVa, performance is excellent and Claude Code
 handles large binaries and projects well.
@@ -101,7 +114,7 @@ To enable all ReVa commands by default, and avoid prompts for tool use, you can 
 the `/permissions` command in Claude Code and add a rule for `mcp__ReVa`. This will
 allow ReVa to use all of its tools without prompting you for permission.
 
-#### VSCode
+### VSCode (Assistant)
 
 VSCode has a built in MCP client, instructions to configure it can be found
 in the [GitHub Copilot documentation](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server-to-your-user-settings).
@@ -119,7 +132,7 @@ in the [GitHub Copilot documentation](https://code.visualstudio.com/docs/copilot
 }
 ```
 
-### Headless Mode
+## Headless Mode
 
 ReVa can run in headless Ghidra mode without the GUI, making it ideal for:
 
@@ -127,7 +140,7 @@ ReVa can run in headless Ghidra mode without the GUI, making it ideal for:
 - **Docker** - Containerized reverse engineering workflows
 - **PyGhidra** - Python-based automation
 
-#### Claude Code
+### Claude Code (Headless)
 
 ```bash
 # Set Ghidra installation directory, this must always be in your environment
@@ -141,7 +154,7 @@ claude -p "Import /bin/ls with ReVa and tell me how it works"
 A project will be created in the current working directory in `.reva/projects/`.
 If you run claude from the same directory, you can import many files into the same project. Just ask ReVa to work on the new file.
 
-#### PyGhidra Integration
+### PyGhidra Integration
 
 You can also use ReVa directly from PyGhidra scripts:
 
@@ -162,7 +175,7 @@ if launcher.waitForServer(30000):
 launcher.stop()
 ```
 
-# Claude Code Marketplace
+## Claude Code Marketplace
 
 The ReVa repo includes a [Claude Code marketplace and plugins](https://claude.com/blog/claude-code-plugins)
 to make using ReVa easier. These include skills and scripts to help ReVa work better with Claude Code.
@@ -182,7 +195,7 @@ This will add the [ReVa skills](/ReVa/skills/) to your Claude Code installation.
 
 I will be adding more skills over time to help with reverse engineering tasks.
 
-# Support
+## Support
 
 Do you like my work? Want to support this project and others? Interested in how this project was designed and built?
 This project and many others are built live on my stream at <https://twitch.tv/cyberkaida> !

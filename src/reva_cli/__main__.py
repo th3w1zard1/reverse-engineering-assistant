@@ -6,12 +6,13 @@ Provides stdio MCP transport for ReVa, enabling integration with Claude CLI.
 Usage: claude mcp add ReVa -- mcp-reva [--config PATH] [--verbose]
 """
 
-import sys
-import signal
-import asyncio
+from __future__ import annotations
+
 import argparse
+import asyncio
+import signal
+import sys
 from pathlib import Path
-from typing import Optional
 
 from .launcher import ReVaLauncher
 from .project_manager import ProjectManager
@@ -25,7 +26,7 @@ class ReVaCLI:
         self,
         launcher: ReVaLauncher,
         project_manager: ProjectManager,
-        server_port: int
+        server_port: int,
     ):
         """
         Initialize ReVa CLI with pre-initialized components.
@@ -43,9 +44,13 @@ class ReVaCLI:
 
     def setup_signal_handlers(self):
         """Setup signal handlers for clean shutdown."""
+
         def signal_handler(sig, frame):
             if not self.cleanup_done:
-                print(f"\nReceived signal {sig}, shutting down gracefully...", file=sys.stderr)
+                print(
+                    f"\nReceived signal {sig}, shutting down gracefully...",
+                    file=sys.stderr,
+                )
                 self.cleanup()
             sys.exit(0)
 
@@ -53,7 +58,7 @@ class ReVaCLI:
         signal.signal(signal.SIGTERM, signal_handler)
 
         # Handle SIGHUP on Unix systems
-        if hasattr(signal, 'SIGHUP'):
+        if hasattr(signal, "SIGHUP"):
             signal.signal(signal.SIGHUP, signal_handler)
 
     def cleanup(self):
@@ -94,7 +99,9 @@ class ReVaCLI:
             self.setup_signal_handlers()
 
             # Start stdio bridge
-            print(f"Starting stdio bridge on port {self.server_port}...", file=sys.stderr)
+            print(
+                f"Starting stdio bridge on port {self.server_port}...", file=sys.stderr
+            )
             self.bridge = ReVaStdioBridge(self.server_port)
 
             # Run the bridge (this blocks until stopped)
@@ -105,6 +112,7 @@ class ReVaCLI:
         except Exception as e:
             print(f"Fatal error: {e}", file=sys.stderr)
             import traceback
+
             traceback.print_exc(file=sys.stderr)
             sys.exit(1)
         finally:
@@ -114,22 +122,27 @@ class ReVaCLI:
 def main():
     """Main entry point for mcp-reva command."""
     parser = argparse.ArgumentParser(
-        description="ReVa MCP server with stdio transport for Claude CLI integration"
+        description="ReVa MCP server with stdio transport for Claude CLI integration",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--config",
         type=Path,
-        help="Path to ReVa configuration file"
+        help="Path to ReVa configuration file",
+        required=False,
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
-        help="Enable verbose logging"
+        help="Enable verbose logging",
+        default=False,
+        required=False,
     )
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 3.0.0"
+        version="%(prog)s 3.0.0",
     )
 
     args = parser.parse_args()
@@ -144,31 +157,48 @@ def main():
     # =========================================================================
     # All blocking operations happen here to avoid blocking the event loop
     # This ensures the stdio bridge can start immediately when asyncio.run() is called
+    #
+    # CRITICAL: During initialization, PyGhidra and Java code may write log messages
+    # to stdout. We redirect stdout to stderr during initialization, then restore it
+    # before starting the stdio bridge (which needs clean stdout for JSON-RPC).
+
+    # Save original stdout
+    original_stdout = sys.stdout
 
     try:
+        # Redirect stdout to stderr during initialization to capture any log messages
+        # from PyGhidra/Java that might write to stdout
+        sys.stdout = sys.stderr
         # Initialize PyGhidra (blocking, 3-5 seconds)
         print("Initializing PyGhidra...", file=sys.stderr)
         import pyghidra
+
         pyghidra.start(verbose=args.verbose)
         print("PyGhidra initialized", file=sys.stderr)
 
         # Initialize project manager (lazy - project created on first tool use)
         print("Initializing project manager...", file=sys.stderr)
         project_manager = ProjectManager()
-        print("Project manager ready (project will be created on first use)", file=sys.stderr)
+        print(
+            "Project manager ready (project will be created on first use)",
+            file=sys.stderr,
+        )
 
         # Start ReVa server (blocking, 4-7 seconds)
         print("Starting ReVa server...", file=sys.stderr)
-        launcher = ReVaLauncher(
-            config_file=args.config,
-            use_random_port=True
-        )
+        launcher = ReVaLauncher(config_file=args.config, use_random_port=True)
         port = launcher.start()
         print(f"ReVa server ready on port {port}", file=sys.stderr)
 
+        # Restore stdout before starting stdio bridge (which needs clean stdout for JSON-RPC)
+        sys.stdout = original_stdout
+
     except Exception as e:
+        # Restore stdout even on error
+        sys.stdout = original_stdout
         print(f"Initialization error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
 
@@ -176,11 +206,7 @@ def main():
     # ASYNC EXECUTION (stdio bridge only)
     # =========================================================================
     # Create CLI with pre-initialized components
-    cli = ReVaCLI(
-        launcher=launcher,
-        project_manager=project_manager,
-        server_port=port
-    )
+    cli = ReVaCLI(launcher=launcher, project_manager=project_manager, server_port=port)
 
     # Run async event loop (stdio bridge starts immediately)
     try:

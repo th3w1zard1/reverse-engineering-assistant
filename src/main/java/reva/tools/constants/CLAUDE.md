@@ -8,46 +8,33 @@ The `reva.tools.constants` package provides MCP tools for searching and analyzin
 
 ## Key Tools
 
-### Constant Search Tools
-- `find-constant-uses` - Find all locations where a specific constant value appears
-- `find-constants-in-range` - Find constants within a specified numeric range
-- `list-common-constants` - Identify the most frequently used constants in the program
+### search_constants
 
-## Tool Details
+**Consolidated tool that replaces:** `find-constant-uses`, `find-constants-in-range`, `list-common-constants`
 
-### find-constant-uses
-Searches for all instruction operands matching a specific constant value.
+Find specific constants, constants in ranges, or list the most common constants in the program.
 
 **Parameters:**
-- `programPath` (required) - Path to the program
-- `value` (required) - Constant to search for (supports decimal, hex with 0x prefix, or negative)
-- `maxResults` (optional) - Maximum results to return (default: 500, max: 10000)
+- `programPath` (required) - Path to the program in Ghidra project
+- `mode` (required) - Search mode: 'specific', 'range', or 'common'
+- `value` (required for mode='specific') - Constant value to search for (supports hex with 0x, decimal, negative)
+- `min_value` (required for mode='range'; optional for mode='common') - Minimum value (inclusive, supports hex/decimal)
+- `max_value` (required for mode='range') - Maximum value (inclusive, supports hex/decimal)
+- `max_results` (optional for mode='specific'/'range') - Maximum results to return (default: 500, max: 10000)
+- `include_small_values` (optional for mode='common') - Include small values (0-255) which are often noise (default: false)
+- `top_n` (optional for mode='common') - Number of most common constants to return (default: 50)
 
-**Use cases:**
-- Finding all uses of a magic number (e.g., `0xdeadbeef`)
-- Locating error code references
-- Identifying buffer size constants
+**Modes:**
 
-### find-constants-in-range
-Finds all constant values within a numeric range.
+1. **mode='specific'** - Find all locations where a specific constant value appears
+   - **Use cases**: Finding all uses of a magic number (e.g., `0xdeadbeef`), locating error code references, identifying buffer size constants
+   - **Returns**: List of instructions using the constant
 
-**Parameters:**
-- `programPath` (required) - Path to the program
-- `minValue` (required) - Minimum value (inclusive, supports decimal/hex)
-- `maxValue` (required) - Maximum value (inclusive, supports decimal/hex)
-- `maxResults` (optional) - Maximum results to return (default: 500, max: 10000)
+2. **mode='range'** - Find constants within a specified numeric range
+   - **Use cases**: Finding HTTP status codes (400-599), locating enum values within expected bounds, identifying constants in a specific numeric range
+   - **Returns**: List of constants found in the range with occurrence counts, plus unique values sorted by frequency
 
-**Use cases:**
-- Finding HTTP status codes (400-599)
-- Locating enum values within expected bounds
-- Identifying constants in a specific numeric range
-
-**Response includes:**
-- `uniqueValues` - List of unique values found with occurrence counts (sorted by frequency)
-- `results` - Individual instruction locations for each match
-
-### list-common-constants
-Identifies the most frequently used constants in the program.
+3. **mode='common'** - Identify the most frequently used constants in the program
 
 **Parameters:**
 - `programPath` (required) - Path to the program

@@ -8,47 +8,45 @@ The `reva.tools.strings` package provides comprehensive string analysis capabili
 
 ## Registered Tools
 
-The StringToolProvider implements four main tools (registered in `registerTools()`):
+The StringToolProvider implements a single consolidated tool:
 
-### 1. get-strings-count
-- **Purpose**: Get total count of strings in a program (use before pagination)
-- **Parameters**:
-  - `programPath` (required) - Path in the Ghidra Project to the program
-- **Returns**: JSON object with `count` field
-- **Use Case**: Planning pagination strategy for large binaries
+### manage_strings
 
-### 2. get-strings
-- **Purpose**: Get paginated list of strings from a program
-- **Parameters**:
-  - `programPath` (required) - Path in the Ghidra Project to the program
-  - `startIndex` (optional, default: 0) - Starting index for pagination (0-based)
-  - `maxCount` (optional, default: 100) - Maximum number of strings to return
-  - `includeReferencingFunctions` (optional, default: false) - Include list of functions that reference each string (max 100 per string)
-- **Returns**: Array with pagination metadata followed by string objects
-- **Use Case**: Systematic enumeration of all strings
+**Consolidated tool that replaces:** `get-strings-count`, `get-strings`, `get-strings-by-similarity`, `search-strings-regex`
 
-### 3. get-strings-by-similarity
-- **Purpose**: Get strings sorted by similarity to a search string
-- **Parameters**:
-  - `programPath` (required) - Path in the Ghidra Project to the program
-  - `searchString` (required) - String to compare against for similarity (scored by longest common substring)
-  - `startIndex` (optional, default: 0) - Starting index for pagination (0-based)
-  - `maxCount` (optional, default: 100) - Maximum number of strings to return
-  - `includeReferencingFunctions` (optional, default: false) - Include list of functions that reference each string (max 100 per string)
-- **Returns**: Array with pagination metadata followed by similarity-sorted strings
-- **Performance**: Collects ALL strings first, sorts by similarity, then paginates. Only adds referencing functions to the paginated subset for efficiency.
-- **Use Case**: Finding related strings when you know a partial match
+List, search, count, or find similar strings in the program.
 
-### 4. search-strings-regex
-- **Purpose**: Search strings matching a regex pattern
-- **Parameters**:
-  - `programPath` (required) - Path in the Ghidra Project to the program
-  - `regexPattern` (required) - Regular expression pattern to search for in strings
-  - `startIndex` (optional, default: 0) - Starting index for pagination (0-based)
-  - `maxCount` (optional, default: 100) - Maximum number of matching strings to return
-  - `includeReferencingFunctions` (optional, default: false) - Include list of functions that reference each string (max 100 per string)
-- **Returns**: Array with search metadata followed by matching strings
-- **Use Case**: Pattern-based string discovery when you know the format
+**Parameters:**
+- `programPath` (required) - Path in the Ghidra Project to the program
+- `mode` (optional, default: 'list') - Operation mode: 'list', 'regex', 'count', or 'similarity'
+- `pattern` (required for mode='regex') - Regular expression pattern to search for
+- `search_string` (required for mode='similarity') - String to compare against for similarity
+- `filter` (optional for mode='list') - Optional filter to match within string content
+- `start_index` (optional, default: 0) - Starting index for pagination when mode='list' or 'similarity' (0-based)
+- `max_count` (optional, default: 100) - Maximum number of strings to return when mode='list' or 'similarity'
+- `offset` (optional, default: 0) - Alternative pagination offset when mode='list' (backward compatibility)
+- `limit` (optional, default: 2000) - Alternative pagination limit when mode='list' (backward compatibility)
+- `max_results` (optional, default: 100) - Maximum number of results to return when mode='regex'
+- `include_referencing_functions` (optional, default: false) - Include list of functions that reference each string when mode='list' or 'similarity' (max 100 per string)
+
+**Modes:**
+
+1. **mode='count'** - Get total count of strings in a program
+   - **Use Case**: Planning pagination strategy for large binaries
+   - **Returns**: JSON object with `count` field
+
+2. **mode='list'** - Get paginated list of strings from a program
+   - **Use Case**: Systematic enumeration of all strings
+   - **Returns**: Array with pagination metadata followed by string objects
+
+3. **mode='regex'** - Search strings using regular expression pattern
+   - **Use Case**: Finding strings matching a specific pattern
+   - **Returns**: Array with search metadata followed by matching string objects
+
+4. **mode='similarity'** - Get strings sorted by similarity to a search string
+   - **Use Case**: Finding strings similar to a known value
+   - **Returns**: Array with pagination metadata followed by similarity-sorted strings
+   - **Performance**: Collects ALL strings first, sorts by similarity, then paginates. Only adds referencing functions to the paginated subset for efficiency.
 
 ## Core Implementation Patterns
 
@@ -219,10 +217,10 @@ DataIterator dataIterator = program.getListing().getDefinedData(true);
 - Use sparingly on large binaries or when string counts are high
 
 ### Tool Selection Guidelines
-- Use `get-strings` for complete enumeration (streaming, memory-efficient)
-- Use `get-strings-by-similarity` when you have a reference string (requires full collection)
-- Use `search-strings-regex` for pattern-based discovery (streaming, early termination)
-- Use `get-strings-count` for initial assessment before choosing a strategy
+- Use `mode='list'` for complete enumeration (streaming, memory-efficient)
+- Use `mode='similarity'` when you have a reference string (requires full collection)
+- Use `mode='regex'` for pattern-based discovery (streaming, early termination)
+- Use `mode='count'` for initial assessment before choosing a strategy
 
 ## Pattern Matching and Regex Support
 
@@ -283,7 +281,7 @@ When `includeReferencingFunctions` is true, additional fields are included:
 }
 ```
 
-### get-strings and get-strings-by-similarity Response
+### mode='list' and mode='similarity' Response
 Array format with pagination metadata first, then string objects:
 ```json
 [
@@ -299,7 +297,7 @@ Array format with pagination metadata first, then string objects:
 ]
 ```
 
-### get-strings-by-similarity Additional Metadata
+### mode='similarity' Additional Metadata
 ```json
 {
     "searchComplete": true,  // true if all strings have been returned
@@ -310,7 +308,7 @@ Array format with pagination metadata first, then string objects:
 }
 ```
 
-### search-strings-regex Response
+### mode='regex' Response
 Array format with search metadata first, then matching string objects:
 ```json
 [
@@ -359,10 +357,10 @@ Integration tests should validate:
 ## Common Usage Patterns
 
 ### Discovery Workflow
-1. `get-strings-count` to assess binary size
-2. `get-strings` with small chunks to sample content
-3. `get-strings-by-similarity` or `search-strings-regex` for targeted analysis
-4. Use `includeReferencingFunctions` sparingly (performance impact)
+1. `mode='count'` to assess binary size
+2. `mode='list'` with small chunks to sample content
+3. `mode='similarity'` or `mode='regex'` for targeted analysis
+4. Use `include_referencing_functions` sparingly (performance impact)
 
 ### Error Handling
 - Memory access exceptions: Caught and added to string object as `bytesError` field

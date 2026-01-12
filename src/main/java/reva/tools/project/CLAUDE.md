@@ -11,6 +11,9 @@ The `reva.tools.project` package provides MCP tools for Ghidra project managemen
 - `get-current-program` - Get the currently active program with metadata
 - `list-project-files` - List files and folders in the Ghidra project with optional recursion
 - `list-open-programs` - List all programs currently open in Ghidra across all tools
+- `open-project` - Open a Ghidra project from a .gpr file path (GUI mode only)
+- `open-program-in-code-browser` - Open a specific program in Code Browser (GUI mode only)
+- `open-all-programs-in-code-browser` - Open all programs matching extensions (exe/dll) in Code Browser (GUI mode only)
 - `checkin-program` - Check in (commit) a program to version control with commit message
 
 ## Critical Implementation Patterns
@@ -350,6 +353,48 @@ for (PluginTool tool : runningTools) {
     }
 }
 ```
+
+### Opening Projects
+
+**Open a Ghidra project from a .gpr file path (GUI mode only)**:
+```java
+// Validate project file exists
+File projectFile = new File(projectPath);
+if (!projectFile.exists()) {
+    return createErrorResult("Project file does not exist: " + projectPath);
+}
+
+// Extract project directory and name from .gpr file path
+// .gpr file is typically at: <projectDir>/<projectName>.gpr
+String projectDir = projectFile.getParent();
+String projectName = projectFile.getName();
+// Remove .gpr extension
+if (projectName.toLowerCase().endsWith(".gpr")) {
+    projectName = projectName.substring(0, projectName.length() - 4);
+}
+
+// Create ProjectLocator
+ProjectLocator locator = new ProjectLocator(projectDir, projectName);
+
+// Verify the project exists
+if (!locator.getMarkerFile().exists() || !locator.getProjectDir().exists()) {
+    return createErrorResult("Project not found at: " + projectPath);
+}
+
+// Open the project using GhidraProject
+GhidraProject ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
+Project project = ghidraProject.getProject();
+
+// Verify it's active
+boolean isActive = (AppInfo.getActiveProject() == project);
+```
+
+**Key points for opening projects**:
+- Use absolute paths for reliability
+- Project file must have .gpr extension
+- Project directory and marker file must exist
+- Opened project becomes the active project
+- Only available in GUI mode (not headless)
 
 ## Testing Considerations
 

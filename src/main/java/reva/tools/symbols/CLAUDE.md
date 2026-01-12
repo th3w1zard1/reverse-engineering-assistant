@@ -4,13 +4,42 @@ This file provides guidance to Claude Code when working with the symbols tools p
 
 ## Package Overview
 
-The symbols tools package (`reva.tools.symbols`) provides MCP tools for interacting with Ghidra's symbol table operations. This includes retrieving symbol information with pagination, counting symbols, and understanding symbol metadata across programs.
+The symbols tools package (`reva.tools.symbols`) provides MCP tools for interacting with Ghidra's symbol table operations. This includes retrieving symbol information with pagination, counting symbols, listing imports/exports, creating labels, renaming data, and understanding symbol metadata across programs.
 
 ## Key Tools
 
-### Symbol Retrieval Tools
-- `get-symbols` - Retrieve symbols from a program with pagination support
-- `get-symbols-count` - Get total count of symbols (use before pagination)
+### manage_symbols
+
+**Consolidated tool that replaces:** `list_classes`, `list_namespaces`, `list_imports`, `list_exports`, `create_label`, `get_symbols`, `get_symbols_count`, `rename_data`
+
+List classes, namespaces, imports, exports, create labels, get symbols, count symbols, or rename data labels.
+
+**Parameters:**
+- `programPath` (required) - Path to the program in the Ghidra Project
+- `mode` (required) - Operation mode: 'classes', 'namespaces', 'imports', 'exports', 'create_label', 'symbols', 'count', 'rename_data'
+- `address` (required for mode='create_label'/'rename_data') - Address where to create the label or address of data to rename
+- `label_name` (required for mode='create_label') - Name for the label
+- `new_name` (required for mode='rename_data') - New name for the data label
+- `library_filter` (optional for mode='imports') - Optional library name to filter by (case-insensitive)
+- `max_results` (optional for mode='imports'/'exports', default: 500) - Maximum number of imports/exports to return
+- `start_index` (optional, default: 0) - Starting index for pagination (0-based)
+- `offset` (optional, default: 0) - Alternative pagination offset parameter (backward compatibility)
+- `limit` (optional, default: 100) - Alternative pagination limit parameter (backward compatibility)
+- `group_by_library` (optional for mode='imports', default: true) - Whether to group imports by library name
+- `include_external` (optional for mode='symbols'/'count', default: false) - Whether to include external symbols
+- `max_count` (optional for mode='symbols', default: 200) - Maximum number of symbols to return
+- `filter_default_names` (optional for mode='symbols'/'count', default: true) - Whether to filter out default Ghidra generated names
+
+**Modes:**
+
+1. **mode='classes'** - List all namespace/class names with pagination
+2. **mode='namespaces'** - List all non-global namespaces with pagination
+3. **mode='imports'** - List all imported functions from external libraries with filtering and grouping
+4. **mode='exports'** - List all exported symbols from the binary
+5. **mode='create_label'** - Create a label at a specific address
+6. **mode='symbols'** - Retrieve symbols from a program with pagination support
+7. **mode='count'** - Get total count of symbols (use before pagination)
+8. **mode='rename_data'** - Rename a data label at a specific address
 
 ## Symbol Table Operations
 
@@ -240,7 +269,7 @@ while (current != null && !current.isGlobal()) {
 ]
 ```
 
-### Label Creation Response
+### Label Creation Response (mode='create_label')
 ```json
 {
   "success": true,
@@ -250,12 +279,25 @@ while (current != null && !current.isGlobal()) {
 }
 ```
 
+### Rename Data Response (mode='rename_data')
+```json
+{
+  "success": true,
+  "oldName": "DAT_00402000",
+  "newName": "my_data",
+  "address": "0x00402000"
+}
+```
+
 ## Pagination Implementation
 
 ### Pagination Parameters
 ```java
-// Extract pagination from request
-PaginationParams pagination = getPaginationParams(request, 200);
+// Extract pagination from request with backward compatibility
+int startIndex = getOptionalInt(request, "start_index", 
+    getOptionalInt(request, "offset", 0));
+int maxCount = getOptionalInt(request, "max_count",
+    getOptionalInt(request, "limit", 200));
 
 // Manual pagination tracking
 AtomicInteger currentIndex = new AtomicInteger(0);
@@ -263,12 +305,12 @@ symbolIterator.forEach(symbol -> {
     int index = currentIndex.getAndIncrement();
     
     // Skip before start index
-    if (index < pagination.startIndex()) {
+    if (index < startIndex) {
         return;
     }
     
     // Stop after max count
-    if (symbolData.size() >= pagination.maxCount()) {
+    if (symbolData.size() >= maxCount) {
         return;
     }
     
@@ -281,11 +323,13 @@ symbolIterator.forEach(symbol -> {
 ```java
 // Create pagination info for response
 Map<String, Object> paginationInfo = new HashMap<>();
-paginationInfo.put("startIndex", pagination.startIndex());
-paginationInfo.put("requestedCount", pagination.maxCount());
+paginationInfo.put("startIndex", startIndex);
+paginationInfo.put("requestedCount", maxCount);
 paginationInfo.put("actualCount", symbolData.size());
-paginationInfo.put("nextStartIndex", pagination.startIndex() + symbolData.size());
+paginationInfo.put("nextStartIndex", startIndex + symbolData.size());
 paginationInfo.put("totalProcessed", currentIndex.get());
+paginationInfo.put("includeExternal", includeExternal);
+paginationInfo.put("filterDefaultNames", filterDefaultNames);
 ```
 
 ## Testing Considerations
@@ -306,8 +350,8 @@ public void testSymbolRetrieval() throws Exception {
     
     // Test symbol retrieval via MCP
     CallToolResult result = client.callTool(new CallToolRequest(
-        "get-symbols",
-        Map.of("programPath", programPath, "maxCount", 50)
+        "manage_symbols",
+        Map.of("programPath", programPath, "mode", "symbols", "max_count", 50)
     ));
     
     assertFalse("Tool should not have errors", result.isError());
@@ -333,11 +377,12 @@ assertEquals("Should be user-defined", SourceType.USER_DEFINED, createdSymbol.ge
 ```java
 // Test external symbol filtering
 CallToolResult result = client.callTool(new CallToolRequest(
-    "get-symbols",
+    "manage_symbols",
     Map.of(
         "programPath", programPath,
-        "includeExternal", false,
-        "maxCount", 100
+        "mode", "symbols",
+        "include_external", false,
+        "max_count", 100
     )
 ));
 

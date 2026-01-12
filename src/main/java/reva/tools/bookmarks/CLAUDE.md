@@ -8,11 +8,47 @@ The `reva.tools.bookmarks` package provides MCP tools for bookmark management in
 
 ## Key Tools
 
-- `set-bookmark` - Create or update bookmarks at specific addresses
-- `get-bookmarks` - Retrieve bookmarks by address, range, or filters
-- `remove-bookmark` - Delete specific bookmarks
-- `search-bookmarks` - Search bookmarks by text, type, category, or location
-- `list-bookmark-categories` - List all categories for a bookmark type
+### manage_bookmarks
+
+**Consolidated tool that replaces:** `set-bookmark`, `get-bookmarks`, `search-bookmarks`, `remove-bookmark`, `list-bookmark-categories`
+
+Create, retrieve, search, remove bookmarks, or list bookmark categories.
+
+**Parameters:**
+- `programPath` (required) - Path to the program in the Ghidra Project
+- `action` (required) - Action to perform: 'set', 'get', 'search', 'remove', or 'categories'
+- `address` (required for action='set'/'remove', optional for action='get') - Address where to set/get/remove the bookmark
+- `address_or_symbol` (alternative parameter name, used for remove action)
+- `type` (required for action='set'/'remove', optional for action='get'/'categories') - Bookmark type enum ('Note', 'Warning', 'TODO', 'Bug', 'Analysis')
+- `category` (required for action='set', optional for action='remove'; can be empty string)
+  - Bookmark category for organization
+- `comment` (required for action='set') - Bookmark comment text
+- `search_text` (required for action='search') - Text to search for in bookmark comments
+- `max_results` (optional for action='search', default: 100) - Maximum number of results to return
+
+**Actions:**
+
+1. **action='set'** - Create or update a bookmark at a specific address
+   - **Required**: `address` (or `address_or_symbol`), `type`, `category`, `comment`
+   - **Returns**: Success message with bookmark details (id, address, type, category, comment)
+
+2. **action='get'** - Retrieve bookmarks by address, type, category, or all bookmarks
+   - **Optional**: `address` (or `address_or_symbol`), `type`, `category` (used as filters)
+   - **Returns**: List of bookmarks matching the filters
+
+3. **action='search'** - Search bookmarks by text in comments
+   - **Required**: `search_text`
+   - **Optional**: `type` (filter by type), `max_results` (limit results)
+   - **Returns**: List of matching bookmarks with search text in comments
+
+4. **action='remove'** - Delete a specific bookmark
+   - **Required**: `address` (or `address_or_symbol`), `type`
+   - **Optional**: `category` (if not provided, matches any category)
+   - **Returns**: Success message with removed bookmark details
+
+5. **action='categories'** - List all bookmark categories
+   - **Optional**: `type` (filter by bookmark type)
+   - **Returns**: JSON object with category names and their counts
 
 ## Bookmark Management Patterns
 
@@ -160,7 +196,7 @@ if (searchText != null && !searchText.isEmpty()) {
 private Map<String, Object> bookmarkToMap(Bookmark bookmark) {
     Map<String, Object> map = new HashMap<>();
     map.put("id", bookmark.getId());
-    map.put("address", bookmark.getAddress().toString()); // Use toString() for address formatting
+    map.put("address", AddressUtil.formatAddress(bookmark.getAddress())); // Use AddressUtil for consistent formatting
     map.put("type", bookmark.getTypeString());
     map.put("category", bookmark.getCategory());
     map.put("comment", bookmark.getComment());

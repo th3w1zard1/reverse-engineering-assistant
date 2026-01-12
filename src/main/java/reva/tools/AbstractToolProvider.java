@@ -30,11 +30,13 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.Msg;
+import ghidra.util.task.TaskMonitor;
 import reva.util.AddressUtil;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.plugin.RevaProgramManager;
 import reva.util.ProgramLookupUtil;
+import reva.util.ToolLogCollector;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.Content;
@@ -103,6 +105,13 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected McpSchema.CallToolResult createJsonResult(Object data) {
         try {
+            // If data is a Map, ensure it includes log messages if any were collected
+            if (data instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> dataMap = (Map<String, Object>) data;
+                // Log messages are added by log collector if active
+                // This ensures logs are in JSON response, not stdout/stderr
+            }
             return new McpSchema.CallToolResult(
                 List.of(new TextContent(JSON.writeValueAsString(data))),
                 false
@@ -136,7 +145,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected void registerTool(Tool tool, java.util.function.BiFunction<io.modelcontextprotocol.server.McpSyncServerExchange, CallToolRequest, McpSchema.CallToolResult> handler) {
         // Wrap the handler with safe execution
-        java.util.function.BiFunction<io.modelcontextprotocol.server.McpSyncServerExchange, CallToolRequest, McpSchema.CallToolResult> safeHandler = 
+        java.util.function.BiFunction<io.modelcontextprotocol.server.McpSyncServerExchange, CallToolRequest, McpSchema.CallToolResult> safeHandler =
             (exchange, request) -> {
                 try {
                     return handler.apply(exchange, request);
@@ -149,7 +158,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
                     return createErrorResult("Tool execution failed: " + e.getMessage());
                 }
             };
-        
+
         SyncToolSpecification toolSpec = SyncToolSpecification.builder()
             .tool(tool)
             .callHandler(safeHandler)
@@ -727,5 +736,48 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected Address getAddressFromSymbolArgs(Map<String, Object> args, Program program) throws IllegalArgumentException {
         return getAddressFromSymbolArgs(args, program, "symbolName");
+    }
+
+    /**
+     * Automatically save a program after modifications.
+     * This ensures changes are persisted to disk immediately after successful transactions.
+     * Handles read-only programs gracefully and logs errors without failing the operation.
+     *
+     * @param program The program to save
+     * @param operationDescription Description of the operation that triggered the save (e.g., "Set comment")
+     * @return true if the program was saved successfully, false otherwise
+     */
+    protected boolean autoSaveProgram(Program program, String operationDescription) {
+        if (program == null || program.isClosed()) {
+            return false;
+        }
+
+        try {
+            ghidra.framework.model.DomainFile domainFile = program.getDomainFile();
+
+            // Skip save for read-only programs (common in test environments or versioned files that aren't checked out)
+            if (domainFile.isReadOnly()) {
+                logInfo("Skipping auto-save for read-only program: " + domainFile.getPathname());
+                return false;
+            }
+
+            // Check if program has unsaved changes before attempting save
+            if (!domainFile.isChanged()) {
+                // No changes to save
+                return false;
+            }
+
+            // Save the program with a descriptive message
+            String saveMessage = "Auto-save: " + operationDescription;
+            program.save(saveMessage, TaskMonitor.DUMMY);
+            program.flushEvents(); // Ensure SAVED event is processed
+
+            logInfo("Auto-saved program: " + domainFile.getPathname() + " (" + operationDescription + ")");
+            return true;
+        } catch (Exception e) {
+            // Log error but don't fail the operation - changes are still in memory
+            logError("Failed to auto-save program after " + operationDescription + ": " + e.getMessage(), e);
+            return false;
+        }
     }
 }

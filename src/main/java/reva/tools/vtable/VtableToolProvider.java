@@ -73,125 +73,158 @@ public class VtableToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        registerAnalyzeVtableTool();
-        registerFindVtableCallersTool();
-        registerFindVtablesContainingFunctionTool();
+        registerAnalyzeVtablesTool();
     }
 
-    // ========================================================================
-    // Tool Registration
-    // ========================================================================
-
-    private void registerAnalyzeVtableTool() {
+    private void registerAnalyzeVtablesTool() {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
+        ));
+        properties.put("mode", Map.of(
+            "type", "string",
+            "description", "Analysis mode: 'analyze', 'callers', or 'containing'",
+            "enum", List.of("analyze", "callers", "containing")
+        ));
+        properties.put("vtable_address", Map.of(
+            "type", "string",
+            "description", "Address of the vtable to analyze when mode='analyze' (required for analyze mode)"
         ));
         properties.put("vtableAddress", Map.of(
             "type", "string",
-            "description", "Address of the vtable to analyze"
+            "description", "Address of the vtable (alternative parameter name)"
         ));
-        properties.put("maxEntries", Map.of(
-            "type", "integer",
-            "description", "Maximum number of vtable entries to read (default: 200)",
-            "default", DEFAULT_MAX_VTABLE_ENTRIES
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("analyze-vtable")
-            .title("Analyze Vtable")
-            .description("Analyze a virtual function table (vtable) at the given address. " +
-                "Returns the list of function pointers with their slot indices and offsets. " +
-                "Useful for understanding C++ class hierarchies and virtual method dispatch.")
-            .inputSchema(createSchema(properties, List.of("programPath", "vtableAddress")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address vtableAddr = getAddressFromArgs(request, program, "vtableAddress");
-            int maxEntries = getOptionalInt(request, "maxEntries", DEFAULT_MAX_VTABLE_ENTRIES);
-
-            return analyzeVtable(program, vtableAddr, maxEntries);
-        });
-    }
-
-    private void registerFindVtableCallersTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("function_address", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to the program"
+            "description", "Address or name of the virtual function when mode='callers' or function to search for when mode='containing' (required for callers/containing modes)"
         ));
         properties.put("functionAddress", Map.of(
             "type", "string",
-            "description", "Address or name of the function that is called via vtable"
+            "description", "Address or name of the function (alternative parameter name)"
         ));
-        properties.put("vtableAddress", Map.of(
-            "type", "string",
-            "description", "Address of the vtable containing the function (optional - will search if not provided)"
+        properties.put("max_entries", Map.of(
+            "type", "integer",
+            "description", "Maximum number of vtable entries to read when mode='analyze' (default: 200)",
+            "default", DEFAULT_MAX_VTABLE_ENTRIES
+        ));
+        properties.put("maxEntries", Map.of(
+            "type", "integer",
+            "description", "Maximum number of vtable entries (alternative parameter name)",
+            "default", DEFAULT_MAX_VTABLE_ENTRIES
+        ));
+        properties.put("max_results", Map.of(
+            "type", "integer",
+            "description", "Maximum number of results to return when mode='callers' (optional, default: 500)",
+            "default", DEFAULT_MAX_RESULTS
         ));
         properties.put("maxResults", Map.of(
             "type", "integer",
-            "description", "Maximum number of results to return (default: 500)",
+            "description", "Maximum number of results (alternative parameter name, optional)",
             "default", DEFAULT_MAX_RESULTS
         ));
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-vtable-callers")
-            .title("Find Vtable Callers")
-            .description("Find all indirect calls that could be calling a function through its vtable slot. " +
-                "Given a function that appears in a vtable, finds all indirect call instructions " +
-                "with the matching offset. If vtableAddress is not provided, will first search for " +
-                "vtables containing the function. Essential for finding callers of virtual methods. " +
-                "Note: Offset extraction patterns are optimized for x86/x64 instruction formats.")
-            .inputSchema(createSchema(properties, List.of("programPath", "functionAddress")))
+            .name("analyze_vtables")
+            .title("Analyze Vtables")
+            .description("Analyze vtables, find vtable callers, or find vtables containing a specific function.")
+            .inputSchema(createSchema(properties, List.of("programPath", "mode")))
             .build();
 
         registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address functionAddr = getAddressFromArgs(request, program, "functionAddress");
-            String vtableAddrStr = getOptionalString(request, "vtableAddress", null);
-            int maxResults = getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS);
+            try {
+                Program program = getProgramFromArgs(request);
+                String mode = getString(request, "mode");
 
-            Address vtableAddr = null;
-            if (vtableAddrStr != null && !vtableAddrStr.isEmpty()) {
-                vtableAddr = AddressUtil.resolveAddressOrSymbol(program, vtableAddrStr);
-                if (vtableAddr == null) {
-                    return createErrorResult("Invalid vtable address or symbol: " + vtableAddrStr);
+                switch (mode) {
+                    case "analyze":
+                        return handleAnalyzeMode(program, request);
+                    case "callers":
+                        return handleCallersMode(program, request);
+                    case "containing":
+                        return handleContainingMode(program, request);
+                    default:
+                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: analyze, callers, containing");
                 }
+            } catch (IllegalArgumentException e) {
+                return createErrorResult(e.getMessage());
+            } catch (Exception e) {
+                logError("Error in analyze_vtables", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
             }
-
-            return findVtableCallers(program, functionAddr, vtableAddr, maxResults);
         });
     }
 
-    private void registerFindVtablesContainingFunctionTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("functionAddress", Map.of(
-            "type", "string",
-            "description", "Address or name of the function to search for in vtables"
-        ));
+    private McpSchema.CallToolResult handleAnalyzeMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String vtableAddrStr = getOptionalString(request, "vtable_address", null);
+        if (vtableAddrStr == null) {
+            vtableAddrStr = getOptionalString(request, "vtableAddress", null);
+        }
+        if (vtableAddrStr == null) {
+            return createErrorResult("vtable_address is required for mode='analyze'");
+        }
 
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-vtables-containing-function")
-            .title("Find Vtables Containing Function")
-            .description("Find all vtables that contain a pointer to the given function. " +
-                "Returns the vtable addresses and slot indices where the function appears. " +
-                "Useful for discovering which classes implement a virtual method.")
-            .inputSchema(createSchema(properties, List.of("programPath", "functionAddress")))
-            .build();
+        Address vtableAddr = AddressUtil.resolveAddressOrSymbol(program, vtableAddrStr);
+        if (vtableAddr == null) {
+            return createErrorResult("Could not resolve vtable address or symbol: " + vtableAddrStr);
+        }
 
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address functionAddr = getAddressFromArgs(request, program, "functionAddress");
+        int maxEntries = getOptionalInt(request, "max_entries",
+            getOptionalInt(request, "maxEntries", DEFAULT_MAX_VTABLE_ENTRIES));
 
-            return findVtablesContainingFunction(program, functionAddr);
-        });
+        return analyzeVtable(program, vtableAddr, maxEntries);
     }
+
+    private McpSchema.CallToolResult handleCallersMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String functionAddrStr = getOptionalString(request, "function_address", null);
+        if (functionAddrStr == null) {
+            functionAddrStr = getOptionalString(request, "functionAddress", null);
+        }
+        if (functionAddrStr == null) {
+            return createErrorResult("function_address is required for mode='callers'");
+        }
+
+        Address functionAddr = AddressUtil.resolveAddressOrSymbol(program, functionAddrStr);
+        if (functionAddr == null) {
+            return createErrorResult("Could not resolve function address or symbol: " + functionAddrStr);
+        }
+
+        String vtableAddrStr = getOptionalString(request, "vtable_address", null);
+        if (vtableAddrStr == null) {
+            vtableAddrStr = getOptionalString(request, "vtableAddress", null);
+        }
+
+        Address vtableAddr = null;
+        if (vtableAddrStr != null && !vtableAddrStr.isEmpty()) {
+            vtableAddr = AddressUtil.resolveAddressOrSymbol(program, vtableAddrStr);
+            if (vtableAddr == null) {
+                return createErrorResult("Could not resolve vtable address or symbol: " + vtableAddrStr);
+            }
+        }
+
+        int maxResults = getOptionalInt(request, "max_results",
+            getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS));
+
+        return findVtableCallers(program, functionAddr, vtableAddr, maxResults);
+    }
+
+    private McpSchema.CallToolResult handleContainingMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String functionAddrStr = getOptionalString(request, "function_address", null);
+        if (functionAddrStr == null) {
+            functionAddrStr = getOptionalString(request, "functionAddress", null);
+        }
+        if (functionAddrStr == null) {
+            return createErrorResult("function_address is required for mode='containing'");
+        }
+
+        Address functionAddr = AddressUtil.resolveAddressOrSymbol(program, functionAddrStr);
+        if (functionAddr == null) {
+            return createErrorResult("Could not resolve function address or symbol: " + functionAddrStr);
+        }
+
+        return findVtablesContainingFunction(program, functionAddr);
+    }
+
 
     // ========================================================================
     // Core Analysis Methods

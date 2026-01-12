@@ -17,10 +17,23 @@ package reva.tools.memory;
 
 import static org.junit.Assert.*;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.junit.Before;
 import org.junit.Test;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
+import ghidra.program.model.address.Address;
+import ghidra.program.model.data.ByteDataType;
+import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.mem.MemoryBlock;
+import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
+import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 
 /**
@@ -28,56 +41,135 @@ import reva.RevaIntegrationTestBase;
  * and basic functionality.
  */
 public class MemoryToolProviderIntegrationTest extends RevaIntegrationTestBase {
-    
+
     private String programPath;
-    
+    private Address testDataAddress;
+
     @Before
     public void setUpTestData() throws Exception {
         programPath = program.getDomainFile().getPathname();
-    }
-    
-    @Test
-    public void testMemoryBlocksAndToolRegistration() throws Exception {
-        // Verify that the program has the expected memory block
-        MemoryBlock[] blocks = program.getMemory().getBlocks();
-        assertTrue("Program should have at least one memory block", blocks.length > 0);
-        
-        // Find the test memory block
-        MemoryBlock testBlock = null;
-        for (MemoryBlock block : blocks) {
-            if ("test".equals(block.getName())) {
-                testBlock = block;
-                break;
-            }
+
+        // Create test data at an address
+        testDataAddress = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000050);
+        int txId = program.startTransaction("Setup test data");
+        try {
+            Listing listing = program.getListing();
+            listing.createData(testDataAddress, new ByteDataType(), 1);
+        } finally {
+            program.endTransaction(txId, true);
         }
-        assertNotNull("Test memory block should exist", testBlock);
-        assertEquals("Test block should start at 0x01000000", 
-            0x01000000L, testBlock.getStart().getOffset());
-        assertEquals("Test block should be 0x1000 bytes", 0x1000, testBlock.getSize());
-        
-        // Verify that the MCP server has the MemoryToolProvider tools registered
-        // We can check this by looking at the server's registered tools
-        io.modelcontextprotocol.server.McpSyncServer mcpServer = 
-            reva.util.RevaInternalServiceRegistry.getService(io.modelcontextprotocol.server.McpSyncServer.class);
-        assertNotNull("MCP server should be registered", mcpServer);
-        
-        // The memory tools should be registered: get-memory-blocks, read-memory
-        // This validates that our tool provider integration is working
+
+        env.open(program);
+
+        ghidra.app.services.ProgramManager programManager = tool.getService(ghidra.app.services.ProgramManager.class);
+        if (programManager != null) {
+            programManager.openProgram(program);
+        }
+
+        if (serverManager != null) {
+            serverManager.programOpened(program, tool);
+        }
     }
-    
+
     @Test
-    public void testProgramSetupForMemoryTests() throws Exception {
-        // Verify that the program path is set correctly
-        assertNotNull("Program path should be set", programPath);
-        assertNotNull("Program should be set", program);
-        
-        // Verify the config manager and server port are available
-        assertNotNull("Config manager should be available", configManager);
-        assertEquals("Server port should be 8080", 8080, configManager.getServerPort());
-        
-        // Verify that we have a usable memory space
-        assertNotNull("Program should have memory", program.getMemory());
-        assertTrue("Program should have at least one memory block", 
-            program.getMemory().getBlocks().length > 0);
+    public void testInspectMemoryBlocksMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "blocks");
+
+            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain blocks field", json.has("blocks"));
+            assertTrue("Should have at least one memory block", json.get("blocks").size() > 0);
+        });
+    }
+
+    @Test
+    public void testInspectMemoryReadMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "read");
+            arguments.put("address", "0x01000000");
+            arguments.put("length", 16);
+
+            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain hexDump or data field", json.has("hexDump") || json.has("data"));
+        });
+    }
+
+    @Test
+    public void testInspectMemoryDataAtMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "data_at");
+            arguments.put("address", "0x01000050");
+
+            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+
+            assertNotNull("Result should not be null", result);
+            // May not have data at that address, but should return valid response
+            if (!result.isError()) {
+                TextContent content = (TextContent) result.content().get(0);
+                JsonNode json = parseJsonContent(content.text());
+                assertNotNull("Result should have valid JSON structure", json);
+            }
+        });
+    }
+
+    @Test
+    public void testInspectMemoryDataItemsMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "data_items");
+            arguments.put("limit", 10);
+
+            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain dataItems field", json.has("dataItems"));
+        });
+    }
+
+    @Test
+    public void testInspectMemorySegmentsMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "segments");
+
+            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain segments field", json.has("segments"));
+        });
     }
 }
