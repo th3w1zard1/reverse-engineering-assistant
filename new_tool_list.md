@@ -4,7 +4,7 @@
 
 ## New Tool List
 
-### 1. `get_function`
+### 1. `get-function`
 
 Unified function retrieval tool that replaces: `decompile_function`, `decompile_function_by_address`, `get_decompilation`, `disassemble_function`, `get_function_by_address`, `get_function_info`, `list_function_calls`
 
@@ -27,9 +27,9 @@ Returns:
     - When view='info': Detailed function information including parameters and local variables
     - When view='calls': List of function calls made within the function
 
-### 2. `list_functions`
+### 2. `list-functions`
 
-Comprehensive function listing and search tool that replaces: `list_functions`, `list_methods`, `search_functions_by_name`, `get_functions_by_similarity`, `get_undefined_function_candidates`, `get_function_count`
+Comprehensive function listing and search tool that replaces: `list-functions`, `list_methods`, `search_functions_by_name`, `get_functions_by_similarity`, `get_undefined_function_candidates`, `get_function_count`
 
 List, search, or count functions in the program with various filtering and search modes.
 
@@ -51,7 +51,7 @@ Returns:
     - When mode='undefined': JSON with undefined function candidates (addresses referenced but not defined as functions)
     - When mode='count': JSON with total function count
 
-### 3. `manage_function`
+### 3. `manage-function`
 
 Function and variable manipulation tool that replaces: `create_function`, `rename_function`, `rename_function_by_address`, `rename_variable`, `rename_variables`, `set_function_prototype`, `set_local_variable_type`, `change_variable_datatypes`
 
@@ -74,9 +74,9 @@ Args:
 Returns:
     Success or failure message for all actions
 
-### 4. `get_call_graph`
+### 4. `get-call-graph`
 
-Call graph and relationship analysis tool that replaces: `get_call_graph`, `get_call_tree`, `get_function_callers`, `get_function_callees`, `get_callers_decompiled`, `find_common_callers`
+Call graph and relationship analysis tool that replaces: `get-call-graph`, `get_call_tree`, `get_function_callers`, `get_function_callees`, `get_callers_decompiled`, `find_common_callers`
 
 Analyze function call relationships in various formats: bidirectional graphs, hierarchical trees, caller/callee lists, decompiled callers, or common callers.
 
@@ -99,7 +99,7 @@ Returns:
     - When mode='callers_decomp': JSON with decompiled callers
     - When mode='common_callers': List of functions that call ALL of the specified target functions
 
-### 5. `get_references`
+### 5. `get-references`
 
 Comprehensive cross-reference analysis tool that replaces: `get_xrefs_to`, `get_xrefs_from`, `find_cross_references`, `get_function_xrefs`, `get_referencers_decompiled`, `find_import_references`, `resolve_thunk`
 
@@ -127,7 +127,7 @@ Returns:
     - When mode='import': JSON with references to the imported function
     - When mode='thunk': JSON with thunk chain information
 
-### 6. `analyze_data_flow`
+### 6. `analyze-data-flow`
 
 Data flow analysis tool that replaces: `trace_data_flow_backward`, `trace_data_flow_forward`, `find_variable_accesses`
 
@@ -144,7 +144,7 @@ Returns:
     - When direction='forward': Data flow information showing where values are used
     - When direction='variable_accesses': List of variable accesses (reads and writes)
 
-### 7. `search_constants`
+### 7. `search-constants`
 
 Constant value search and analysis tool that replaces: `find_constant_uses`, `find_constants_in_range`, `list_common_constants`
 
@@ -164,7 +164,7 @@ Returns:
     - When mode='range': List of constants found in the range with occurrence counts
     - When mode='common': JSON with most common constants
 
-### 8. `manage_strings`
+### 8. `manage-strings`
 
 String listing, searching, and analysis tool that replaces: `list_strings`, `get_strings`, `search_strings_regex`, `get_strings_count`, `get_strings_by_similarity`
 
@@ -188,7 +188,7 @@ Returns:
     - When mode='count': Total number of defined strings
     - When mode='similarity': JSON with matching strings sorted by similarity
 
-### 9. `inspect_memory`
+### 9. `inspect-memory`
 
 Memory and data inspection tool that replaces: `get_memory_blocks`, `read_memory`, `get_data_at_address`, `list_data_items`, `list_segments`
 
@@ -208,7 +208,7 @@ Returns:
     - When mode='data_items': List of defined data labels and their values
     - When mode='segments': List of all memory segments in the program
 
-### 10. `manage_bookmarks`
+### 10. `manage-bookmarks`
 
 Bookmark management tool that replaces: `set_bookmark`, `get_bookmarks`, `search_bookmarks`, `remove_bookmark`, `list_bookmark_categories`
 
@@ -231,7 +231,7 @@ Returns:
     - When action='remove': Success or failure message
     - When action='categories': JSON with bookmark categories
 
-### 11. `manage_comments`
+### 11. `manage-comments`
 
 Comment management and search tool that replaces: `set_decompiler_comment`, `set_disassembly_comment`, `set_decompilation_comment`, `set_comment`, `get_comments`, `remove_comment`, `search_comments`, `search_decompilation`
 
@@ -262,7 +262,7 @@ Returns:
     - When action='search': JSON with matching comments
     - When action='search_decomp': JSON with search results from decompiled functions
 
-### 12. `analyze_vtables`
+### 12. `analyze-vtables`
 
 Virtual function table analysis tool that replaces: `analyze_vtable`, `find_vtable_callers`, `find_vtables_containing_function`
 
@@ -279,7 +279,7 @@ Returns:
     - When mode='callers': List of potential caller sites for the virtual method
     - When mode='containing': JSON with vtables containing the function
 
-### 13. `manage_symbols`
+### 13. `manage-symbols`
 
 Symbol and label management tool that replaces: `list_classes`, `list_namespaces`, `list_imports`, `list_exports`, `create_label`, `get_symbols`, `get_symbols_count`, `rename_data`
 
@@ -310,7 +310,7 @@ Returns:
     - When mode='count': JSON with symbol count
     - When mode='rename_data': Success or failure message
 
-### 14. `manage_structures`
+### 14. `manage-structures`
 
 Structure management tool that replaces: `parse_c_structure`, `validate_c_structure`, `create_structure`, `add_structure_field`, `modify_structure_field`, `modify_structure_from_c`, `get_structure_info`, `list_structures`, `apply_structure`, `delete_structure`, `parse_c_header`
 
@@ -356,7 +356,7 @@ Returns:
 
 ### Structures
 
-### 15. `manage_data_types`
+### 15. `manage-data-types`
 
 Data type management tool that replaces: `get_data_type_archives`, `get_data_types`, `get_data_type_by_string`, `apply_data_type`
 
@@ -380,7 +380,7 @@ Returns:
 
 ### Data Types
 
-### 16. `get_current_context`
+### 16. `get-current-context`
 
 Current context retrieval tool that replaces: `get_current_address`, `get_current_function`
 
@@ -396,7 +396,7 @@ Returns:
 
 ### Current Context
 
-### 17. `manage_function_tags`
+### 17. `manage-function-tags`
 
 Function tag management tool that replaces: `function_tags`
 
@@ -420,15 +420,15 @@ Returns:
 
 The 17 consolidated tools above replace all 90 original tools while maintaining 100% feature coverage:
 
-- **Function Analysis**: `get_function`, `list_functions`, `manage_function`
-- **Call Analysis**: `get_call_graph`, `get_references`
-- **Data Analysis**: `analyze_data_flow`, `search_constants`, `manage_strings`, `inspect_memory`
-- **Annotations**: `manage_bookmarks`, `manage_comments`
-- **Advanced Analysis**: `analyze_vtables`
-- **Symbol Management**: `manage_symbols`
-- **Structure Management**: `manage_structures`
-- **Type Management**: `manage_data_types`
-- **Context & Tags**: `get_current_context`, `manage_function_tags`
+- **Function Analysis**: `get-function`, `list-functions`, `manage-function`
+- **Call Analysis**: `get-call-graph`, `get-references`
+- **Data Analysis**: `analyze-data-flow`, `search-constants`, `manage-strings`, `inspect-memory`
+- **Annotations**: `manage-bookmarks`, `manage-comments`
+- **Advanced Analysis**: `analyze-vtables`
+- **Symbol Management**: `manage-symbols`
+- **Structure Management**: `manage-structures`
+- **Type Management**: `manage-data-types`
+- **Context & Tags**: `get-current-context`, `manage-function-tags`
 
 Each tool uses mode/action enums and optional parameters to provide the same functionality as multiple original tools, reducing LLM context size and improving tool selection reliability.
 

@@ -19,6 +19,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
+from mcp.shared.exceptions import McpError
 from mcp.types import (
     JSONRPCMessage,
     JSONRPCNotification,
@@ -110,24 +111,121 @@ class ReVaStdioBridge:
         self.url = f"http://localhost:{port}/mcp/message"
         self.server = Server("ReVa")
         self.backend_session: ClientSession | None = None
+        self._connection_context = None  # Store the connection context for reconnection
+        self._connection_params = {
+            "timeout": 3600.0,  # 1 hour
+            "read_timeout": 1800.0,  # 30 minutes
+        }
 
         # Register handlers
         self._register_handlers()
+
+    async def _ensure_backend_connected(self) -> ClientSession:
+        """
+        Ensure backend session is connected.
+
+        Returns:
+            ClientSession: Active backend session
+
+        Raises:
+            RuntimeError: If backend session is not available
+        """
+        if self.backend_session is None:
+            raise RuntimeError("Backend session not initialized - connection lost")
+        return self.backend_session
+
+    async def _call_with_reconnect(self, operation_name: str, operation, *args, **kwargs):
+        """
+        Call a backend operation with automatic retry on "Session terminated" errors.
+
+        Note: Full reconnection requires the outer run() loop to handle it, but we
+        can retry the operation in case it was a transient error.
+
+        Args:
+            operation_name: Name of the operation for logging
+            operation: Async callable to execute
+            *args, **kwargs: Arguments to pass to operation
+
+        Returns:
+            Result of the operation
+        """
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                return await operation(*args, **kwargs)
+            except McpError as e:
+                # Check if this is a "Session terminated" error
+                error_str = str(e).lower()
+                if "session terminated" in error_str:
+                    if attempt < max_retries - 1:
+                        print(
+                            f"WARNING: {operation_name} failed with 'Session terminated', "
+                            f"retrying (attempt {attempt + 1}/{max_retries})...",
+                            file=sys.stderr,
+                        )
+                        # Wait a bit before retrying - sometimes the connection recovers
+                        await asyncio.sleep(0.5)
+                        # Check if session is still available
+                        if self.backend_session is None:
+                            raise RuntimeError(
+                                "Backend session terminated and cannot be recovered. "
+                                "The connection will be re-established on the next request."
+                            )
+                        # Retry the operation
+                        continue
+                    else:
+                        # After max retries, mark session as dead and raise
+                        print(
+                            f"ERROR: {operation_name} failed after {max_retries} attempts: {e}",
+                            file=sys.stderr,
+                        )
+                        self.backend_session = None
+                        raise RuntimeError(
+                            f"Backend session terminated: {e}. "
+                            "The connection will be re-established automatically."
+                        )
+                else:
+                    # Not a session termination error, re-raise
+                    raise
+            except Exception as e:
+                # Check if it's a connection-related error
+                error_str = str(e).lower()
+                error_type = type(e).__name__
+                if "session" in error_str or "connection" in error_str or "ConnectionError" in error_type:
+                    if attempt < max_retries - 1:
+                        print(
+                            f"WARNING: {operation_name} failed with connection error, "
+                            f"retrying (attempt {attempt + 1}/{max_retries})...",
+                            file=sys.stderr,
+                        )
+                        await asyncio.sleep(0.5)
+                        if self.backend_session is None:
+                            raise RuntimeError(
+                                "Backend connection lost and cannot be recovered. "
+                                "The connection will be re-established on the next request."
+                            )
+                        continue
+                # For other exceptions, re-raise immediately
+                raise
 
     def _register_handlers(self):
         """Register MCP protocol handlers that forward to ReVa backend."""
 
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
-            """Forward list_tools request to ReVa backend."""
-            if not self.backend_session:
-                raise RuntimeError("Backend session not initialized")
+            """Forward list_tools request to ReVa backend with automatic reconnection."""
+            await self._ensure_backend_connected()
 
-            try:
-                result = await asyncio.wait_for(
-                    self.backend_session.list_tools(),
+            async def _list_tools_operation():
+                return await asyncio.wait_for(
+                    self.backend_session.list_tools(),  # type: ignore
                     timeout=60.0,  # 1 minute for listing tools
                 )
+
+            try:
+                result = await self._call_with_reconnect("list_tools", _list_tools_operation)
+                if result is None:
+                    return []
                 return result.tools
             except asyncio.TimeoutError:
                 print("ERROR: list_tools timed out", file=sys.stderr)
@@ -149,16 +247,22 @@ class ReVaStdioBridge:
             | CombinationContent
             | CallToolResult
         ):
-            """Forward call_tool request to ReVa backend."""
-            if not self.backend_session:
-                raise RuntimeError("Backend session not initialized")
+            """Forward call_tool request to ReVa backend with automatic reconnection."""
+            await self._ensure_backend_connected()
 
-            try:
+            async def _call_tool_operation():
                 # Add timeout for tool calls (some Ghidra operations can take a long time)
-                result = await asyncio.wait_for(
-                    self.backend_session.call_tool(name, arguments),
+                return await asyncio.wait_for(
+                    self.backend_session.call_tool(name, arguments),  # type: ignore
                     timeout=300.0,  # 5 minutes for tool execution
                 )
+
+            try:
+                result = await self._call_with_reconnect(
+                    f"call_tool({name})", _call_tool_operation
+                )
+                if result is None:
+                    return [TextContent(type="text", text=f"Error: Tool '{name}' returned no result")]
                 return result.content
             except asyncio.TimeoutError:
                 error_msg = f"Tool '{name}' timed out after 5 minutes"
@@ -174,15 +278,19 @@ class ReVaStdioBridge:
 
         @self.server.list_resources()
         async def list_resources() -> list[Resource]:
-            """Forward list_resources request to ReVa backend."""
-            if not self.backend_session:
-                raise RuntimeError("Backend session not initialized")
+            """Forward list_resources request to ReVa backend with automatic reconnection."""
+            await self._ensure_backend_connected()
 
-            try:
-                result = await asyncio.wait_for(
-                    self.backend_session.list_resources(),
+            async def _list_resources_operation():
+                return await asyncio.wait_for(
+                    self.backend_session.list_resources(),  # type: ignore
                     timeout=60.0,  # 1 minute for listing resources
                 )
+
+            try:
+                result = await self._call_with_reconnect("list_resources", _list_resources_operation)
+                if result is None:
+                    return []
                 return result.resources
             except asyncio.TimeoutError:
                 print("ERROR: list_resources timed out", file=sys.stderr)
@@ -198,15 +306,19 @@ class ReVaStdioBridge:
         async def read_resource(
             uri: AnyUrl,
         ) -> str | bytes | Iterable[ReadResourceContents]:
-            """Forward read_resource request to ReVa backend."""
-            if not self.backend_session:
-                raise RuntimeError("Backend session not initialized")
+            """Forward read_resource request to ReVa backend with automatic reconnection."""
+            await self._ensure_backend_connected()
 
-            try:
-                result = await asyncio.wait_for(
-                    self.backend_session.read_resource(uri),
+            async def _read_resource_operation():
+                return await asyncio.wait_for(
+                    self.backend_session.read_resource(uri),  # type: ignore
                     timeout=120.0,  # 2 minutes for reading resources
                 )
+
+            try:
+                result = await self._call_with_reconnect("read_resource", _read_resource_operation)
+                if result is None:
+                    return ""
                 # Return the first content item's text or blob
                 if result.contents and len(result.contents) > 0:
                     content = result.contents[0]
@@ -227,15 +339,19 @@ class ReVaStdioBridge:
 
         @self.server.list_prompts()
         async def list_prompts() -> list[Prompt]:
-            """Forward list_prompts request to ReVa backend."""
-            if not self.backend_session:
-                raise RuntimeError("Backend session not initialized")
+            """Forward list_prompts request to ReVa backend with automatic reconnection."""
+            await self._ensure_backend_connected()
 
-            try:
-                result = await asyncio.wait_for(
-                    self.backend_session.list_prompts(),
+            async def _list_prompts_operation():
+                return await asyncio.wait_for(
+                    self.backend_session.list_prompts(),  # type: ignore
                     timeout=60.0,  # 1 minute for listing prompts
                 )
+
+            try:
+                result = await self._call_with_reconnect("list_prompts", _list_prompts_operation)
+                if result is None:
+                    return []
                 return result.prompts
             except asyncio.TimeoutError:
                 print("ERROR: list_prompts timed out", file=sys.stderr)

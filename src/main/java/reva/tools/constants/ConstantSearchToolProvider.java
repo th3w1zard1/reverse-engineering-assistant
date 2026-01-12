@@ -96,7 +96,7 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("search_constants")
+            .name("search-constants")
             .title("Search Constants")
             .description("Find specific constants, constants in ranges, or list the most common constants in the program.")
             .inputSchema(createSchema(properties, required))
@@ -153,7 +153,7 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in search_constants", e);
+                logError("Error in search-constants", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

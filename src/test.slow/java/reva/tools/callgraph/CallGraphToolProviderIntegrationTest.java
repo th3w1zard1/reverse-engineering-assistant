@@ -90,7 +90,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("mode", "graph");
             arguments.put("depth", 1);
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_call_graph", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -113,7 +113,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("direction", "callees");
             arguments.put("max_depth", 2);
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_call_graph", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -134,7 +134,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("function_identifier", "testFunction");
             arguments.put("mode", "callers");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_call_graph", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -154,7 +154,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("function_identifier", "testFunction");
             arguments.put("mode", "callees");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_call_graph", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -175,7 +175,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("mode", "callers_decomp");
             arguments.put("max_callers", 5);
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_call_graph", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
             assertNotNull("Result should not be null", result);
             // May be empty if no callers, but should return valid JSON
@@ -197,7 +197,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("mode", "common_callers");
             arguments.put("function_addresses", "testFunction,callerFunction");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_call_graph", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
             assertNotNull("Result should not be null", result);
             // May be empty, but should return valid JSON

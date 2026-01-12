@@ -8,7 +8,7 @@ The `reva.tools.memory` package provides MCP tools for memory analysis and manip
 
 ## Key Tools
 
-### inspect_memory
+### inspect-memory
 
 **Consolidated tool that replaces:** `get-memory-blocks`, `read-memory`, `get-data-at-address`, `list-data-items`, `list-segments`
 

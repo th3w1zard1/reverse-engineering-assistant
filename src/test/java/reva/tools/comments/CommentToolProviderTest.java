@@ -31,7 +31,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated manage_comments tool that replaces:
+ * Tests the consolidated manage-comments tool that replaces:
  * - set-comment, set-disassembly-comment, set-decompilation-comment (action='set')
  * - get-comments (action='get')
  * - remove-comment (action='remove')
@@ -82,7 +82,7 @@ public class CommentToolProviderTest {
 
     @Test
     public void testValidateManageCommentsParameters() {
-        // Test parameter validation for the manage_comments tool
+        // Test parameter validation for the manage-comments tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("action", "get");

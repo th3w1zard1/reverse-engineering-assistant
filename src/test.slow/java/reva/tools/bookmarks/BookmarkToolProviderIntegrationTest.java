@@ -80,7 +80,7 @@ public class BookmarkToolProviderIntegrationTest extends RevaIntegrationTestBase
                 setArgs.put("category", "Analysis");
                 setArgs.put("comment", "Test bookmark");
 
-                CallToolRequest setRequest = new CallToolRequest("manage_bookmarks", setArgs);
+                CallToolRequest setRequest = new CallToolRequest("manage-bookmarks", setArgs);
                 CallToolResult setResult = client.callTool(setRequest);
                 assertFalse("Set bookmark should succeed", setResult.isError());
 
@@ -96,7 +96,7 @@ public class BookmarkToolProviderIntegrationTest extends RevaIntegrationTestBase
                 getArgs.put("action", "get");
                 getArgs.put("address_or_symbol", addressStr);
 
-                CallToolRequest getRequest = new CallToolRequest("manage_bookmarks", getArgs);
+                CallToolRequest getRequest = new CallToolRequest("manage-bookmarks", getArgs);
                 CallToolResult getResult = client.callTool(getRequest);
                 assertFalse("Get bookmarks should succeed", getResult.isError());
 

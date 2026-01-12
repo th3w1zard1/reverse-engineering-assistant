@@ -10,7 +10,7 @@ The `reva.tools.dataflow` package provides comprehensive data flow analysis capa
 
 The DataFlowToolProvider implements a single consolidated tool:
 
-### analyze_data_flow
+### analyze-data-flow
 
 **Consolidated tool that replaces:** `trace-data-flow-backward`, `trace-data-flow-forward`, `find-variable-accesses`
 
@@ -475,7 +475,7 @@ private Map<String, Object> findForwardTerminator(PcodeOp op) {
 
 ### Data Flow Trace Response
 
-Structure for analyze_data_flow with direction='backward' or 'forward':
+Structure for analyze-data-flow with direction='backward' or 'forward':
 ```json
 {
     "programPath": "/example.exe",
@@ -518,7 +518,7 @@ Structure for analyze_data_flow with direction='backward' or 'forward':
 
 ### Variable Accesses Response
 
-Structure for analyze_data_flow with direction='variable_accesses':
+Structure for analyze-data-flow with direction='variable_accesses':
 ```json
 {
     "programPath": "/example.exe",

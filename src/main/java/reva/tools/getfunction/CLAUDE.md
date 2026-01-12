@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Package Overview
 
-The `reva.tools.getfunction` package provides MCP tools for retrieving function details in various formats. The primary tool `get_function` supports multiple view modes: decompiled code, assembly/disassembly, function metadata, and call analysis. This tool is designed for quick function inspection and complements the more comprehensive decompiler tools package.
+The `reva.tools.getfunction` package provides MCP tools for retrieving function details in various formats. The primary tool `get-function` supports multiple view modes: decompiled code, assembly/disassembly, function metadata, and call analysis. This tool is designed for quick function inspection and complements the more comprehensive decompiler tools package.
 
 ## Key Tool
 
-### `get_function`
+### `get-function`
 Get function details in various formats: decompiled code, assembly, function information, or internal calls.
 
 **Parameters:**
@@ -25,7 +25,7 @@ Get function details in various formats: decompiled code, assembly, function inf
 
 ## Function Resolution
 
-The `get_function` tool supports flexible function identification through the `resolveFunction()` method:
+The `get-function` tool supports flexible function identification through the `resolveFunction()` method:
 
 ```java
 private Function resolveFunction(Program program, String identifier) {
@@ -356,7 +356,7 @@ private Map<String, Object> getSynchronizedContent(
         String fullDecompCode,
         int offset,
         Integer limit,
-        boolean includeDisassembly,  // Not used in get_function
+        boolean includeDisassembly,  // Not used in get-function
         boolean includeComments,
         boolean includeIncomingReferences,
         boolean includeReferenceContext,
@@ -472,7 +472,7 @@ if (!incomingRefs.isEmpty()) {
     if (totalRefCount > maxIncomingRefs) {
         result.put("incomingReferencesLimited", true);
         result.put("incomingReferencesMessage", String.format(
-            "Showing first %d of %d references. Use 'get_references' tool with target='%s' and mode='to' to see all references.",
+            "Showing first %d of %d references. Use 'get-references' tool with target='%s' and mode='to' to see all references.",
             maxIncomingRefs, totalRefCount, function.getName()
         ));
     }
@@ -564,7 +564,7 @@ registerTool(tool, (exchange, request) -> {
     } catch (IllegalArgumentException e) {
         return createErrorResult(e.getMessage()); // Auto-caught by registerTool, but explicit for clarity
     } catch (Exception e) {
-        logError("Error in get_function", e);
+        logError("Error in get-function", e);
         return createErrorResult("Tool execution failed: " + e.getMessage());
     }
 });

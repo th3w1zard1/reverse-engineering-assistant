@@ -83,7 +83,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     // ========================================================================
 
     /**
-     * Register the get_call_graph tool
+     * Register the get-call-graph tool
      */
     private void registerGetCallGraphTool() {
         Map<String, Object> properties = new HashMap<>();
@@ -140,7 +140,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get_call_graph")
+            .name("get-call-graph")
             .title("Get Call Graph")
             .description("Analyze function call relationships in various formats: bidirectional graphs, hierarchical trees, caller/callee lists, decompiled callers, or common callers.")
             .inputSchema(createSchema(properties, required))
@@ -170,7 +170,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in get_call_graph", e);
+                logError("Error in get-call-graph", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
@@ -462,7 +462,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     // ========================================================================
 
     /**
-     * Handle get_call_graph mode='graph' - bidirectional call graph
+     * Handle get-call-graph mode='graph' - bidirectional call graph
      */
     private McpSchema.CallToolResult handleGetCallGraphMode(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -483,7 +483,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle get_call_graph mode='tree' - hierarchical call tree
+     * Handle get-call-graph mode='tree' - hierarchical call tree
      */
     private McpSchema.CallToolResult handleGetCallTreeMode(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -511,7 +511,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle get_call_graph mode='callers' - list of callers
+     * Handle get-call-graph mode='callers' - list of callers
      */
     private McpSchema.CallToolResult handleGetCallersMode(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -556,7 +556,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle get_call_graph mode='callees' - list of callees
+     * Handle get-call-graph mode='callees' - list of callees
      */
     private McpSchema.CallToolResult handleGetCalleesMode(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -601,7 +601,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle get_call_graph mode='callers_decomp' - decompiled callers
+     * Handle get-call-graph mode='callers_decomp' - decompiled callers
      */
     private McpSchema.CallToolResult handleGetCallersDecompiledMode(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -730,7 +730,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle get_call_graph mode='common_callers' - find functions that call all specified functions
+     * Handle get-call-graph mode='common_callers' - find functions that call all specified functions
      */
     private McpSchema.CallToolResult handleFindCommonCallersMode(Program program, CallToolRequest request) {
         String functionAddresses = getOptionalString(request, "function_addresses", null);
@@ -779,7 +779,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         decompiler.setSimplificationStyle("decompile");
 
         if (!decompiler.openProgram(program)) {
-            logError("get_call_graph: Failed to initialize decompiler for " + program.getName());
+            logError("get-call-graph: Failed to initialize decompiler for " + program.getName());
             decompiler.dispose();
             return null;
         }
@@ -794,13 +794,13 @@ public class CallGraphToolProvider extends AbstractToolProvider {
 
         if (timeoutMonitor.isCancelled()) {
             String msg = "Decompilation timed out after " + DEFAULT_TIMEOUT_SECONDS + " seconds";
-            logError("get_call_graph: " + msg + " for " + function.getName());
+            logError("get-call-graph: " + msg + " for " + function.getName());
             return DecompilationAttempt.failure(msg);
         }
 
         if (!results.decompileCompleted()) {
             String msg = "Decompilation failed: " + results.getErrorMessage();
-            logError("get_call_graph: " + msg + " for " + function.getName());
+            logError("get-call-graph: " + msg + " for " + function.getName());
             return DecompilationAttempt.failure(msg);
         }
 

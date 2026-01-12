@@ -64,7 +64,7 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("mode", "analyze");
             arguments.put("vtable_address", "0x01000000");
 
-            CallToolResult result = client.callTool(new CallToolRequest("analyze_vtables", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
 
             assertNotNull("Result should not be null", result);
             // May error if not a valid vtable, but should return valid response
@@ -86,7 +86,7 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("mode", "callers");
             arguments.put("function_address", "0x01000100");
 
-            CallToolResult result = client.callTool(new CallToolRequest("analyze_vtables", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
 
             assertNotNull("Result should not be null", result);
             // May return empty list, but should be valid JSON
@@ -108,7 +108,7 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("mode", "containing");
             arguments.put("function_address", "0x01000100");
 
-            CallToolResult result = client.callTool(new CallToolRequest("analyze_vtables", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
 
             assertNotNull("Result should not be null", result);
             // May return empty list, but should be valid JSON

@@ -31,7 +31,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated inspect_memory tool that replaces:
+ * Tests the consolidated inspect-memory tool that replaces:
  * - get-memory-blocks (mode='blocks')
  * - read-memory (mode='read')
  * - get-data-at-address (mode='data_at')
@@ -82,7 +82,7 @@ public class MemoryToolProviderTest {
 
     @Test
     public void testValidateInspectMemoryParameters() {
-        // Test parameter validation for the inspect_memory tool
+        // Test parameter validation for the inspect-memory tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "blocks");

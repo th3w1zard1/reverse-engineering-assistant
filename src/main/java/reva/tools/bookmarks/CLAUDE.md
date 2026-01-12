@@ -8,7 +8,7 @@ The `reva.tools.bookmarks` package provides MCP tools for bookmark management in
 
 ## Key Tools
 
-### manage_bookmarks
+### manage-bookmarks
 
 **Consolidated tool that replaces:** `set-bookmark`, `get-bookmarks`, `search-bookmarks`, `remove-bookmark`, `list-bookmark-categories`
 

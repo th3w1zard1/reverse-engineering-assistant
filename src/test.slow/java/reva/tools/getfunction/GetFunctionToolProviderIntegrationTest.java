@@ -83,7 +83,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "decompile");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -108,7 +108,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "info");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -132,7 +132,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "disassemble");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -154,7 +154,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "calls");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -176,7 +176,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "0x01000100");
             arguments.put("view", "info");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");

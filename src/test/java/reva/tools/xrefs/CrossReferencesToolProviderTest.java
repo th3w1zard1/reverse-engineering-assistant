@@ -31,7 +31,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated get_references tool that replaces:
+ * Tests the consolidated get-references tool that replaces:
  * - find-cross-references (mode='both', 'to', 'from')
  * - get-referencers-decompiled (mode='referencers_decomp')
  * - find-import-references (mode='import')
@@ -82,7 +82,7 @@ public class CrossReferencesToolProviderTest {
 
     @Test
     public void testValidateGetReferencesParameters() {
-        // Test parameter validation for the get_references tool
+        // Test parameter validation for the get-references tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("target", "0x401000");

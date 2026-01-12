@@ -37,7 +37,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 
 /**
- * Integration tests for get_current_context tool in ProjectToolProvider
+ * Integration tests for get-current-context tool in ProjectToolProvider
  */
 public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTestBase {
 
@@ -81,7 +81,7 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("mode", "both");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_current_context", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-current-context", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if no Code Browser is active, but that's acceptable
@@ -97,7 +97,7 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("mode", "address");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_current_context", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-current-context", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if no Code Browser is active, but that's acceptable
@@ -112,7 +112,7 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("mode", "function");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get_current_context", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-current-context", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if no Code Browser is active, but that's acceptable

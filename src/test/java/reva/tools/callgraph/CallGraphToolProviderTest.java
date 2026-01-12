@@ -31,7 +31,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the get_call_graph tool
+ * Tests the get-call-graph tool
  */
 public class CallGraphToolProviderTest {
 
@@ -77,7 +77,7 @@ public class CallGraphToolProviderTest {
 
     @Test
     public void testValidateGetCallGraphParameters() {
-        // Test parameter validation for the get_call_graph tool
+        // Test parameter validation for the get-call-graph tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "graph");

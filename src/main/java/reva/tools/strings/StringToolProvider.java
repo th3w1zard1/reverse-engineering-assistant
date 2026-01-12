@@ -132,7 +132,7 @@ public class StringToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_strings")
+            .name("manage-strings")
             .title("Manage Strings")
             .description("List, search, count, or find similar strings in the program.")
             .inputSchema(createSchema(properties, required))
@@ -158,7 +158,7 @@ public class StringToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in manage_strings", e);
+                logError("Error in manage-strings", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

@@ -38,7 +38,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 
 /**
- * Integration tests for manage_function tool in FunctionToolProvider
+ * Integration tests for manage-function tool in FunctionToolProvider
  */
 public class FunctionToolProviderManageFunctionIntegrationTest extends RevaIntegrationTestBase {
 
@@ -67,7 +67,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
 
             // Create a memory block for this test
             // Note: createInitializedBlock doesn't support setting execute permission directly
-            // The manage_function tool requires executable memory, but we'll work around this
+            // The manage-function tool requires executable memory, but we'll work around this
             // by using functionManager.createFunction() directly for test setup, which doesn't require executable memory
             ghidra.program.model.mem.MemoryBlock testBlock = memory.createInitializedBlock("executable_test",
                 program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000000),
@@ -83,7 +83,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
                 // For now, we'll proceed and handle it in the test if needed
             }
 
-            // Create an instruction at testAddr for manage_function create action
+            // Create an instruction at testAddr for manage-function create action
             // The create action requires an instruction at the address
             byte[] retBytes = {(byte) 0xc3}; // x86 ret instruction
             memory.setBytes(testAddr, retBytes);
@@ -121,7 +121,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             arguments.put("address", "0x01000100");
             arguments.put("name", "newFunction");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -144,7 +144,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             arguments.put("prototype", "int main(int argc, char** argv)");
             arguments.put("createIfNotExists", true);
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -165,7 +165,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             arguments.put("function_identifier", "oldFunction");
             arguments.put("name", "renamedFunction");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -186,7 +186,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             setProtoArgs.put("action", "set_prototype");
             setProtoArgs.put("function_identifier", "0x01002000");
             setProtoArgs.put("prototype", "void test(int param1, int param2)");
-            client.callTool(new CallToolRequest("manage_function", setProtoArgs));
+            client.callTool(new CallToolRequest("manage-function", setProtoArgs));
 
             // Then rename a variable
             Map<String, Object> arguments = new HashMap<>();
@@ -196,7 +196,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             arguments.put("old_name", "param1");
             arguments.put("new_name", "renamedParam");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if decompilation doesn't work, but should return valid response
@@ -214,7 +214,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             setProtoArgs.put("action", "set_prototype");
             setProtoArgs.put("function_identifier", "0x01002000");
             setProtoArgs.put("prototype", "void test(int param1)");
-            client.callTool(new CallToolRequest("manage_function", setProtoArgs));
+            client.callTool(new CallToolRequest("manage-function", setProtoArgs));
 
             // Then change variable type
             Map<String, Object> arguments = new HashMap<>();
@@ -224,7 +224,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             arguments.put("variable_name", "param1");
             arguments.put("new_type", "long");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if decompilation doesn't work, but should return valid response
@@ -242,7 +242,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             setProtoArgs.put("action", "set_prototype");
             setProtoArgs.put("function_identifier", "0x01002000");
             setProtoArgs.put("prototype", "void test(int param1, int param2)");
-            client.callTool(new CallToolRequest("manage_function", setProtoArgs));
+            client.callTool(new CallToolRequest("manage-function", setProtoArgs));
 
             // Then change multiple variable types
             Map<String, Object> arguments = new HashMap<>();
@@ -251,7 +251,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             arguments.put("function_identifier", "0x01000200");
             arguments.put("datatype_mappings", "param1:long,param2:short");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if decompilation doesn't work, but should return valid response

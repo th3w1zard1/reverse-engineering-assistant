@@ -73,7 +73,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("inspect_memory")
+            .name("inspect-memory")
             .title("Inspect Memory")
             .description("Inspect memory blocks, read memory, get data information, list data items, or list memory segments.")
             .inputSchema(createSchema(properties, required))
@@ -101,7 +101,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in inspect_memory", e);
+                logError("Error in inspect-memory", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

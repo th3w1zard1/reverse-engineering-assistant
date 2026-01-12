@@ -75,12 +75,12 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             boolean foundManageStructures = false;
 
             for (Tool tool : tools.tools()) {
-                if ("manage_structures".equals(tool.name())) {
+                if ("manage-structures".equals(tool.name())) {
                     foundManageStructures = true;
                 }
             }
 
-            assertTrue("manage_structures tool should be available", foundManageStructures);
+            assertTrue("manage-structures tool should be available", foundManageStructures);
         });
     }
 
@@ -94,7 +94,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("action", "parse");
             arguments.put("c_definition", "struct TestStruct { int field1; char field2[32]; };");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -128,7 +128,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("action", "validate");
             arguments.put("c_definition", "struct ValidStruct { int x; int y; };");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -141,7 +141,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Test invalid structure
             arguments.put("c_definition", "struct InvalidStruct { unknown_type field; };");
-            result = client.callTool(new CallToolRequest("manage_structures", arguments));
+            result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -166,7 +166,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             arguments.put("size", 0);
             arguments.put("type", "structure");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -194,7 +194,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "create");
             createArgs.put("name", "TestFieldStruct");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Create structure should not error");
 
             // Add a field
@@ -206,7 +206,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             addArgs.put("data_type", "int");
             addArgs.put("comment", "Test field");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", addArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", addArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -235,7 +235,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             args.put("action", "parse");
             args.put("c_definition", "struct InfoStruct { int id; char name[20]; void* next; };");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", args));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", args));
             assertMcpResultNotError(createResult, "Create structure should not error");
 
             // Get structure info
@@ -244,7 +244,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             infoArgs.put("action", "info");
             infoArgs.put("structure_name", "InfoStruct");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", infoArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", infoArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -283,7 +283,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
                 args.put("programPath", programPath);
                 args.put("action", "parse");
                 args.put("c_definition", def);
-                CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", args));
+                CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", args));
                 assertMcpResultNotError(createResult, "Create structure should not error: " + def);
             }
 
@@ -292,7 +292,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             listArgs.put("programPath", programPath);
             listArgs.put("action", "list");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", listArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", listArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -331,7 +331,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "create");
             createArgs.put("name", "ToBeDeleted");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Create structure should not error");
 
             // Verify it exists
@@ -344,7 +344,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             deleteArgs.put("action", "delete");
             deleteArgs.put("structure_name", "ToBeDeleted");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", deleteArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", deleteArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -374,7 +374,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             args.put("action", "parse_header");
             args.put("header_content", headerContent);
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", args));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", args));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -417,7 +417,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             args.put("action", "parse");
             args.put("c_definition", complexDef);
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", args));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", args));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -428,7 +428,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             infoArgs.put("action", "info");
             infoArgs.put("structure_name", "Node");
 
-            result = client.callTool(new CallToolRequest("manage_structures", infoArgs));
+            result = client.callTool(new CallToolRequest("manage-structures", infoArgs));
 
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
@@ -450,7 +450,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("name", "LargeStruct");
             createArgs.put("size", 100); // 100 bytes
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Create structure should not error");
 
             // Add just a few defined fields, leaving many undefined bytes
@@ -462,7 +462,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             addArgs1.put("data_type", "int");
             addArgs1.put("offset", 0);
 
-            client.callTool(new CallToolRequest("manage_structures", addArgs1));
+            client.callTool(new CallToolRequest("manage-structures", addArgs1));
 
             Map<String, Object> addArgs2 = new HashMap<>();
             addArgs2.put("programPath", programPath);
@@ -472,7 +472,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             addArgs2.put("data_type", "int");
             addArgs2.put("offset", 96); // Near the end
 
-            client.callTool(new CallToolRequest("manage_structures", addArgs2));
+            client.callTool(new CallToolRequest("manage-structures", addArgs2));
 
             // Get structure info
             Map<String, Object> infoArgs = new HashMap<>();
@@ -480,7 +480,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             infoArgs.put("action", "info");
             infoArgs.put("structure_name", "LargeStruct");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_structures", infoArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", infoArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -546,7 +546,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest1 { void *field1; int field2; };");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
 
             // Verify initial structure
@@ -570,7 +570,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             modifyArgs.put("field_name", "field1");
             modifyArgs.put("new_data_type", "int *");
 
-            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage_structures", modifyArgs));
+            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Field modification should succeed");
 
             TextContent content = (TextContent) modifyResult.content().get(0);
@@ -602,7 +602,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest2 { int oldName; };");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
 
             // Rename the field
@@ -613,7 +613,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             modifyArgs.put("field_name", "oldName");
             modifyArgs.put("new_field_name", "newName");
 
-            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage_structures", modifyArgs));
+            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Field rename should succeed");
 
             // Verify the field was renamed in the program
@@ -636,7 +636,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest3 { int field1; char field2; };");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
 
             // Get offset of field2 (should be at offset 4 after the int)
@@ -654,7 +654,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             modifyArgs.put("offset", field2Offset);
             modifyArgs.put("new_data_type", "short");
 
-            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage_structures", modifyArgs));
+            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Field modification by offset should succeed");
 
             // Verify the field was modified
@@ -678,7 +678,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest4 { int field1; char field2; };");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
 
             // Verify initial structure
@@ -693,7 +693,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             modifyArgs.put("action", "modify_from_c");
             modifyArgs.put("c_definition", "struct ModifyTest4 { int field1; short field2; long field3; };");
 
-            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage_structures", modifyArgs));
+            CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Structure modification from C should succeed");
 
             TextContent content = (TextContent) modifyResult.content().get(0);
@@ -732,7 +732,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct DeleteTestForce { int field1; };");
 
-            CallToolResult createResult = client.callTool(new CallToolRequest("manage_structures", createArgs));
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
 
             // Verify structure exists
@@ -746,7 +746,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             deleteArgs.put("action", "delete");
             deleteArgs.put("structure_name", "DeleteTestForce");
 
-            CallToolResult deleteResult = client.callTool(new CallToolRequest("manage_structures", deleteArgs));
+            CallToolResult deleteResult = client.callTool(new CallToolRequest("manage-structures", deleteArgs));
             assertMcpResultNotError(deleteResult, "Delete should succeed");
 
             TextContent content = (TextContent) deleteResult.content().get(0);

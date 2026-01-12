@@ -64,7 +64,7 @@ public class ConstantSearchToolProviderIntegrationTest extends RevaIntegrationTe
             arguments.put("mode", "specific");
             arguments.put("value", "0x1234");
 
-            CallToolResult result = client.callTool(new CallToolRequest("search_constants", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
 
             assertNotNull("Result should not be null", result);
             if (!result.isError()) {
@@ -86,7 +86,7 @@ public class ConstantSearchToolProviderIntegrationTest extends RevaIntegrationTe
             arguments.put("min_value", "0x1000");
             arguments.put("max_value", "0x2000");
 
-            CallToolResult result = client.callTool(new CallToolRequest("search_constants", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
 
             assertNotNull("Result should not be null", result);
             if (!result.isError()) {
@@ -107,7 +107,7 @@ public class ConstantSearchToolProviderIntegrationTest extends RevaIntegrationTe
             arguments.put("mode", "common");
             arguments.put("top_n", 10);
 
-            CallToolResult result = client.callTool(new CallToolRequest("search_constants", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");

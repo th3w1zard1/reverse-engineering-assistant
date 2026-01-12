@@ -84,7 +84,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_symbols")
+            .name("manage-symbols")
             .title("Manage Symbols")
             .description("List classes, namespaces, imports, exports, create labels, get symbols, count symbols, or rename data labels.")
             .inputSchema(createSchema(properties, required))
@@ -118,7 +118,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in manage_symbols", e);
+                logError("Error in manage-symbols", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

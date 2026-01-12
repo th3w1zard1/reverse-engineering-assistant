@@ -40,50 +40,50 @@ import io.modelcontextprotocol.spec.McpError;
 public class StringToolProviderTest {
     @Mock
     private McpSyncServer mockServer;
-    
+
     @Mock
     private Program mockProgram;
-    
+
     @Mock
     private Listing mockListing;
-    
+
     @Mock
     private DataIterator mockDataIterator;
-    
+
     @Mock
     private Data mockData;
-    
+
     @Mock
     private Address mockAddress;
-    
+
     @Mock
     private DataType mockDataType;
-    
+
     private StringToolProvider stringToolProvider;
-    
+
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         stringToolProvider = new StringToolProvider(mockServer);
     }
-    
+
     @Test
     public void testConstructor() {
         assertNotNull("StringToolProvider should be created", stringToolProvider);
     }
-    
+
     @Test
     public void testRegisterTools() throws McpError {
         // Test that registerTools completes without throwing
         stringToolProvider.registerTools();
     }
-    
+
     @Test
     public void testGetStringInfoWithValidString() throws Exception {
         // Setup mock data
         String testString = "Hello, World!";
         byte[] testBytes = testString.getBytes();
-        
+
         when(mockData.getValue()).thenReturn(testString);
         when(mockData.getAddress()).thenReturn(mockAddress);
         when(mockAddress.toString()).thenReturn("00401000");
@@ -92,14 +92,14 @@ public class StringToolProviderTest {
         when(mockData.getDataType()).thenReturn(mockDataType);
         when(mockDataType.getName()).thenReturn("string");
         when(mockData.getDefaultValueRepresentation()).thenReturn("\"Hello, World!\"");
-        
+
         // Use reflection to test the private method
         java.lang.reflect.Method method = StringToolProvider.class.getDeclaredMethod("getStringInfo", Data.class);
         method.setAccessible(true);
-        
+
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) method.invoke(stringToolProvider, mockData);
-        
+
         assertNotNull("Result should not be null", result);
         assertEquals("Address should match", "0x00401000", result.get("address"));
         assertEquals("Content should match", testString, result.get("content"));
@@ -109,50 +109,50 @@ public class StringToolProviderTest {
         assertNotNull("Hex bytes should be present", result.get("hexBytes"));
         assertEquals("Byte length should match", testBytes.length, result.get("byteLength"));
     }
-    
+
     @Test
     public void testGetStringInfoWithNonString() throws Exception {
         // Setup mock data with non-string value
         when(mockData.getValue()).thenReturn(Integer.valueOf(42));
-        
+
         // Use reflection to test the private method
         java.lang.reflect.Method method = StringToolProvider.class.getDeclaredMethod("getStringInfo", Data.class);
         method.setAccessible(true);
-        
+
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) method.invoke(stringToolProvider, mockData);
-        
+
         assertNull("Result should be null for non-string data", result);
     }
-    
+
     @Test
     public void testInheritance() {
         // Test that StringToolProvider extends AbstractToolProvider
         assertTrue("StringToolProvider should extend AbstractToolProvider",
             reva.tools.AbstractToolProvider.class.isAssignableFrom(StringToolProvider.class));
     }
-    
+
     @Test
     public void testToolProviderInterface() {
         // Test that StringToolProvider implements ToolProvider interface
         assertTrue("StringToolProvider should implement ToolProvider",
             reva.tools.ToolProvider.class.isAssignableFrom(StringToolProvider.class));
     }
-    
+
     @Test
     public void testValidateManageStringsParameters() {
-        // Test parameter validation for the manage_strings tool
+        // Test parameter validation for the manage-strings tool
         Map<String, Object> validArgs = new java.util.HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "list");
-        
+
         // Valid parameters should not throw
         try {
             validateManageStringsArgs(validArgs);
         } catch (Exception e) {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
-        
+
         // Missing programPath should throw
         Map<String, Object> missingProgram = new java.util.HashMap<>(validArgs);
         missingProgram.remove("programPath");
@@ -161,17 +161,17 @@ public class StringToolProviderTest {
             fail("Should throw exception for missing programPath");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention programPath", 
+            assertTrue("Error message should mention programPath",
                 e.getMessage().toLowerCase().contains("program"));
         }
     }
-    
+
     @Test
     public void testValidateModeEnum() {
         // Test that all valid modes are accepted
         Map<String, Object> args = new java.util.HashMap<>();
         args.put("programPath", "/test/program");
-        
+
         // Test all valid modes
         String[] validModes = {"list", "regex", "count", "similarity"};
         for (String mode : validModes) {
@@ -182,7 +182,7 @@ public class StringToolProviderTest {
                 fail("Valid mode '" + mode + "' should not throw exception: " + e.getMessage());
             }
         }
-        
+
         // Test invalid mode
         args.put("mode", "invalid");
         try {
@@ -190,10 +190,10 @@ public class StringToolProviderTest {
             fail("Should throw exception for invalid mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention invalid mode", 
+            assertTrue("Error message should mention invalid mode",
                 e.getMessage().toLowerCase().contains("invalid"));
         }
-        
+
         // Test default mode (should default to 'list')
         args.remove("mode");
         try {
@@ -203,7 +203,7 @@ public class StringToolProviderTest {
             // May throw or default - either is acceptable
         }
     }
-    
+
     @Test
     public void testValidateRegexModeParameters() {
         // Test regex mode parameter requirements
@@ -212,14 +212,14 @@ public class StringToolProviderTest {
         args.put("mode", "regex");
         args.put("pattern", ".*test.*");
         args.put("max_results", 100);
-        
+
         // Valid regex mode args
         try {
             validateRegexModeArgs(args);
         } catch (Exception e) {
             fail("Valid regex mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Missing pattern should throw
         args.remove("pattern");
         try {
@@ -227,10 +227,10 @@ public class StringToolProviderTest {
             fail("Should throw exception for missing pattern in regex mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention pattern", 
+            assertTrue("Error message should mention pattern",
                 e.getMessage().toLowerCase().contains("pattern"));
         }
-        
+
         // Empty pattern should throw
         args.put("pattern", "");
         try {
@@ -238,11 +238,11 @@ public class StringToolProviderTest {
             fail("Should throw exception for empty pattern in regex mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention empty", 
+            assertTrue("Error message should mention empty",
                 e.getMessage().toLowerCase().contains("empty") ||
                 e.getMessage().toLowerCase().contains("pattern"));
         }
-        
+
         // Invalid regex pattern should throw
         args.put("pattern", "[invalid");
         try {
@@ -250,12 +250,12 @@ public class StringToolProviderTest {
             fail("Should throw exception for invalid regex pattern");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention invalid regex", 
+            assertTrue("Error message should mention invalid regex",
                 e.getMessage().toLowerCase().contains("invalid") ||
                 e.getMessage().toLowerCase().contains("regex"));
         }
     }
-    
+
     @Test
     public void testValidateSimilarityModeParameters() {
         // Test similarity mode parameter requirements
@@ -265,14 +265,14 @@ public class StringToolProviderTest {
         args.put("search_string", "test");
         args.put("start_index", 0);
         args.put("max_count", 100);
-        
+
         // Valid similarity mode args
         try {
             validateSimilarityModeArgs(args);
         } catch (Exception e) {
             fail("Valid similarity mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Missing search_string should throw
         args.remove("search_string");
         try {
@@ -280,10 +280,10 @@ public class StringToolProviderTest {
             fail("Should throw exception for missing search_string in similarity mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention search_string", 
+            assertTrue("Error message should mention search_string",
                 e.getMessage().toLowerCase().contains("search"));
         }
-        
+
         // Empty search_string should throw
         args.put("search_string", "");
         try {
@@ -291,12 +291,12 @@ public class StringToolProviderTest {
             fail("Should throw exception for empty search_string in similarity mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention empty", 
+            assertTrue("Error message should mention empty",
                 e.getMessage().toLowerCase().contains("empty") ||
                 e.getMessage().toLowerCase().contains("search"));
         }
     }
-    
+
     @Test
     public void testValidateListModeParameters() {
         // Test list mode parameter requirements
@@ -307,14 +307,14 @@ public class StringToolProviderTest {
         args.put("max_count", 100);
         args.put("filter", "test");
         args.put("include_referencing_functions", false);
-        
+
         // Valid list mode args
         try {
             validateListModeArgs(args);
         } catch (Exception e) {
             fail("Valid list mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Test pagination parameter defaults and alternatives
         args.put("offset", 10);
         args.put("limit", 50);
@@ -325,14 +325,14 @@ public class StringToolProviderTest {
             // May or may not accept both
         }
     }
-    
+
     @Test
     public void testValidateCountModeParameters() {
         // Test count mode parameter requirements
         Map<String, Object> args = new java.util.HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "count");
-        
+
         // Valid count mode args (only needs programPath)
         try {
             validateCountModeArgs(args);
@@ -340,13 +340,13 @@ public class StringToolProviderTest {
             fail("Valid count mode parameters should not throw: " + e.getMessage());
         }
     }
-    
+
     @Test
     public void testValidatePaginationParameters() {
         // Test pagination parameter validation
         Map<String, Object> args = new java.util.HashMap<>();
         args.put("programPath", "/test/program");
-        
+
         // Valid pagination
         args.put("start_index", 0);
         args.put("max_count", 100);
@@ -355,7 +355,7 @@ public class StringToolProviderTest {
         } catch (Exception e) {
             fail("Valid pagination parameters should not throw: " + e.getMessage());
         }
-        
+
         // Test start_index validation (should clamp to 0)
         args.put("start_index", -5);
         try {
@@ -364,7 +364,7 @@ public class StringToolProviderTest {
         } catch (Exception e) {
             // May clamp or throw
         }
-        
+
         // Test max_count validation
         args.put("start_index", 0);
         args.put("max_count", 0);
@@ -375,14 +375,14 @@ public class StringToolProviderTest {
             // May throw or use default
         }
     }
-    
+
     // Helper methods to simulate parameter validation from the tool handler
     private void validateManageStringsArgs(Map<String, Object> args) {
         if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
     }
-    
+
     private void validateModeEnum(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if (mode != null) {
@@ -395,13 +395,13 @@ public class StringToolProviderTest {
                 }
             }
             if (!isValid) {
-                throw new IllegalArgumentException("Invalid mode: " + mode + 
+                throw new IllegalArgumentException("Invalid mode: " + mode +
                     ". Valid modes are: list, regex, count, similarity");
             }
         }
         // If mode is null, it should default to "list" according to the spec
     }
-    
+
     private void validateRegexModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("regex".equals(mode)) {
@@ -414,7 +414,7 @@ public class StringToolProviderTest {
             }
         }
     }
-    
+
     private void validateRegexPattern(Map<String, Object> args) {
         String pattern = (String) args.get("pattern");
         if (pattern != null) {
@@ -425,7 +425,7 @@ public class StringToolProviderTest {
             }
         }
     }
-    
+
     private void validateSimilarityModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("similarity".equals(mode)) {
@@ -438,7 +438,7 @@ public class StringToolProviderTest {
             }
         }
     }
-    
+
     private void validateListModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("list".equals(mode)) {
@@ -447,14 +447,14 @@ public class StringToolProviderTest {
             // pagination has defaults
         }
     }
-    
+
     private void validateCountModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("count".equals(mode)) {
             // Count mode only needs programPath, which is already validated
         }
     }
-    
+
     private void validatePaginationArgs(Map<String, Object> args) {
         Object startIndexObj = args.get("start_index");
         if (startIndexObj != null) {
@@ -463,7 +463,7 @@ public class StringToolProviderTest {
                 throw new IllegalArgumentException("start_index must be non-negative");
             }
         }
-        
+
         Object maxCountObj = args.get("max_count");
         if (maxCountObj != null) {
             int maxCount = ((Number) maxCountObj).intValue();

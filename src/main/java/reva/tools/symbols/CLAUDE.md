@@ -8,7 +8,7 @@ The symbols tools package (`reva.tools.symbols`) provides MCP tools for interact
 
 ## Key Tools
 
-### manage_symbols
+### manage-symbols
 
 **Consolidated tool that replaces:** `list_classes`, `list_namespaces`, `list_imports`, `list_exports`, `create_label`, `get_symbols`, `get_symbols_count`, `rename_data`
 
@@ -350,7 +350,7 @@ public void testSymbolRetrieval() throws Exception {
     
     // Test symbol retrieval via MCP
     CallToolResult result = client.callTool(new CallToolRequest(
-        "manage_symbols",
+        "manage-symbols",
         Map.of("programPath", programPath, "mode", "symbols", "max_count", 50)
     ));
     
@@ -377,7 +377,7 @@ assertEquals("Should be user-defined", SourceType.USER_DEFINED, createdSymbol.ge
 ```java
 // Test external symbol filtering
 CallToolResult result = client.callTool(new CallToolRequest(
-    "manage_symbols",
+    "manage-symbols",
     Map.of(
         "programPath", programPath,
         "mode", "symbols",

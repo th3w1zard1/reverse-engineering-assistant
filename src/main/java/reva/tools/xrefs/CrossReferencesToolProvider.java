@@ -102,7 +102,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register the get_references tool
+     * Register the get-references tool
      */
     private void registerCrossReferencesTool() {
         Map<String, Object> properties = new HashMap<>();
@@ -169,7 +169,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "target");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get_references")
+            .name("get-references")
             .title("Get References")
             .description("Find and analyze references to/from addresses, symbols, functions, or imports, with optional decompilation of referencers.")
             .inputSchema(createSchema(properties, required))
@@ -202,7 +202,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in get_references", e);
+                logError("Error in get-references", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
@@ -723,7 +723,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         decompiler.setSimplificationStyle("decompile");
 
         if (!decompiler.openProgram(program)) {
-            logError("get_references: Failed to initialize decompiler for " + program.getName());
+            logError("get-references: Failed to initialize decompiler for " + program.getName());
             decompiler.dispose();
             return null;
         }
@@ -738,13 +738,13 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
 
         if (timeoutMonitor.isCancelled()) {
             String msg = "Decompilation timed out after " + getTimeoutSecondsForReferences() + " seconds";
-            logError("get_references: " + msg + " for " + function.getName());
+            logError("get-references: " + msg + " for " + function.getName());
             return DecompilationAttempt.failure(msg);
         }
 
         if (!results.decompileCompleted()) {
             String msg = "Decompilation failed: " + results.getErrorMessage();
-            logError("get_references: " + msg + " for " + function.getName());
+            logError("get-references: " + msg + " for " + function.getName());
             return DecompilationAttempt.failure(msg);
         }
 

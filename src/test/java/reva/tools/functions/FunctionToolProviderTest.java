@@ -32,7 +32,7 @@ import io.modelcontextprotocol.spec.McpError;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated list_functions tool that replaces:
+ * Tests the consolidated list-functions tool that replaces:
  * - get-function-count (mode='count')
  * - get-functions (mode='all')
  * - get-functions-by-similarity (mode='similarity')
@@ -83,7 +83,7 @@ public class FunctionToolProviderTest {
 
     @Test
     public void testValidateListFunctionsParameters() {
-        // Test parameter validation for the list_functions tool
+        // Test parameter validation for the list-functions tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "all");
@@ -430,7 +430,7 @@ public class FunctionToolProviderTest {
 
     @Test
     public void testValidateManageFunctionParameters() {
-        // Test parameter validation for the manage_function tool
+        // Test parameter validation for the manage-function tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("action", "create");

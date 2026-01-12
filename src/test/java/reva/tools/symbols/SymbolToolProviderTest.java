@@ -31,7 +31,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated manage_symbols tool that replaces:
+ * Tests the consolidated manage-symbols tool that replaces:
  * - get-symbols-count, get-symbols from SymbolToolProvider (modes='count', 'symbols')
  * - list-imports, list-exports from ImportExportToolProvider (modes='imports', 'exports')
  * - create-label from DataToolProvider (mode='create_label')
@@ -82,7 +82,7 @@ public class SymbolToolProviderTest {
 
     @Test
     public void testValidateManageSymbolsParameters() {
-        // Test parameter validation for the manage_symbols tool
+        // Test parameter validation for the manage-symbols tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "symbols");

@@ -80,7 +80,7 @@ public class MemoryToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "blocks");
 
-            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("inspect-memory", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -102,7 +102,7 @@ public class MemoryToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("address", "0x01000000");
             arguments.put("length", 16);
 
-            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("inspect-memory", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -122,7 +122,7 @@ public class MemoryToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("mode", "data_at");
             arguments.put("address", "0x01000050");
 
-            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("inspect-memory", arguments));
 
             assertNotNull("Result should not be null", result);
             // May not have data at that address, but should return valid response
@@ -144,7 +144,7 @@ public class MemoryToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("mode", "data_items");
             arguments.put("limit", 10);
 
-            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("inspect-memory", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -163,7 +163,7 @@ public class MemoryToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "segments");
 
-            CallToolResult result = client.callTool(new CallToolRequest("inspect_memory", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("inspect-memory", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");

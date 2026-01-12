@@ -56,7 +56,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                 client.initialize();
 
                 // Call the tool with required program path
-                CallToolResult result = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", programPath, "action", "archives")));
 
                 assertFalse("Tool call should succeed", result.isError());
@@ -100,7 +100,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                 client.initialize();
 
                 // Call the tool without program path - this should fail
-                CallToolResult result = client.callTool(new CallToolRequest("manage_data_types", Map.of("action", "archives")));
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", Map.of("action", "archives")));
 
                 assertTrue("Tool call should fail without programPath", result.isError());
             } catch (Exception e) {
@@ -121,19 +121,19 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                 String invalidProgramPath = "/nonexistent/program/path";
 
                 // Test get-data-type-archives with invalid program path
-                CallToolResult archivesResult = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult archivesResult = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", invalidProgramPath, "action", "archives")));
                 assertTrue("get-data-type-archives should fail with invalid program path", archivesResult.isError());
                 String archivesError = ((TextContent) archivesResult.content().get(0)).text();
                 assertTrue("Should contain helpful error message", archivesError.contains("Program not found"));
 
                 // Test get-data-types with invalid program path
-                CallToolResult typesResult = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult typesResult = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", invalidProgramPath, "action", "list", "archive_name", "BuiltInTypes")));
                 assertTrue("get-data-types should fail with invalid program path", typesResult.isError());
 
                 // Test get-data-type-by-string with invalid program path
-                CallToolResult byStringResult = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult byStringResult = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", invalidProgramPath, "action", "by_string", "data_type_string", "int")));
                 assertTrue("get-data-type-by-string should fail with invalid program path", byStringResult.isError());
 
@@ -164,7 +164,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                     args.put("address_or_symbol", "0x00401000");
                     args.put("data_type_string", dataType);
 
-                    CallToolResult result = client.callTool(new CallToolRequest("manage_data_types", args));
+                    CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", args));
                     String resultText = ((TextContent) result.content().get(0)).text();
 
                     // Should not fail with "No data type managers available"
@@ -200,7 +200,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                     args.put("address_or_symbol", "0x00401000");
                     args.put("data_type_string", dataType);
 
-                    CallToolResult result = client.callTool(new CallToolRequest("manage_data_types", args));
+                    CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", args));
                     String resultText = ((TextContent) result.content().get(0)).text();
 
                     // Should not fail with core error from #142
@@ -235,13 +235,13 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                 client.initialize();
 
                 // Test get-data-types tool with program-specific archive
-                CallToolResult archivesResult = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult archivesResult = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", programPath, "action", "archives")));
 
                 assertFalse("get-data-type-archives should succeed", archivesResult.isError());
 
                 // Now test get-data-types with the built-in archive - this is the key functionality
-                CallToolResult typesResult = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult typesResult = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", programPath, "action", "list", "archive_name", "BuiltInTypes")));
 
                 assertFalse("get-data-types should succeed", typesResult.isError());
@@ -262,7 +262,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                           typesText.contains("int") || typesText.contains("char") || typesText.contains("byte"));
 
                 // Test get-data-type-by-string with program context - most important test
-                CallToolResult byStringResult = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult byStringResult = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", programPath, "action", "by_string", "data_type_string", "int")));
 
                 assertFalse("get-data-type-by-string should succeed", byStringResult.isError());
@@ -287,7 +287,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
             try {
                 client.initialize();
 
-                CallToolResult result = client.callTool(new CallToolRequest("manage_data_types",
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types",
                     Map.of("programPath", programPath, "action", "archives")));
 
                 // Get all content blocks - createMultiJsonResult returns multiple text blocks

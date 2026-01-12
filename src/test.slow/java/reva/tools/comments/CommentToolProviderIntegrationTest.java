@@ -79,7 +79,7 @@ public class CommentToolProviderIntegrationTest extends RevaIntegrationTestBase 
                 setArgs.put("comment_type", "eol");
                 setArgs.put("comment", "Test comment");
 
-                CallToolRequest setRequest = new CallToolRequest("manage_comments", setArgs);
+                CallToolRequest setRequest = new CallToolRequest("manage-comments", setArgs);
                 CallToolResult setResult = client.callTool(setRequest);
                 assertFalse("Set comment should succeed", setResult.isError());
 
@@ -94,7 +94,7 @@ public class CommentToolProviderIntegrationTest extends RevaIntegrationTestBase 
                 getArgs.put("action", "get");
                 getArgs.put("address_or_symbol", addressStr);
 
-                CallToolRequest getRequest = new CallToolRequest("manage_comments", getArgs);
+                CallToolRequest getRequest = new CallToolRequest("manage-comments", getArgs);
                 CallToolResult getResult = client.callTool(getRequest);
                 assertFalse("Get comments should succeed", getResult.isError());
 

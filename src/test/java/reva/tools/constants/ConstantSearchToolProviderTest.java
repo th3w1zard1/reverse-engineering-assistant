@@ -30,8 +30,8 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Unit tests for ConstantSearchToolProvider.
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
- * 
- * Tests the consolidated search_constants tool that replaces:
+ *
+ * Tests the consolidated search-constants tool that replaces:
  * - find-constant-uses (mode='specific')
  * - find-constants-in-range (mode='range')
  * - list-common-constants (mode='common')
@@ -77,22 +77,22 @@ public class ConstantSearchToolProviderTest {
     public void testConstructor() {
         assertNotNull("ConstantSearchToolProvider should be created", toolProvider);
     }
-    
+
     @Test
     public void testValidateSearchConstantsParameters() {
-        // Test parameter validation for the search_constants tool
+        // Test parameter validation for the search-constants tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "specific");
         validArgs.put("value", "0xdeadbeef");
-        
+
         // Valid parameters should not throw
         try {
             validateSearchConstantsArgs(validArgs);
         } catch (Exception e) {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
-        
+
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
         missingProgram.remove("programPath");
@@ -101,10 +101,10 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for missing programPath");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention programPath", 
+            assertTrue("Error message should mention programPath",
                 e.getMessage().toLowerCase().contains("program"));
         }
-        
+
         // Missing mode should throw
         Map<String, Object> missingMode = new HashMap<>(validArgs);
         missingMode.remove("mode");
@@ -113,17 +113,17 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for missing mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention mode", 
+            assertTrue("Error message should mention mode",
                 e.getMessage().toLowerCase().contains("mode"));
         }
     }
-    
+
     @Test
     public void testValidateModeEnum() {
         // Test that all valid modes are accepted
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
-        
+
         // Test all valid modes
         String[] validModes = {"specific", "range", "common"};
         for (String mode : validModes) {
@@ -134,7 +134,7 @@ public class ConstantSearchToolProviderTest {
                 fail("Valid mode '" + mode + "' should not throw exception: " + e.getMessage());
             }
         }
-        
+
         // Test invalid mode
         args.put("mode", "invalid");
         try {
@@ -142,11 +142,11 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for invalid mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention invalid mode", 
+            assertTrue("Error message should mention invalid mode",
                 e.getMessage().toLowerCase().contains("invalid"));
         }
     }
-    
+
     @Test
     public void testValidateSpecificModeParameters() {
         // Test specific mode parameter requirements
@@ -155,14 +155,14 @@ public class ConstantSearchToolProviderTest {
         args.put("mode", "specific");
         args.put("value", "0xdeadbeef");
         args.put("max_results", 100);
-        
+
         // Valid specific mode args
         try {
             validateSpecificModeArgs(args);
         } catch (Exception e) {
             fail("Valid specific mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Missing value should throw
         args.remove("value");
         try {
@@ -170,10 +170,10 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for missing value in specific mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention value", 
+            assertTrue("Error message should mention value",
                 e.getMessage().toLowerCase().contains("value"));
         }
-        
+
         // Test value parsing (hex, decimal, negative)
         args.put("value", "0xdeadbeef");
         try {
@@ -181,21 +181,21 @@ public class ConstantSearchToolProviderTest {
         } catch (Exception e) {
             fail("Hex value format should be valid");
         }
-        
+
         args.put("value", "123");
         try {
             validateValueFormat(args);
         } catch (Exception e) {
             fail("Decimal value format should be valid");
         }
-        
+
         args.put("value", "-1");
         try {
             validateValueFormat(args);
         } catch (Exception e) {
             fail("Negative value format should be valid");
         }
-        
+
         // Invalid value format
         args.put("value", "invalid");
         try {
@@ -203,10 +203,10 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for invalid value format");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention invalid", 
+            assertTrue("Error message should mention invalid",
                 e.getMessage().toLowerCase().contains("invalid"));
         }
-        
+
         // Test max_results validation
         args.put("value", "123");
         args.put("max_results", 0);
@@ -216,7 +216,7 @@ public class ConstantSearchToolProviderTest {
         } catch (Exception e) {
             // May clamp or throw
         }
-        
+
         args.put("max_results", 20000);
         try {
             validateMaxResults(args);
@@ -225,7 +225,7 @@ public class ConstantSearchToolProviderTest {
             // May clamp or throw
         }
     }
-    
+
     @Test
     public void testValidateRangeModeParameters() {
         // Test range mode parameter requirements
@@ -235,14 +235,14 @@ public class ConstantSearchToolProviderTest {
         args.put("min_value", "0x100");
         args.put("max_value", "0x200");
         args.put("max_results", 100);
-        
+
         // Valid range mode args
         try {
             validateRangeModeArgs(args);
         } catch (Exception e) {
             fail("Valid range mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Missing min_value should throw
         args.remove("min_value");
         try {
@@ -250,10 +250,10 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for missing min_value in range mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention min_value", 
+            assertTrue("Error message should mention min_value",
                 e.getMessage().toLowerCase().contains("min"));
         }
-        
+
         // Missing max_value should throw
         args.put("min_value", "0x100");
         args.remove("max_value");
@@ -262,10 +262,10 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception for missing max_value in range mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention max_value", 
+            assertTrue("Error message should mention max_value",
                 e.getMessage().toLowerCase().contains("max"));
         }
-        
+
         // min_value > max_value should throw
         args.put("min_value", "0x200");
         args.put("max_value", "0x100");
@@ -274,12 +274,12 @@ public class ConstantSearchToolProviderTest {
             fail("Should throw exception when min_value > max_value");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention min_value must be less than max_value", 
-                e.getMessage().toLowerCase().contains("min") || 
+            assertTrue("Error message should mention min_value must be less than max_value",
+                e.getMessage().toLowerCase().contains("min") ||
                 e.getMessage().toLowerCase().contains("max"));
         }
     }
-    
+
     @Test
     public void testValidateCommonModeParameters() {
         // Test common mode parameter requirements
@@ -289,14 +289,14 @@ public class ConstantSearchToolProviderTest {
         args.put("top_n", 50);
         args.put("include_small_values", false);
         args.put("min_value", "0x1000");
-        
+
         // Valid common mode args
         try {
             validateCommonModeArgs(args);
         } catch (Exception e) {
             fail("Valid common mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Test top_n validation
         args.put("top_n", 0);
         try {
@@ -305,7 +305,7 @@ public class ConstantSearchToolProviderTest {
         } catch (Exception e) {
             // May clamp or throw
         }
-        
+
         args.put("top_n", 20000);
         try {
             validateCommonModeArgs(args);
@@ -313,7 +313,7 @@ public class ConstantSearchToolProviderTest {
         } catch (Exception e) {
             // May clamp or throw
         }
-        
+
         // Test optional min_value for filtering
         args.put("top_n", 50);
         args.remove("min_value");
@@ -323,7 +323,7 @@ public class ConstantSearchToolProviderTest {
         } catch (Exception e) {
             fail("min_value should be optional for common mode");
         }
-        
+
         // Test include_small_values boolean
         args.put("include_small_values", true);
         try {
@@ -332,7 +332,7 @@ public class ConstantSearchToolProviderTest {
             fail("include_small_values should accept boolean values");
         }
     }
-    
+
     // Helper methods to simulate parameter validation from the tool handler
     private void validateSearchConstantsArgs(Map<String, Object> args) {
         if (args.get("programPath") == null) {
@@ -342,7 +342,7 @@ public class ConstantSearchToolProviderTest {
             throw new IllegalArgumentException("No mode provided");
         }
     }
-    
+
     private void validateModeEnum(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if (mode != null) {
@@ -355,12 +355,12 @@ public class ConstantSearchToolProviderTest {
                 }
             }
             if (!isValid) {
-                throw new IllegalArgumentException("Invalid mode: " + mode + 
+                throw new IllegalArgumentException("Invalid mode: " + mode +
                     ". Valid modes are: specific, range, common");
             }
         }
     }
-    
+
     private void validateSpecificModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("specific".equals(mode)) {
@@ -369,7 +369,7 @@ public class ConstantSearchToolProviderTest {
             }
         }
     }
-    
+
     private void validateValueFormat(Map<String, Object> args) {
         String valueStr = (String) args.get("value");
         if (valueStr != null) {
@@ -396,7 +396,7 @@ public class ConstantSearchToolProviderTest {
             }
         }
     }
-    
+
     private void validateMaxResults(Map<String, Object> args) {
         Object maxResultsObj = args.get("max_results");
         if (maxResultsObj != null) {
@@ -409,7 +409,7 @@ public class ConstantSearchToolProviderTest {
             }
         }
     }
-    
+
     private void validateRangeModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("range".equals(mode)) {
@@ -419,7 +419,7 @@ public class ConstantSearchToolProviderTest {
             if (args.get("max_value") == null) {
                 throw new IllegalArgumentException("max_value is required for range mode");
             }
-            
+
             // Validate range
             String minStr = (String) args.get("min_value");
             String maxStr = (String) args.get("max_value");
@@ -436,7 +436,7 @@ public class ConstantSearchToolProviderTest {
             }
         }
     }
-    
+
     private void validateCommonModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("common".equals(mode)) {
@@ -455,7 +455,7 @@ public class ConstantSearchToolProviderTest {
             // min_value is optional for filtering
         }
     }
-    
+
     private long parseConstantValue(String valueStr) throws NumberFormatException {
         valueStr = valueStr.trim();
         if (valueStr.toLowerCase().startsWith("0x")) {

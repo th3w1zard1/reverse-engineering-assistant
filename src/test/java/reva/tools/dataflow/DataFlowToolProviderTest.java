@@ -30,8 +30,8 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Unit tests for DataFlowToolProvider.
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
- * 
- * Tests the consolidated analyze_data_flow tool that replaces:
+ *
+ * Tests the consolidated analyze-data-flow tool that replaces:
  * - trace-data-flow-backward (direction='backward')
  * - trace-data-flow-forward (direction='forward')
  * - find-variable-accesses (direction='variable_accesses')
@@ -77,23 +77,23 @@ public class DataFlowToolProviderTest {
     public void testConstructor() {
         assertNotNull("DataFlowToolProvider should be created", toolProvider);
     }
-    
+
     @Test
     public void testValidateAnalyzeDataFlowParameters() {
-        // Test parameter validation for the analyze_data_flow tool
+        // Test parameter validation for the analyze-data-flow tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("function_address", "0x401000");
         validArgs.put("direction", "backward");
         validArgs.put("start_address", "0x401234");
-        
+
         // Valid parameters should not throw
         try {
             validateAnalyzeDataFlowArgs(validArgs);
         } catch (Exception e) {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
-        
+
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
         missingProgram.remove("programPath");
@@ -102,10 +102,10 @@ public class DataFlowToolProviderTest {
             fail("Should throw exception for missing programPath");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention programPath", 
+            assertTrue("Error message should mention programPath",
                 e.getMessage().toLowerCase().contains("program"));
         }
-        
+
         // Missing function_address should throw
         Map<String, Object> missingFunction = new HashMap<>(validArgs);
         missingFunction.remove("function_address");
@@ -114,10 +114,10 @@ public class DataFlowToolProviderTest {
             fail("Should throw exception for missing function_address");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function", 
+            assertTrue("Error message should mention function",
                 e.getMessage().toLowerCase().contains("function"));
         }
-        
+
         // Missing direction should throw
         Map<String, Object> missingDirection = new HashMap<>(validArgs);
         missingDirection.remove("direction");
@@ -126,18 +126,18 @@ public class DataFlowToolProviderTest {
             fail("Should throw exception for missing direction");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention direction", 
+            assertTrue("Error message should mention direction",
                 e.getMessage().toLowerCase().contains("direction"));
         }
     }
-    
+
     @Test
     public void testValidateDirectionEnum() {
         // Test that all valid directions are accepted
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("function_address", "0x401000");
-        
+
         // Test all valid directions
         String[] validDirections = {"backward", "forward", "variable_accesses"};
         for (String direction : validDirections) {
@@ -148,7 +148,7 @@ public class DataFlowToolProviderTest {
                 fail("Valid direction '" + direction + "' should not throw exception: " + e.getMessage());
             }
         }
-        
+
         // Test invalid direction
         args.put("direction", "invalid");
         try {
@@ -156,18 +156,18 @@ public class DataFlowToolProviderTest {
             fail("Should throw exception for invalid direction");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention invalid direction", 
+            assertTrue("Error message should mention invalid direction",
                 e.getMessage().toLowerCase().contains("invalid"));
         }
     }
-    
+
     @Test
     public void testValidateBackwardForwardModeParameters() {
         // Test backward/forward mode parameter requirements
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("function_address", "0x401000");
-        
+
         // Test backward mode requires start_address
         args.put("direction", "backward");
         args.put("start_address", "0x401234");
@@ -176,18 +176,18 @@ public class DataFlowToolProviderTest {
         } catch (Exception e) {
             fail("Valid backward mode parameters should not throw: " + e.getMessage());
         }
-        
+
         args.remove("start_address");
         try {
             validateBackwardForwardModeArgs(args);
             fail("Should throw exception for missing start_address in backward mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention start_address", 
+            assertTrue("Error message should mention start_address",
                 e.getMessage().toLowerCase().contains("start_address") ||
                 e.getMessage().toLowerCase().contains("start"));
         }
-        
+
         // Test forward mode requires start_address
         args.put("direction", "forward");
         args.put("start_address", "0x401234");
@@ -196,19 +196,19 @@ public class DataFlowToolProviderTest {
         } catch (Exception e) {
             fail("Valid forward mode parameters should not throw: " + e.getMessage());
         }
-        
+
         args.remove("start_address");
         try {
             validateBackwardForwardModeArgs(args);
             fail("Should throw exception for missing start_address in forward mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention start_address", 
+            assertTrue("Error message should mention start_address",
                 e.getMessage().toLowerCase().contains("start_address") ||
                 e.getMessage().toLowerCase().contains("start"));
         }
     }
-    
+
     @Test
     public void testValidateVariableAccessesModeParameters() {
         // Test variable_accesses mode parameter requirements
@@ -217,14 +217,14 @@ public class DataFlowToolProviderTest {
         args.put("function_address", "0x401000");
         args.put("direction", "variable_accesses");
         args.put("variable_name", "local_var");
-        
+
         // Valid variable_accesses mode args
         try {
             validateVariableAccessesModeArgs(args);
         } catch (Exception e) {
             fail("Valid variable_accesses mode parameters should not throw: " + e.getMessage());
         }
-        
+
         // Missing variable_name should throw
         args.remove("variable_name");
         try {
@@ -232,11 +232,11 @@ public class DataFlowToolProviderTest {
             fail("Should throw exception for missing variable_name in variable_accesses mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention variable_name", 
+            assertTrue("Error message should mention variable_name",
                 e.getMessage().toLowerCase().contains("variable"));
         }
     }
-    
+
     @Test
     public void testValidateStartAddressWithinFunction() {
         // Test that start_address validation checks are in place
@@ -245,14 +245,14 @@ public class DataFlowToolProviderTest {
         args.put("function_address", "0x401000");
         args.put("direction", "backward");
         args.put("start_address", "0x401234");
-        
+
         // Valid start_address (would need actual program to fully validate)
         try {
             validateStartAddressFormat(args);
         } catch (Exception e) {
             fail("Valid start_address format should not throw: " + e.getMessage());
         }
-        
+
         // Invalid start_address format
         args.put("start_address", "invalid_address");
         try {
@@ -262,7 +262,7 @@ public class DataFlowToolProviderTest {
             // Expected if format validation exists
         }
     }
-    
+
     // Helper methods to simulate parameter validation from the tool handler
     private void validateAnalyzeDataFlowArgs(Map<String, Object> args) {
         if (args.get("programPath") == null) {
@@ -275,7 +275,7 @@ public class DataFlowToolProviderTest {
             throw new IllegalArgumentException("No direction provided");
         }
     }
-    
+
     private void validateDirectionEnum(Map<String, Object> args) {
         String direction = (String) args.get("direction");
         if (direction != null) {
@@ -288,12 +288,12 @@ public class DataFlowToolProviderTest {
                 }
             }
             if (!isValid) {
-                throw new IllegalArgumentException("Invalid direction: " + direction + 
+                throw new IllegalArgumentException("Invalid direction: " + direction +
                     ". Valid directions are: backward, forward, variable_accesses");
             }
         }
     }
-    
+
     private void validateBackwardForwardModeArgs(Map<String, Object> args) {
         String direction = (String) args.get("direction");
         if ("backward".equals(direction) || "forward".equals(direction)) {
@@ -302,7 +302,7 @@ public class DataFlowToolProviderTest {
             }
         }
     }
-    
+
     private void validateVariableAccessesModeArgs(Map<String, Object> args) {
         String direction = (String) args.get("direction");
         if ("variable_accesses".equals(direction)) {
@@ -311,7 +311,7 @@ public class DataFlowToolProviderTest {
             }
         }
     }
-    
+
     private void validateStartAddressFormat(Map<String, Object> args) {
         String startAddress = (String) args.get("start_address");
         if (startAddress != null) {

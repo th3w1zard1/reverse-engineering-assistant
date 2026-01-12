@@ -125,7 +125,7 @@ public class VtableToolProvider extends AbstractToolProvider {
         ));
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("analyze_vtables")
+            .name("analyze-vtables")
             .title("Analyze Vtables")
             .description("Analyze vtables, find vtable callers, or find vtables containing a specific function.")
             .inputSchema(createSchema(properties, List.of("programPath", "mode")))
@@ -149,7 +149,7 @@ public class VtableToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in analyze_vtables", e);
+                logError("Error in analyze-vtables", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

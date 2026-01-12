@@ -71,7 +71,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_bookmarks")
+            .name("manage-bookmarks")
             .title("Manage Bookmarks")
             .description("Create, retrieve, search, remove bookmarks, or list bookmark categories.")
             .inputSchema(createSchema(properties, required))
@@ -99,7 +99,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in manage_bookmarks", e);
+                logError("Error in manage-bookmarks", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

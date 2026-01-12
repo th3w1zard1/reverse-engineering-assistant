@@ -8,7 +8,7 @@ The `reva.tools.constants` package provides MCP tools for searching and analyzin
 
 ## Key Tools
 
-### search_constants
+### search-constants
 
 **Consolidated tool that replaces:** `find-constant-uses`, `find-constants-in-range`, `list-common-constants`
 

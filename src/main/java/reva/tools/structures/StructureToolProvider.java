@@ -96,7 +96,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_structures")
+            .name("manage-structures")
             .title("Manage Structures")
             .description("Parse, validate, create, modify, query, list, apply, or delete structures. Also parse entire C header files.")
             .inputSchema(createSchema(properties, required))
@@ -132,7 +132,7 @@ public class StructureToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid action: " + action);
                 }
             } catch (Exception e) {
-                logError("Error in manage_structures", e);
+                logError("Error in manage-structures", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

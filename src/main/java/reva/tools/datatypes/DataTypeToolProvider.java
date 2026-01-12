@@ -71,7 +71,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_data_types")
+            .name("manage-data-types")
             .title("Manage Data Types")
             .description("Get data type archives, list data types, get data type by string representation, or apply data types to addresses/symbols.")
             .inputSchema(createSchema(properties, required))
@@ -93,7 +93,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid action: " + action);
                 }
             } catch (Exception e) {
-                logError("Error in manage_data_types", e);
+                logError("Error in manage-data-types", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

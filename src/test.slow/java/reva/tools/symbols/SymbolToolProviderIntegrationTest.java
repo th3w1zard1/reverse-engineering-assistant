@@ -83,7 +83,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "count");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -104,7 +104,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("mode", "symbols");
             arguments.put("max_count", 10);
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -125,7 +125,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("address", "0x01000200");
             arguments.put("label_name", "newTestLabel");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -143,7 +143,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("address", "0x01000100");
             arguments.put("new_name", "renamedLabel");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             // Should succeed or fail gracefully
@@ -159,7 +159,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "imports");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -178,7 +178,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "exports");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -197,7 +197,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "classes");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -216,7 +216,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
             arguments.put("mode", "namespaces");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_symbols", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");

@@ -84,7 +84,7 @@ public class DataFlowToolProviderIntegrationTest extends RevaIntegrationTestBase
             arguments.put("start_address", "0x01000110");
             arguments.put("direction", "backward");
 
-            CallToolResult result = client.callTool(new CallToolRequest("analyze_data_flow", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-data-flow", arguments));
 
             assertNotNull("Result should not be null", result);
             // Even if empty, should return valid JSON structure
@@ -107,7 +107,7 @@ public class DataFlowToolProviderIntegrationTest extends RevaIntegrationTestBase
             arguments.put("start_address", "0x01000110");
             arguments.put("direction", "forward");
 
-            CallToolResult result = client.callTool(new CallToolRequest("analyze_data_flow", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-data-flow", arguments));
 
             assertNotNull("Result should not be null", result);
             // Even if empty, should return valid JSON structure
@@ -130,7 +130,7 @@ public class DataFlowToolProviderIntegrationTest extends RevaIntegrationTestBase
             arguments.put("variable_name", "param1");
             arguments.put("direction", "variable_accesses");
 
-            CallToolResult result = client.callTool(new CallToolRequest("analyze_data_flow", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-data-flow", arguments));
 
             assertNotNull("Result should not be null", result);
             // Even if empty, should return valid JSON structure

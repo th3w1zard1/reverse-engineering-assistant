@@ -55,7 +55,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Tool provider for get_function.
+ * Tool provider for get-function.
  * Provides function details in various formats: decompiled code, assembly, function information, or internal calls.
  */
 public class GetFunctionToolProvider extends AbstractToolProvider {
@@ -124,7 +124,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "identifier");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get_function")
+            .name("get-function")
             .title("Get Function")
             .description("Get function details in various formats: decompiled code, assembly, function information, or internal calls")
             .inputSchema(createSchema(properties, required))
@@ -156,7 +156,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in get_function", e);
+                logError("Error in get-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
@@ -460,14 +460,14 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                     if (totalRefCount > maxIncomingRefs) {
                         result.put("incomingReferencesLimited", true);
                         result.put("incomingReferencesMessage", String.format(
-                            "Showing first %d of %d references. Use 'get_references' tool with target='%s' and mode='to' to see all references.",
+                            "Showing first %d of %d references. Use 'get-references' tool with target='%s' and mode='to' to see all references.",
                             maxIncomingRefs, totalRefCount, function.getName()
                         ));
                     }
                 }
             }
 
-            // Just return ranged decompilation (includeDisassembly not used in get_function view='decompile')
+            // Just return ranged decompilation (includeDisassembly not used in get-function view='decompile')
             StringBuilder rangedDecomp = new StringBuilder();
             for (int i = startIdx; i < endIdx; i++) {
                 rangedDecomp.append(String.format("%4d\t%s\n", i + 1, decompLines[i]));

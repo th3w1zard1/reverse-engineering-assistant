@@ -87,7 +87,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "function_address", "direction");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("analyze_data_flow")
+            .name("analyze-data-flow")
             .title("Analyze Data Flow")
             .description("Trace data flow backward (origins), forward (uses), or find variable accesses within a function.")
             .inputSchema(createSchema(properties, required))
@@ -129,7 +129,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in analyze_data_flow", e);
+                logError("Error in analyze-data-flow", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });

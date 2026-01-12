@@ -113,7 +113,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 client.initialize();
 
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", "utility",
@@ -170,7 +170,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 client.initialize();
 
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", mainAddr.toString(),
@@ -227,7 +227,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 client.initialize();
 
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", stringAddr.toString(), // String address
@@ -275,7 +275,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
 
                 // Test mode="from" to get outgoing references
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", mainAddr.toString(),
@@ -337,7 +337,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
 
                 // Test first page
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", "utility",
@@ -363,7 +363,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
 
                 // Test last page
                 result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", "utility",
@@ -396,7 +396,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 client.initialize();
 
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get_references",
+                    "get-references",
                     Map.of(
                         "programPath", programPath,
                         "target", "nonexistent_function"

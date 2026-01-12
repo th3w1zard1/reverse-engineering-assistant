@@ -37,7 +37,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 
 /**
- * Integration tests for list_functions tool in FunctionToolProvider
+ * Integration tests for list-functions tool in FunctionToolProvider
  */
 public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegrationTestBase {
 
@@ -89,7 +89,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             arguments.put("mode", "all");
             arguments.put("max_count", 10);
 
-            CallToolResult result = client.callTool(new CallToolRequest("list_functions", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -108,7 +108,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             arguments.put("programPath", programPath);
             arguments.put("mode", "count");
 
-            CallToolResult result = client.callTool(new CallToolRequest("list_functions", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -129,7 +129,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             arguments.put("mode", "search");
             arguments.put("query", "test");
 
-            CallToolResult result = client.callTool(new CallToolRequest("list_functions", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -149,7 +149,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             arguments.put("mode", "similarity");
             arguments.put("search_string", "testFunction");
 
-            CallToolResult result = client.callTool(new CallToolRequest("list_functions", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -169,7 +169,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             arguments.put("mode", "undefined");
             arguments.put("min_reference_count", 1);
 
-            CallToolResult result = client.callTool(new CallToolRequest("list_functions", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");

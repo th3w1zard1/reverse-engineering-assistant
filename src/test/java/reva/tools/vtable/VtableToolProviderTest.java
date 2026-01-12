@@ -31,7 +31,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated analyze_vtables tool that replaces:
+ * Tests the consolidated analyze-vtables tool that replaces:
  * - analyze-vtable (mode='analyze')
  * - find-vtable-callers (mode='callers')
  * - find-vtables-containing-function (mode='containing')
@@ -80,7 +80,7 @@ public class VtableToolProviderTest {
 
     @Test
     public void testValidateAnalyzeVtablesParameters() {
-        // Test parameter validation for the analyze_vtables tool
+        // Test parameter validation for the analyze-vtables tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "analyze");

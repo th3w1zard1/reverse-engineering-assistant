@@ -10,7 +10,7 @@ The `reva.tools.strings` package provides comprehensive string analysis capabili
 
 The StringToolProvider implements a single consolidated tool:
 
-### manage_strings
+### manage-strings
 
 **Consolidated tool that replaces:** `get-strings-count`, `get-strings`, `get-strings-by-similarity`, `search-strings-regex`
 

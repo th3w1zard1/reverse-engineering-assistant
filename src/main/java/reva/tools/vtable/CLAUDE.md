@@ -8,7 +8,7 @@ The `reva.tools.vtable` package provides tools for analyzing virtual function ta
 
 ## Key Tools for Vtable Analysis
 
-### analyze_vtables
+### analyze-vtables
 
 **Consolidated tool that replaces:** `analyze-vtable`, `find-vtable-callers`, `find-vtables-containing-function`
 
@@ -50,7 +50,7 @@ Analyze vtables, find vtable callers, or find vtables containing a specific func
 
 ### Structure-Based vs Memory-Based Analysis
 
-The `analyze_vtables` tool (mode='analyze') uses two analysis strategies:
+The `analyze-vtables` tool (mode='analyze') uses two analysis strategies:
 
 **Structure-Based Analysis** (preferred when available):
 ```java
@@ -237,7 +237,7 @@ private List<VtableSlotInfo> findVtableSlotsForFunction(Program program, Address
 
 ## Response Formats
 
-### analyze_vtables (mode='analyze') Response
+### analyze-vtables (mode='analyze') Response
 ```json
 {
     "programPath": "/binary.exe",
@@ -268,7 +268,7 @@ When no structure is defined:
 }
 ```
 
-### analyze_vtables (mode='callers') Response
+### analyze-vtables (mode='callers') Response
 ```json
 {
     "programPath": "/binary.exe",
@@ -296,7 +296,7 @@ When no structure is defined:
 }
 ```
 
-### analyze_vtables (mode='containing') Response
+### analyze-vtables (mode='containing') Response
 ```json
 {
     "programPath": "/binary.exe",
@@ -380,16 +380,16 @@ for (int i = 0; i < 5; i++) {
 ## Common Usage Patterns
 
 ### Virtual Method Investigation Workflow
-1. `analyze_vtables` with mode='analyze' at a known vtable address to understand structure
-2. `analyze_vtables` with mode='containing' for a specific virtual method
-3. `analyze_vtables` with mode='callers' to discover all potential call sites
+1. `analyze-vtables` with mode='analyze' at a known vtable address to understand structure
+2. `analyze-vtables` with mode='containing' for a specific virtual method
+3. `analyze-vtables` with mode='callers' to discover all potential call sites
 4. Verify each call site manually to confirm vtable usage
 
 ### Class Hierarchy Discovery
 1. Identify vtable addresses through symbols or RTTI
-2. Use `analyze_vtables` with mode='analyze' on each discovered vtable
+2. Use `analyze-vtables` with mode='analyze' on each discovered vtable
 3. Compare vtable structures to identify inheritance relationships
-4. Use `analyze_vtables` with mode='containing' to track method overrides
+4. Use `analyze-vtables` with mode='containing' to track method overrides
 
 ## Important Notes
 

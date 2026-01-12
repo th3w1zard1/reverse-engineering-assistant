@@ -39,7 +39,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.RevaIntegrationTestBase;
 
 /**
- * Integration tests for manage_function_tags tool in FunctionToolProvider
+ * Integration tests for manage-function-tags tool in FunctionToolProvider
  */
 public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTestBase {
 
@@ -85,7 +85,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             arguments.put("function", "testFunction");
             arguments.put("mode", "get");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function_tags", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function-tags", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -107,7 +107,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             arguments.put("mode", "set");
             arguments.put("tags", Arrays.asList("tag1", "tag2"));
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function_tags", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function-tags", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -129,7 +129,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             setArgs.put("function", "testFunction");
             setArgs.put("mode", "set");
             setArgs.put("tags", Arrays.asList("tag1"));
-            client.callTool(new CallToolRequest("manage_function_tags", setArgs));
+            client.callTool(new CallToolRequest("manage-function-tags", setArgs));
 
             // Then add more
             Map<String, Object> addArgs = new HashMap<>();
@@ -138,7 +138,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             addArgs.put("mode", "add");
             addArgs.put("tags", Arrays.asList("tag2", "tag3"));
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function_tags", addArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function-tags", addArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -160,7 +160,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             setArgs.put("function", "testFunction");
             setArgs.put("mode", "set");
             setArgs.put("tags", Arrays.asList("tag1", "tag2", "tag3"));
-            client.callTool(new CallToolRequest("manage_function_tags", setArgs));
+            client.callTool(new CallToolRequest("manage-function-tags", setArgs));
 
             // Then remove one
             Map<String, Object> removeArgs = new HashMap<>();
@@ -169,7 +169,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             removeArgs.put("mode", "remove");
             removeArgs.put("tags", Arrays.asList("tag2"));
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function_tags", removeArgs));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function-tags", removeArgs));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -188,7 +188,7 @@ public class FunctionToolProviderTagsIntegrationTest extends RevaIntegrationTest
             arguments.put("programPath", programPath);
             arguments.put("mode", "list");
 
-            CallToolResult result = client.callTool(new CallToolRequest("manage_function_tags", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function-tags", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");

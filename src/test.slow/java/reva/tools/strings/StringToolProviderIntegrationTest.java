@@ -110,7 +110,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             arguments.put("programPath", programPath);
 
             arguments.put("mode", "count");
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result get-strings-count should not be an error");
@@ -142,7 +142,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("mode")) {
                 arguments.put("mode", "list");
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not have error");
@@ -219,7 +219,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             countArgs.put("programPath", programPath);
 
             countArgs.put("mode", "count");
-            CallToolResult countResult = client.callTool(new CallToolRequest("manage_strings", countArgs));
+            CallToolResult countResult = client.callTool(new CallToolRequest("manage-strings", countArgs));
             TextContent countContent = (TextContent) countResult.content().get(0);
             JsonNode countJson = parseJsonContent(countContent.text());
             int totalCount = countJson.get("count").asInt();
@@ -234,7 +234,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
                 if (!arguments.containsKey("mode")) {
                 arguments.put("mode", "list");
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
                 TextContent content = (TextContent) result.content().get(0);
                 JsonNode json = parseJsonContent(content.text());
 
@@ -249,7 +249,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
                 // Test second page if there are more strings
                 if (nextStartIndex < totalCount) {
                     arguments.put("startIndex", nextStartIndex);
-                    CallToolResult secondResult = client.callTool(new CallToolRequest("manage_strings", arguments));
+                    CallToolResult secondResult = client.callTool(new CallToolRequest("manage-strings", arguments));
                     TextContent secondContent = (TextContent) secondResult.content().get(0);
                     JsonNode secondJson = parseJsonContent(secondContent.text());
 
@@ -273,7 +273,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("mode")) {
                 arguments.put("mode", "list");
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not have error");
@@ -291,14 +291,14 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
     public void testGetStringsWithNoArguments() throws Exception {
         Map<String, Object> emptyArgs = new HashMap<>();
         emptyArgs.put("mode", "list");
-        verifyMcpToolFailsWithError("manage_strings", emptyArgs, "program");
+        verifyMcpToolFailsWithError("manage-strings", emptyArgs, "program");
     }
 
     @Test
     public void testGetStringsCountWithNoArguments() throws Exception {
         Map<String, Object> emptyArgs = new HashMap<>();
         emptyArgs.put("mode", "count");
-        verifyMcpToolFailsWithError("manage_strings", emptyArgs, "program");
+        verifyMcpToolFailsWithError("manage-strings", emptyArgs, "program");
     }
 
     @Test
@@ -306,7 +306,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
         Map<String, Object> arguments = new HashMap<>();
         arguments.put("programPath", "/this/path/does/not/exist");
         arguments.put("mode", "list");
-        verifyMcpToolFailsWithError("manage_strings", arguments, "Program");
+        verifyMcpToolFailsWithError("manage-strings", arguments, "Program");
     }
 
     @Test
@@ -314,7 +314,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
         Map<String, Object> arguments = new HashMap<>();
         arguments.put("programPath", "/this/path/does/not/exist");
         arguments.put("mode", "count");
-        verifyMcpToolFailsWithError("manage_strings", arguments, "Program");
+        verifyMcpToolFailsWithError("manage-strings", arguments, "Program");
     }
 
     @Test
@@ -353,7 +353,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("pattern")) {
                 arguments.put("pattern", arguments.remove("regexPattern"));
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not have error");
@@ -405,7 +405,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("pattern")) {
                 arguments.put("pattern", arguments.remove("regexPattern"));
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not have error");
@@ -441,7 +441,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("pattern")) {
                 arguments.put("pattern", arguments.remove("regexPattern"));
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not have error");
@@ -469,7 +469,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("pattern")) {
                 arguments.put("pattern", arguments.remove("regexPattern"));
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             // Should return an error for invalid regex
             assertNotNull("Result should not be null", result);
@@ -498,7 +498,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (!arguments.containsKey("pattern")) {
                 arguments.put("pattern", arguments.remove("regexPattern"));
             }
-            CallToolResult result = client.callTool(new CallToolRequest("manage_strings", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not have error");
@@ -516,7 +516,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             // If search was not complete (more matches exist), test second page
             if (!searchComplete) {
                 arguments.put("startIndex", 1);
-                CallToolResult secondResult = client.callTool(new CallToolRequest("manage_strings", arguments));
+                CallToolResult secondResult = client.callTool(new CallToolRequest("manage-strings", arguments));
 
                 TextContent secondContent = (TextContent) secondResult.content().get(0);
                 JsonNode secondJson = parseJsonContent(secondContent.text());
@@ -538,7 +538,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
     public void testSearchStringsRegexWithNoArguments() throws Exception {
         Map<String, Object> emptyArgs = new HashMap<>();
         emptyArgs.put("mode", "regex");
-        verifyMcpToolFailsWithError("manage_strings", emptyArgs, "program");
+        verifyMcpToolFailsWithError("manage-strings", emptyArgs, "program");
     }
 
     @Test
@@ -547,7 +547,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
         arguments.put("programPath", programPath);
 
         arguments.put("mode", "regex");
-        verifyMcpToolFailsWithError("manage_strings", arguments, "pattern");
+        verifyMcpToolFailsWithError("manage-strings", arguments, "pattern");
     }
 
     @Test
@@ -557,6 +557,6 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
         arguments.put("regexPattern", ".*");
 
         arguments.put("mode", "regex");
-        verifyMcpToolFailsWithError("manage_strings", arguments, "Program");
+        verifyMcpToolFailsWithError("manage-strings", arguments, "Program");
     }
 }

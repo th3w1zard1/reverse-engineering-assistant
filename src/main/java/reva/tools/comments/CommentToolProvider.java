@@ -128,7 +128,7 @@ public class CommentToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_comments")
+            .name("manage-comments")
             .title("Manage Comments")
             .description("Set, get, remove, or search comments in decompiled code, disassembly, or at addresses. Also search patterns across all decompilations.")
             .inputSchema(createSchema(properties, required))
@@ -156,7 +156,7 @@ public class CommentToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in manage_comments", e);
+                logError("Error in manage-comments", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
@@ -373,7 +373,7 @@ public class CommentToolProvider extends AbstractToolProvider {
         }
 
         // Initialize decompiler
-        final String toolName = "manage_comments-set";
+        final String toolName = "manage-comments-set";
         DecompInterface decompiler = createConfiguredDecompilerForComments(program, toolName);
         if (decompiler == null) {
             return createErrorResult("Failed to initialize decompiler");
@@ -676,7 +676,7 @@ public class CommentToolProvider extends AbstractToolProvider {
             int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE;
             Pattern regex = Pattern.compile(pattern, flags);
 
-            DecompInterface decompiler = createConfiguredDecompilerForComments(program, "manage_comments-search_decomp");
+            DecompInterface decompiler = createConfiguredDecompilerForComments(program, "manage-comments-search_decomp");
             if (decompiler == null) {
                 return createErrorResult("Failed to initialize decompiler");
             }

@@ -496,7 +496,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register the list_functions tool: List, search, or count functions in the program with various filtering and search modes.
+     * Register the list-functions tool: List, search, or count functions in the program with various filtering and search modes.
      */
     private void registerListFunctionsTool() {
         Map<String, Object> properties = new HashMap<>();
@@ -571,7 +571,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list_functions")
+            .name("list-functions")
             .title("List Functions")
             .description("List, search, or count functions in the program with various filtering and search modes.")
             .inputSchema(createSchema(properties, required))
@@ -633,14 +633,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in list_functions", e);
+                logError("Error in list-functions", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
     }
 
     /**
-     * Handle list_functions mode='count' - count functions
+     * Handle list-functions mode='count' - count functions
      */
     private McpSchema.CallToolResult handleListFunctionsCount(Program program, boolean filterDefaultNames) {
         AtomicInteger count = new AtomicInteger(0);
@@ -659,7 +659,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle list_functions mode='all' - list all functions
+     * Handle list-functions mode='all' - list all functions
      */
     private McpSchema.CallToolResult handleListFunctionsAll(Program program, int startIndex, int maxCount,
             boolean filterDefaultNames, String filterByTag, boolean untagged, boolean verbose) {
@@ -738,7 +738,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle list_functions mode='search' - substring search
+     * Handle list-functions mode='search' - substring search
      */
     private McpSchema.CallToolResult handleListFunctionsSearch(Program program, String query, int startIndex, int maxCount,
             boolean filterDefaultNames, boolean verbose) {
@@ -795,7 +795,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle list_functions mode='similarity' - similarity search
+     * Handle list-functions mode='similarity' - similarity search
      */
     private McpSchema.CallToolResult handleListFunctionsSimilarity(Program program, String searchString, int startIndex, int maxCount,
             boolean filterDefaultNames, boolean verbose) {
@@ -869,7 +869,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                     long elapsed = System.currentTimeMillis() - startTime;
                     if (elapsed > SLOW_SEARCH_THRESHOLD_MS) {
-                        logInfo("list_functions (similarity): Search for '" + searchString +
+                        logInfo("list-functions (similarity): Search for '" + searchString +
                             "' took " + (elapsed / 1000) + "s (" + originalTotalCount + " functions)");
                     }
                 }
@@ -930,7 +930,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle list_functions mode='undefined' - undefined function candidates
+     * Handle list-functions mode='undefined' - undefined function candidates
      */
     private McpSchema.CallToolResult handleListFunctionsUndefined(Program program, int startIndex, int maxCount, int minReferenceCount) {
         FunctionManager funcMgr = program.getFunctionManager();
@@ -989,7 +989,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             if (candidates.size() >= MAX_UNIQUE_CANDIDATES) {
                 earlyTermination = true;
-                logInfo("list_functions (undefined): Early termination at " +
+                logInfo("list-functions (undefined): Early termination at " +
                     MAX_UNIQUE_CANDIDATES + " unique candidates (memory protection)");
                 break;
             }
@@ -1088,7 +1088,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_function_tags")
+            .name("manage-function-tags")
             .title("Manage Function Tags")
             .description("Manage function tags. Tags categorize functions (e.g., 'AI', 'rendering'). Use mode='list' for all tags in program.")
             .inputSchema(createSchema(properties, required))
@@ -1235,7 +1235,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register the manage_function tool for creating, renaming, and modifying functions and their variables.
+     * Register the manage-function tool for creating, renaming, and modifying functions and their variables.
      *
      * Variable operations (rename_variable, change_datatypes) require decompiler infrastructure
      * which is included in this provider.
@@ -1249,8 +1249,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         properties.put("action", Map.of(
             "type", "string",
             "description", "Action to perform: 'create' (create function), 'rename_function' (rename function), 'rename_variable' (rename variables), 'set_prototype' (set function prototype), 'set_variable_type' (set single variable type), 'change_datatypes' (change multiple variable data types)",
-            "enum", List.of("create", "rename_function", "rename_variable", "set_prototype", "set_variable_type", "change_datatypes"),
-            "required", true
+            "enum", List.of("create", "rename_function", "rename_variable", "set_prototype", "set_variable_type", "change_datatypes")
         ));
         properties.put("address", Map.of(
             "type", "string",
@@ -1306,7 +1305,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage_function")
+            .name("manage-function")
             .title("Manage Function")
             .description("Create, rename, or modify functions and their variables.")
             .inputSchema(createSchema(properties, required))
@@ -1336,14 +1335,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                logError("Error in manage_function", e);
+                logError("Error in manage-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
     }
 
     /**
-     * Handle manage_function action='create' - create a new function
+     * Handle manage-function action='create' - create a new function
      */
     private McpSchema.CallToolResult handleManageFunctionCreate(Program program, CallToolRequest request) {
         String programPath = program.getDomainFile().getPathname();
@@ -1403,9 +1402,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 try {
                     createdFunc.setName(name, SourceType.USER_DEFINED);
                 } catch (DuplicateNameException e) {
-                    logInfo("manage_function (create): Name '" + name + "' already exists, keeping default name");
+                    logInfo("manage-function (create): Name '" + name + "' already exists, keeping default name");
                 } catch (InvalidInputException e) {
-                    logInfo("manage_function (create): Invalid name '" + name + "': " + e.getMessage());
+                    logInfo("manage-function (create): Invalid name '" + name + "': " + e.getMessage());
                 }
             }
 
@@ -1431,7 +1430,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle manage_function action='set_prototype' - set function prototype
+     * Handle manage-function action='set_prototype' - set function prototype
      */
     private McpSchema.CallToolResult handleManageFunctionSetPrototype(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -1587,7 +1586,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle manage_function action='rename_variable' - rename function variables
+     * Handle manage-function action='rename_variable' - rename function variables
      * Requires decompiler infrastructure for variable operations
      */
     private McpSchema.CallToolResult handleManageFunctionRenameVariable(Program program, CallToolRequest request) {
@@ -1675,7 +1674,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     String newVarName = mappings.get(varName);
                     if (newVarName != null) {
                         HighFunctionDBUtil.updateDBVariable(symbol, newVarName, null, SourceType.USER_DEFINED);
-                        logInfo("manage_function (rename_variable): Renamed variable " + varName + " to " + newVarName);
+                        logInfo("manage-function (rename_variable): Renamed variable " + varName + " to " + newVarName);
                         renamedCount++;
                     }
                 }
@@ -1683,7 +1682,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 program.endTransaction(transactionId, true);
             } catch (Exception e) {
                 program.endTransaction(transactionId, false);
-                logError("manage_function (rename_variable): Error during variable renaming", e);
+                logError("manage-function (rename_variable): Error during variable renaming", e);
                 return createErrorResult("Failed to rename variables: " + e.getMessage());
             }
         } finally {
@@ -1719,14 +1718,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 diffDecompiler.dispose();
             }
         } catch (Exception e) {
-            logError("manage_function (rename_variable): Error creating decompilation diff", e);
+            logError("manage-function (rename_variable): Error creating decompilation diff", e);
         }
 
         return createJsonResult(resultData);
     }
 
     /**
-     * Handle manage_function action='change_datatypes' - change variable data types
+     * Handle manage-function action='change_datatypes' - change variable data types
      */
     private McpSchema.CallToolResult handleManageFunctionChangeDatatypes(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -1809,7 +1808,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                             DataType newType = DataTypeParserUtil.parseDataTypeObjectFromString(
                                 typeString, archiveName);
                             HighFunctionDBUtil.updateDBVariable(symbol, null, newType, SourceType.USER_DEFINED);
-                            logInfo("manage_function (change_datatypes): Changed variable " + varName + " type to " + newType);
+                            logInfo("manage-function (change_datatypes): Changed variable " + varName + " type to " + newType);
                             changedCount++;
                         } catch (Exception e) {
                             errors.add("Failed to change type of variable '" + varName + "': " + e.getMessage());
@@ -1819,7 +1818,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 transactionSuccess = true;
             } catch (Exception e) {
-                logError("manage_function (change_datatypes): Error during variable data type changes", e);
+                logError("manage-function (change_datatypes): Error during variable data type changes", e);
                 return createErrorResult("Failed to change variable data types: " + e.getMessage());
             } finally {
                 program.endTransaction(transactionId, transactionSuccess);
@@ -1861,7 +1860,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 diffDecompiler.dispose();
             }
         } catch (Exception e) {
-            logError("manage_function (change_datatypes): Error creating decompilation diff", e);
+            logError("manage-function (change_datatypes): Error creating decompilation diff", e);
         }
 
         return createJsonResult(resultData);
@@ -1895,7 +1894,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle manage_function action='rename_function' - rename a function
+     * Handle manage-function action='rename_function' - rename a function
      */
     private McpSchema.CallToolResult handleManageFunctionRenameFunction(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -1936,7 +1935,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             return createErrorResult("Invalid function name '" + newName + "': " + e.getMessage());
         } catch (Exception e) {
             program.endTransaction(txId, false);
-            logError("manage_function (rename_function): Error renaming function", e);
+            logError("manage-function (rename_function): Error renaming function", e);
             return createErrorResult("Failed to rename function: " + e.getMessage());
         }
 
@@ -1959,7 +1958,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle manage_function action='set_variable_type' - set a single variable's data type
+     * Handle manage-function action='set_variable_type' - set a single variable's data type
      */
     private McpSchema.CallToolResult handleManageFunctionSetVariableType(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -2032,7 +2031,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                             DataType newDataType = DataTypeParserUtil.parseDataTypeObjectFromString(
                                 newType, archiveName);
                             HighFunctionDBUtil.updateDBVariable(symbol, null, newDataType, SourceType.USER_DEFINED);
-                            logInfo("manage_function (set_variable_type): Changed variable " + variableName + " type to " + newDataType);
+                            logInfo("manage-function (set_variable_type): Changed variable " + variableName + " type to " + newDataType);
                             typeChanged = true;
                             break;
                         } catch (Exception e) {
@@ -2049,7 +2048,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 transactionSuccess = true;
             } catch (Exception e) {
-                logError("manage_function (set_variable_type): Error during variable type change", e);
+                logError("manage-function (set_variable_type): Error during variable type change", e);
                 return createErrorResult("Failed to change variable type: " + e.getMessage());
             } finally {
                 program.endTransaction(transactionId, transactionSuccess);
@@ -2084,7 +2083,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 diffDecompiler.dispose();
             }
         } catch (Exception e) {
-            logError("manage_function (set_variable_type): Error creating decompilation diff", e);
+            logError("manage-function (set_variable_type): Error creating decompilation diff", e);
         }
 
         return createJsonResult(resultData);

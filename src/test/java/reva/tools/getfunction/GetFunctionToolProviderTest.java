@@ -32,9 +32,9 @@ import io.modelcontextprotocol.spec.McpError;
  * Tests focus on validation and error handling since full functionality
  * requires a Ghidra environment.
  *
- * Tests the consolidated get_function tool that replaces:
+ * Tests the consolidated get-function tool that replaces:
  * - decompile_function, decompile_function_by_address, get_decompilation
- * - disassemble_function, get_function_by_address, get_function_info
+ * - disassemble_function, get_function_by_address, get-function_info
  * - list_function_calls
  */
 public class GetFunctionToolProviderTest {
@@ -81,7 +81,7 @@ public class GetFunctionToolProviderTest {
 
     @Test
     public void testValidateGetFunctionParameters() {
-        // Test parameter validation for the get_function tool
+        // Test parameter validation for the get-function tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("identifier", "main");
