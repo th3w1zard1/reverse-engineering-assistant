@@ -1,6 +1,6 @@
 # ReVA Tools Refactoring
 
-**17 consolidated tools** that replace the original 90 tools through intelligent parameterization. This design reduces LLM context overhead, improves tool selection reliability, and maintains 100% feature coverage. Each tool uses enums, optional parameters, and defaults to provide flexible, powerful functionality.
+**23 tools** (plus 4 GUI-only tools) that replace the original 90 tools through intelligent parameterization. This design reduces LLM context overhead, improves tool selection reliability, and maintains 100% feature coverage. Each tool uses enums, optional parameters, and defaults to provide flexible, powerful functionality.
 
 ## New Tool List
 
@@ -380,23 +380,7 @@ Returns:
 
 ### Data Types
 
-### 16. `get-current-context`
-
-Current context retrieval tool that replaces: `get_current_address`, `get_current_function`
-
-Get the address or function currently selected in the Ghidra GUI.
-
-Args:
-    mode: Context mode enum ('address', 'function', 'both'; default: 'both')
-
-Returns:
-    - When mode='address': The address currently selected by the user
-    - When mode='function': The function currently selected by the user
-    - When mode='both': JSON with both current address and function
-
-### Current Context
-
-### 17. `manage-function-tags`
+### 16. `manage-function-tags`
 
 Function tag management tool that replaces: `function_tags`
 
@@ -414,13 +398,140 @@ Returns:
     - When mode='remove': Success message after removing tags from the function
     - When mode='list': JSON with all tags in the program
 
+### 17. `open-project`
+
+Project management tool that opens a Ghidra project from a .gpr file path and optionally loads all programs into memory.
+
+Args:
+    projectPath: Path to the Ghidra project file (.gpr) to open. Use absolute path for reliability. (required)
+    openAllPrograms: Whether to automatically open all programs in the project into memory (default: true). Set to false for large projects where you want to open specific programs later.
+
+Returns:
+    JSON with project information including project name, location, program count, and list of opened programs (if openAllPrograms=true)
+
+### 18. `list-project-files`
+
+List files and folders in the Ghidra project.
+
+Args:
+    folderPath: Path to the folder to list contents of. Use '/' for the root folder. (required)
+    recursive: Whether to list files recursively (default: false)
+
+Returns:
+    JSON with folder metadata and list of files/folders with their properties (type, path, lastModified, versioned status, etc.)
+
+### 19. `checkin-program`
+
+Checkin (commit) a program to version control with a commit message.
+
+Args:
+    programPath: Path to the program to checkin (e.g., '/Hatchery.exe') (required)
+    message: Commit message for the checkin (required)
+    keepCheckedOut: Whether to keep the program checked out after checkin (default: false)
+
+Returns:
+    JSON with success status, action taken (added_to_version_control, checked_in, or saved), and version control status
+
+### 20. `analyze-program`
+
+Run Ghidra's auto-analysis on a program.
+
+Args:
+    programPath: Path to the program to analyze (e.g., '/Hatchery.exe') (required)
+
+Returns:
+    JSON with success status and analysis status
+
+### 21. `change-processor`
+
+Change the processor architecture of an existing program.
+
+Args:
+    programPath: Path to the program to modify (e.g., '/Hatchery.exe') (required)
+    languageId: Language ID for the new processor (e.g., 'x86:LE:64:default') (required)
+    compilerSpecId: Compiler spec ID (optional, defaults to the language's default)
+
+Returns:
+    JSON with success status, old language, and new language/compiler spec information
+
+### 22. `import-file`
+
+Import files, directories, or archives into the Ghidra project using batch import.
+
+Args:
+    path: Absolute file system path to import (file, directory, or archive). Use absolute paths to ensure proper file resolution. (required)
+    destinationFolder: Project folder path for imported files (default: root folder '/')
+    recursive: Whether to recursively import from containers/archives (default: true)
+    maxDepth: Maximum container depth to recurse into (default: 20)
+    analyzeAfterImport: Run auto-analysis after import (default: false)
+    enableVersionControl: Automatically add imported files to version control (default: true)
+
+Returns:
+    JSON with import results including files discovered, programs imported, files analyzed, and files added to version control
+
+### 23. `open-program`
+
+Open program in project. Imports if missing, opens if exists. Always saves to project. Caches for other tools.
+
+Args:
+    path: File system path to program. Imports if not in project, opens if exists. (required)
+    destinationFolder: Project folder for new imports (default: '/'). Ignored if program exists.
+    analyzeAfterImport: Run auto-analysis on new imports (default: true). Ignored if program exists.
+    enableVersionControl: Add new imports to version control (default: true). Program always saved regardless.
+
+Returns:
+    JSON with program information including programPath, wasImported status, language, compiler spec, size, function count, and symbol count
+
+### GUI-Only Tools (Available only when running in GUI mode)
+
+### 24. `get-current-program`
+
+Get the currently active program in Ghidra.
+
+Args:
+    (no parameters)
+
+Returns:
+    JSON with program information including programPath, language, compiler spec, creation date, size, symbol count, function count, and modification date
+
+### 25. `list-open-programs`
+
+List all programs currently open in Ghidra across all tools.
+
+Args:
+    (no parameters)
+
+Returns:
+    JSON with count and list of all open programs with their properties
+
+### 26. `open-program-in-code-browser`
+
+Open a program in Ghidra's Code Browser tool. The program will be opened if not already open.
+
+Args:
+    programPath: Path to the program to open in Code Browser (e.g., '/swkotor.exe') (required)
+
+Returns:
+    JSON with success status, program name, code browser tool name, and whether the program was already open
+
+### 27. `open-all-programs-in-code-browser`
+
+Open all programs matching specified extensions (exe/dll) in the project into Code Browser. Searches recursively through the project.
+
+Args:
+    extensions: Comma-separated list of file extensions to open (e.g., 'exe,dll' or 'exe'). Defaults to 'exe,dll'
+    folderPath: Folder path to search for programs (default: '/' for root folder)
+
+Returns:
+    JSON with programs found, programs opened, programs already open, programs failed, and lists of each category
+
 ---
 
 ## 📊 Tool Consolidation Summary
 
-The 17 consolidated tools above replace all 90 original tools while maintaining 100% feature coverage:
+The 23 tools above (plus 4 GUI-only tools) replace all 90 original tools while maintaining 100% feature coverage:
 
-- **Function Analysis**: `get-function`, `list-functions`, `manage-function`
+- **Function Analysis**: `get-function`, `list-functions`, `manage-function`, `manage-function-tags`
 - **Call Analysis**: `get-call-graph`, `get-references`
 - **Data Analysis**: `analyze-data-flow`, `search-constants`, `manage-strings`, `inspect-memory`
 - **Annotations**: `manage-bookmarks`, `manage-comments`
@@ -428,7 +539,8 @@ The 17 consolidated tools above replace all 90 original tools while maintaining 
 - **Symbol Management**: `manage-symbols`
 - **Structure Management**: `manage-structures`
 - **Type Management**: `manage-data-types`
-- **Context & Tags**: `get-current-context`, `manage-function-tags`
+- **Project Management**: `open-project`, `list-project-files`, `checkin-program`, `analyze-program`, `change-processor`, `import-file`, `open-program`
+- **GUI-Only Tools**: `get-current-program`, `list-open-programs`, `open-program-in-code-browser`, `open-all-programs-in-code-browser`
 
 Each tool uses mode/action enums and optional parameters to provide the same functionality as multiple original tools, reducing LLM context size and improving tool selection reliability.
 
