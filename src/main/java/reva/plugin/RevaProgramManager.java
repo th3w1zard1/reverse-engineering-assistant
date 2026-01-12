@@ -57,7 +57,8 @@ public class RevaProgramManager {
         Project project = AppInfo.getActiveProject();
         if (project == null) {
             Msg.debug(RevaProgramManager.class, "No active project found");
-            return openPrograms;
+            // Still check cache and registered programs even without a project
+            return getCachedAndRegisteredPrograms();
         }
 
         ToolManager toolManager = project.getToolManager();
@@ -71,7 +72,7 @@ public class RevaProgramManager {
                     Program[] programs = programManager.getAllOpenPrograms();
                     Msg.debug(RevaProgramManager.class, "Tool " + tool.getName() + " has " + programs.length + " open programs");
                     for (Program program : programs) {
-                        if (!openPrograms.contains(program)) {
+                        if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
                             openPrograms.add(program);
                             Msg.debug(RevaProgramManager.class, "Added program: " + program.getName() + " with domain path: " + program.getDomainFile().getPathname());
                         }
@@ -96,7 +97,7 @@ public class RevaProgramManager {
                     Program[] programs = programManager.getAllOpenPrograms();
                     Msg.debug(RevaProgramManager.class, "RevaPlugin tool has " + programs.length + " open programs");
                     for (Program program : programs) {
-                        if (!openPrograms.contains(program)) {
+                        if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
                             openPrograms.add(program);
                             Msg.debug(RevaProgramManager.class, "Added program from RevaPlugin: " + program.getName() + " with domain path: " + program.getDomainFile().getPathname());
                         }
@@ -109,8 +110,41 @@ public class RevaProgramManager {
             }
         }
 
+        // Also include programs from cache and registered programs (for programs opened via getProgramByPath)
+        List<Program> cachedAndRegistered = getCachedAndRegisteredPrograms();
+        for (Program program : cachedAndRegistered) {
+            if (program != null && !program.isClosed() && !openPrograms.contains(program)) {
+                openPrograms.add(program);
+                Msg.debug(RevaProgramManager.class, "Added cached/registered program: " + program.getName() + " with domain path: " + program.getDomainFile().getPathname());
+            }
+        }
+
         Msg.debug(RevaProgramManager.class, "Total open programs found: " + openPrograms.size());
         return openPrograms;
+    }
+
+    /**
+     * Get programs from cache and registered programs that are still valid.
+     * @return List of valid cached/registered programs
+     */
+    private static List<Program> getCachedAndRegisteredPrograms() {
+        List<Program> programs = new ArrayList<>();
+
+        // Add valid programs from cache
+        for (Program program : programCache.values()) {
+            if (program != null && !program.isClosed()) {
+                programs.add(program);
+            }
+        }
+
+        // Add valid registered programs
+        for (Program program : registeredPrograms.values()) {
+            if (program != null && !program.isClosed() && !programs.contains(program)) {
+                programs.add(program);
+            }
+        }
+
+        return programs;
     }
 
     /**

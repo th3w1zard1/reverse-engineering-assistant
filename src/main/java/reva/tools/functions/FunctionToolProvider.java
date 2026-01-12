@@ -336,6 +336,158 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
     }
 
+    /**
+     * Evict expired similarity cache entries.
+     * Must be called while holding similarityCache lock.
+     */
+    private void evictExpiredCacheEntries() {
+        similarityCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
+        
+        // Evict oldest entries if still over limit
+        while (similarityCache.size() >= MAX_CACHE_ENTRIES) {
+            SimilarityCacheKey oldest = null;
+            long oldestTime = Long.MAX_VALUE;
+            for (var entry : similarityCache.entrySet()) {
+                if (entry.getValue().timestamp() < oldestTime) {
+                    oldestTime = entry.getValue().timestamp();
+                    oldest = entry.getKey();
+                }
+            }
+            if (oldest != null) {
+                similarityCache.remove(oldest);
+                logInfo("FunctionToolProvider: Evicted similarity cache entry for: " + oldest.programPath());
+            } else {
+                break;
+            }
+        }
+    }
+
+    /**
+     * Create a function info map from a Function object.
+     * 
+     * @param function The function to create info for
+     * @param monitor TaskMonitor for timeout checking (can be null)
+     * @return Map containing function information
+     */
+    private Map<String, Object> createFunctionInfo(Function function, TaskMonitor monitor) {
+        AddressSetView body = function.getBody();
+        
+        // Get caller/callee counts with timeout support
+        int callerCount = -1;
+        int calleeCount = -1;
+        if (monitor != null && !monitor.isCancelled()) {
+            try {
+                ReferenceManager refManager = function.getProgram().getReferenceManager();
+                FunctionManager funcManager = function.getProgram().getFunctionManager();
+                
+                // Count callers (references TO this function)
+                Set<Address> callerAddresses = new HashSet<>();
+                ReferenceIterator refsTo = refManager.getReferencesTo(function.getEntryPoint());
+                int refCount = 0;
+                while (refsTo.hasNext()) {
+                    if (++refCount % 1000 == 0 && monitor.isCancelled()) {
+                        break;
+                    }
+                    Reference ref = refsTo.next();
+                    if (ref.getReferenceType().isCall()) {
+                        Function caller = funcManager.getFunctionContaining(ref.getFromAddress());
+                        if (caller != null) {
+                            callerAddresses.add(caller.getEntryPoint());
+                        }
+                    }
+                }
+                callerCount = monitor.isCancelled() ? -1 : callerAddresses.size();
+                
+                // Count callees (references FROM this function)
+                if (!monitor.isCancelled()) {
+                    Set<Address> calleeAddresses = new HashSet<>();
+                    for (Instruction instr : function.getProgram().getListing().getInstructions(body, true)) {
+                        if (monitor.isCancelled()) break;
+                        Reference[] refsFrom = instr.getReferencesFrom();
+                        for (Reference ref : refsFrom) {
+                            if (ref.getReferenceType().isCall()) {
+                                Function callee = funcManager.getFunctionAt(ref.getToAddress());
+                                if (callee == null) {
+                                    callee = funcManager.getFunctionContaining(ref.getToAddress());
+                                }
+                                if (callee != null) {
+                                    calleeAddresses.add(callee.getEntryPoint());
+                                }
+                            }
+                        }
+                    }
+                    calleeCount = monitor.isCancelled() ? -1 : calleeAddresses.size();
+                }
+            } catch (Exception e) {
+                // If counting fails, leave as -1
+            }
+        }
+        
+        // Build parameters list
+        List<Map<String, Object>> parametersList = new ArrayList<>();
+        for (int i = 0; i < function.getParameterCount(); i++) {
+            Parameter param = function.getParameter(i);
+            parametersList.add(Map.of(
+                "name", param.getName(),
+                "dataType", param.getDataType().toString()
+            ));
+        }
+        
+        // Get function tags
+        List<String> tagNames = new ArrayList<>();
+        Set<FunctionTag> tags = function.getTags();
+        for (FunctionTag tag : tags) {
+            tagNames.add(tag.getName());
+        }
+        Collections.sort(tagNames);
+        
+        Map<String, Object> functionData = new HashMap<>();
+        functionData.put("name", function.getName());
+        functionData.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
+        functionData.put("endAddress", AddressUtil.formatAddress(body.getMaxAddress()));
+        functionData.put("sizeInBytes", body.getNumAddresses());
+        functionData.put("signature", function.getSignature().toString());
+        functionData.put("returnType", function.getReturnType().toString());
+        functionData.put("isExternal", function.isExternal());
+        functionData.put("isThunk", function.isThunk());
+        functionData.put("isDefaultName", SymbolUtil.isDefaultSymbolName(function.getName()));
+        functionData.put("callerCount", callerCount);
+        functionData.put("calleeCount", calleeCount);
+        functionData.put("parameters", parametersList);
+        functionData.put("tags", tagNames);
+        
+        return functionData;
+    }
+
+    /**
+     * Normalize a function signature string by trimming whitespace.
+     * 
+     * @param signature The signature string to normalize
+     * @return Normalized signature
+     */
+    private String normalizeFunctionSignature(String signature) {
+        if (signature == null) {
+            return "";
+        }
+        return signature.trim();
+    }
+
+    /**
+     * Check if a function needs custom variable storage for the given signature.
+     * 
+     * @param function The existing function (may be null)
+     * @param functionDef The new function definition
+     * @return true if custom storage is needed
+     */
+    private boolean needsCustomStorageForSignature(Function function, FunctionDefinitionDataType functionDef) {
+        // If function already has custom storage, keep it
+        if (function != null && function.hasCustomVariableStorage()) {
+            return true;
+        }
+        // Otherwise, use default storage (Ghidra will handle it)
+        return false;
+    }
+
     @Override
     public void registerTools() {
         registerListFunctionsTool();
@@ -904,20 +1056,6 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to count the functions in a program
-     */
-     * Register a tool to list functions from a program
-     */
-     * Register a tool to get functions from a program with pagination, sorted by similarity to a given function name.
-     */
-     * Register a tool to set or update a function prototype using C-style signatures
-     */
-     * Register a tool to find undefined function candidates - addresses that receive
-     * CALL or DATA references but are not defined as functions.
-     */
-     * Register a tool to create a function at an address with auto-detected signature.
-     * This is simpler than set-function-prototype as it doesn't require specifying a signature.
-     */
      * Register a tool to manage function tags (get/set/add/remove/list).
      */
     private void registerFunctionTagsTool() {
