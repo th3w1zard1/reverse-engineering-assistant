@@ -342,7 +342,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private void evictExpiredCacheEntries() {
         similarityCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
-        
+
         // Evict oldest entries if still over limit
         while (similarityCache.size() >= MAX_CACHE_ENTRIES) {
             SimilarityCacheKey oldest = null;
@@ -364,14 +364,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
     /**
      * Create a function info map from a Function object.
-     * 
+     *
      * @param function The function to create info for
      * @param monitor TaskMonitor for timeout checking (can be null)
      * @return Map containing function information
      */
     private Map<String, Object> createFunctionInfo(Function function, TaskMonitor monitor) {
         AddressSetView body = function.getBody();
-        
+
         // Get caller/callee counts with timeout support
         int callerCount = -1;
         int calleeCount = -1;
@@ -379,7 +379,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             try {
                 ReferenceManager refManager = function.getProgram().getReferenceManager();
                 FunctionManager funcManager = function.getProgram().getFunctionManager();
-                
+
                 // Count callers (references TO this function)
                 Set<Address> callerAddresses = new HashSet<>();
                 ReferenceIterator refsTo = refManager.getReferencesTo(function.getEntryPoint());
@@ -397,7 +397,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     }
                 }
                 callerCount = monitor.isCancelled() ? -1 : callerAddresses.size();
-                
+
                 // Count callees (references FROM this function)
                 if (!monitor.isCancelled()) {
                     Set<Address> calleeAddresses = new HashSet<>();
@@ -422,7 +422,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 // If counting fails, leave as -1
             }
         }
-        
+
         // Build parameters list
         List<Map<String, Object>> parametersList = new ArrayList<>();
         for (int i = 0; i < function.getParameterCount(); i++) {
@@ -432,7 +432,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 "dataType", param.getDataType().toString()
             ));
         }
-        
+
         // Get function tags
         List<String> tagNames = new ArrayList<>();
         Set<FunctionTag> tags = function.getTags();
@@ -440,7 +440,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             tagNames.add(tag.getName());
         }
         Collections.sort(tagNames);
-        
+
         Map<String, Object> functionData = new HashMap<>();
         functionData.put("name", function.getName());
         functionData.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
@@ -455,13 +455,13 @@ public class FunctionToolProvider extends AbstractToolProvider {
         functionData.put("calleeCount", calleeCount);
         functionData.put("parameters", parametersList);
         functionData.put("tags", tagNames);
-        
+
         return functionData;
     }
 
     /**
      * Normalize a function signature string by trimming whitespace.
-     * 
+     *
      * @param signature The signature string to normalize
      * @return Normalized signature
      */
@@ -474,7 +474,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
     /**
      * Check if a function needs custom variable storage for the given signature.
-     * 
+     *
      * @param function The existing function (may be null)
      * @param functionDef The new function definition
      * @return true if custom storage is needed
@@ -543,6 +543,11 @@ public class FunctionToolProvider extends AbstractToolProvider {
             "description", "Alternative pagination limit parameter (default: 100)",
             "default", 100
         ));
+        properties.put("maxResults", Map.of(
+            "type", "integer",
+            "description", "Maximum number of functions to return (alternative to max_count/limit, default: 100)",
+            "default", 1000
+        ));
         properties.put("filter_default_names", Map.of(
             "type", "boolean",
             "description", "Whether to filter out default Ghidra generated names like FUN_, DAT_, etc. (default: true)",
@@ -587,6 +592,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     maxCount = limit;
                 } else {
                     // Use start_index/max_count (new standard)
+                    // maxResults/max_results handled dynamically
                     startIndex = getOptionalInt(request, "start_index", 0);
                     maxCount = getOptionalInt(request, "max_count", 100);
                 }

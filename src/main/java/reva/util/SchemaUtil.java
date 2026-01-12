@@ -169,7 +169,8 @@ public class SchemaUtil {
      * @return JsonSchema object
      */
     public static McpSchema.JsonSchema createSchema(Map<String, Object> properties, List<String> required) {
-        return new McpSchema.JsonSchema("object", properties, required, false, null, null);
+        // Allow additional properties to be ignored rather than causing validation errors
+        return new McpSchema.JsonSchema("object", properties, required, true, null, null);
     }
 
     /**

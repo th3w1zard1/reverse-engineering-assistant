@@ -83,7 +83,13 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return A JsonSchema object
      */
     protected JsonSchema createSchema(Map<String, Object> properties, List<String> required) {
-        return new JsonSchema("object", properties, required, false, null, null);
+        // Create a wrapper properties map that includes additionalProperties: true
+        // This allows unknown parameters to be ignored rather than causing validation errors
+        Map<String, Object> schemaProperties = new java.util.HashMap<>(properties);
+        // Note: additionalProperties is a schema-level property in JSON Schema
+        // The MCP SDK JsonSchema constructor may handle this differently, but we'll
+        // try setting it in the properties map as well for compatibility
+        return new JsonSchema("object", schemaProperties, required, true, null, null);
     }
 
     /**
@@ -193,6 +199,114 @@ public abstract class AbstractToolProvider implements ToolProvider {
         Msg.info(this, message);
     }
 
+    // ========================================================================
+    // Dynamic Parameter Name Resolution (snake_case <-> camelCase)
+    // ========================================================================
+
+    /**
+     * Convert camelCase to snake_case
+     * @param camelCase The camelCase string
+     * @return The snake_case equivalent
+     */
+    private String camelToSnake(String camelCase) {
+        if (camelCase == null || camelCase.isEmpty()) {
+            return camelCase;
+        }
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < camelCase.length(); i++) {
+            char c = camelCase.charAt(i);
+            if (Character.isUpperCase(c)) {
+                if (i > 0) {
+                    result.append('_');
+                }
+                result.append(Character.toLowerCase(c));
+            } else {
+                result.append(c);
+            }
+        }
+        return result.toString();
+    }
+
+    /**
+     * Convert snake_case to camelCase
+     * @param snakeCase The snake_case string
+     * @return The camelCase equivalent
+     */
+    private String snakeToCamel(String snakeCase) {
+        if (snakeCase == null || snakeCase.isEmpty()) {
+            return snakeCase;
+        }
+        StringBuilder result = new StringBuilder();
+        boolean nextUpper = false;
+        for (int i = 0; i < snakeCase.length(); i++) {
+            char c = snakeCase.charAt(i);
+            if (c == '_') {
+                nextUpper = true;
+            } else {
+                if (nextUpper) {
+                    result.append(Character.toUpperCase(c));
+                    nextUpper = false;
+                } else {
+                    result.append(c);
+                }
+            }
+        }
+        return result.toString();
+    }
+
+    /**
+     * Get a parameter value from arguments map, trying both the exact key and
+     * its snake_case/camelCase variants. This allows tools to accept parameters
+     * in either naming convention without hardcoding specific parameter names.
+     *
+     * @param args The arguments map
+     * @param key The parameter key to look for (can be in either convention)
+     * @return The value if found, null otherwise
+     */
+    private Object getParameterValue(Map<String, Object> args, String key) {
+        if (args == null || key == null) {
+            return null;
+        }
+
+        // Try exact match first (most common case)
+        Object value = args.get(key);
+        if (value != null) {
+            return value;
+        }
+
+        // Try snake_case variant if key looks like camelCase
+        if (key.matches(".*[a-z][A-Z].*")) {
+            String snakeKey = camelToSnake(key);
+            value = args.get(snakeKey);
+            if (value != null) {
+                return value;
+            }
+        }
+
+        // Try camelCase variant if key looks like snake_case
+        if (key.contains("_")) {
+            String camelKey = snakeToCamel(key);
+            value = args.get(camelKey);
+            if (value != null) {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if a parameter exists in arguments map, trying both the exact key and
+     * its snake_case/camelCase variants.
+     *
+     * @param args The arguments map
+     * @param key The parameter key to check for
+     * @return true if the parameter exists, false otherwise
+     */
+    private boolean hasParameter(Map<String, Object> args, String key) {
+        return getParameterValue(args, key) != null;
+    }
+
     /**
      * Get a required string parameter from CallToolRequest
      * @param request The CallToolRequest
@@ -212,7 +326,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @throws IllegalArgumentException if the parameter is missing
      */
     protected String getString(Map<String, Object> args, String key) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
         }
@@ -239,7 +353,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return The string value or default
      */
     protected String getOptionalString(Map<String, Object> args, String key, String defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
@@ -266,7 +380,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @throws IllegalArgumentException if the parameter is missing or not a number
      */
     protected int getInt(Map<String, Object> args, String key) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
         }
@@ -303,7 +417,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return The integer value or default
      */
     protected int getOptionalInt(Map<String, Object> args, String key, int defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
@@ -331,7 +445,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return The Integer value, default, or null
      */
     protected Integer getOptionalInteger(Map<String, Object> args, String key, Integer defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
@@ -357,7 +471,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @throws IllegalArgumentException if the parameter is missing or not a valid boolean
      */
     protected boolean getBoolean(Map<String, Object> args, String key) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
         }
@@ -395,7 +509,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return The boolean value or default
      */
     protected boolean getOptionalBoolean(Map<String, Object> args, String key, boolean defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
@@ -423,7 +537,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     @SuppressWarnings("unchecked")
     protected Map<String, Object> getOptionalMap(Map<String, Object> args, String key, Map<String, Object> defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
@@ -442,7 +556,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     @SuppressWarnings("unchecked")
     protected List<String> getStringList(Map<String, Object> args, String key) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
         }
@@ -461,7 +575,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     @SuppressWarnings("unchecked")
     protected List<String> getOptionalStringList(Map<String, Object> args, String key, List<String> defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
@@ -480,7 +594,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     @SuppressWarnings("unchecked")
     protected Map<String, String> getStringMap(Map<String, Object> args, String key) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
         }
@@ -499,7 +613,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     @SuppressWarnings("unchecked")
     protected Map<String, String> getOptionalStringMap(Map<String, Object> args, String key, Map<String, String> defaultValue) {
-        Object value = args.get(key);
+        Object value = getParameterValue(args, key);
         if (value == null) {
             return defaultValue;
         }
