@@ -49,6 +49,7 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 
@@ -79,8 +80,8 @@ public class ImportExportToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        // DISABLED: This provider is not registered in McpServerManager
-        // Tools were merged into SymbolToolProvider's manage-symbols tool
+        // DISABLED: Provider is registered in McpServerManager for upstream compatibility,
+        // but all tools are disabled. Tools were merged into SymbolToolProvider's manage-symbols tool.
         // registerListImportsTool();  // DISABLED - use manage-symbols with mode='imports'
         // registerListExportsTool();  // DISABLED - use manage-symbols with mode='exports'
         // registerFindImportReferencesTool();  // DISABLED - functionality may be available elsewhere
@@ -223,37 +224,7 @@ public class ImportExportToolProvider extends AbstractToolProvider {
             .build();
 
         registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            String importName = getString(request, "importName");
-            String libraryName = getOptionalString(request, "libraryName", null);
-            int maxResults = clamp(getOptionalInt(request, "maxResults", 100), 1, MAX_REFERENCE_RESULTS);
-
-            List<Function> matchingImports = findImportsByName(program, importName, libraryName);
-            if (matchingImports.isEmpty()) {
-                return createErrorResult("Import not found: " + importName +
-                    (libraryName != null ? " in " + libraryName : ""));
-            }
-
-            // Build thunk map once for efficiency: external function -> thunks pointing to it
-            Map<Function, List<Function>> thunkMap = buildThunkMap(program);
-
-            // Collect references
-            List<Map<String, Object>> references = collectImportReferences(
-                program, matchingImports, thunkMap, maxResults);
-
-            // Build matched imports info
-            List<Map<String, Object>> importInfoList = new ArrayList<>();
-            for (Function importFunc : matchingImports) {
-                importInfoList.add(buildImportInfo(importFunc));
-            }
-
-            return createJsonResult(Map.of(
-                "programPath", program.getDomainFile().getPathname(),
-                "searchedImport", importName,
-                "matchedImports", importInfoList,
-                "referenceCount", references.size(),
-                "references", references
-            ));
+            return handleFindImportReferences(request);
         });
     }
 
@@ -277,39 +248,29 @@ public class ImportExportToolProvider extends AbstractToolProvider {
             .build();
 
         registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            Address address = getAddressFromArgs(request, program, "address");
-
-            Function function = program.getFunctionManager().getFunctionAt(address);
-            if (function == null) {
-                function = program.getFunctionManager().getFunctionContaining(address);
-            }
-            if (function == null) {
-                return createErrorResult("No function found at address: " +
-                    AddressUtil.formatAddress(address));
-            }
-
-            List<Map<String, Object>> chain = buildThunkChain(function);
-            Map<String, Object> finalTarget = chain.get(chain.size() - 1);
-            boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("programPath", program.getDomainFile().getPathname());
-            result.put("startAddress", AddressUtil.formatAddress(address));
-            result.put("chain", chain);
-            result.put("chainLength", chain.size());
-            result.put("finalTarget", finalTarget);
-            result.put("isResolved", isResolved);
-
-            return createJsonResult(result);
+            return handleResolveThunk(request);
         });
     }
 
     // ========================================================================
     // Data Collection Methods
+    //
+    // NOTE: These methods are kept in sync with upstream disabled tool handlers.
+    // When upstream updates the disabled tool logic, update these methods accordingly.
+    // Active tools (like SymbolToolProvider.manage-symbols) delegate to these methods
+    // to benefit from upstream improvements.
     // ========================================================================
 
-    private List<Map<String, Object>> collectImports(Program program, String libraryFilter) {
+    /**
+     * Collect all imported functions from external libraries.
+     * This method is used by both disabled tools (for upstream compatibility) and
+     * active tools (SymbolToolProvider.manage-symbols with mode='imports').
+     *
+     * @param program The program to collect imports from
+     * @param libraryFilter Optional library name filter (case-insensitive partial match)
+     * @return List of import information maps
+     */
+    public List<Map<String, Object>> collectImports(Program program, String libraryFilter) {
         List<Map<String, Object>> imports = new ArrayList<>();
         FunctionIterator externalFunctions = program.getFunctionManager().getExternalFunctions();
 
@@ -363,7 +324,15 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return imports;
     }
 
-    private List<Map<String, Object>> collectExports(Program program) {
+    /**
+     * Collect all exported symbols from the binary.
+     * This method is used by both disabled tools (for upstream compatibility) and
+     * active tools (SymbolToolProvider.manage-symbols with mode='exports').
+     *
+     * @param program The program to collect exports from
+     * @return List of export information maps
+     */
+    public List<Map<String, Object>> collectExports(Program program) {
         List<Map<String, Object>> exports = new ArrayList<>();
         SymbolTable symbolTable = program.getSymbolTable();
         FunctionManager funcManager = program.getFunctionManager();
@@ -400,7 +369,16 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return exports;
     }
 
-    private List<Function> findImportsByName(Program program, String importName, String libraryName) {
+    /**
+     * Find imported functions by name and optional library.
+     * This method is used by disabled tools (for upstream compatibility).
+     *
+     * @param program The program to search
+     * @param importName Function name to find (case-insensitive)
+     * @param libraryName Optional library name filter (case-insensitive)
+     * @return List of matching imported functions
+     */
+    protected List<Function> findImportsByName(Program program, String importName, String libraryName) {
         List<Function> matches = new ArrayList<>();
         FunctionIterator externalFunctions = program.getFunctionManager().getExternalFunctions();
 
@@ -427,8 +405,12 @@ public class ImportExportToolProvider extends AbstractToolProvider {
     /**
      * Build a map from external functions to thunks that point to them.
      * This is O(n) where n = number of functions, done once per request.
+     * This method is used by disabled tools (for upstream compatibility).
+     *
+     * @param program The program to analyze
+     * @return Map from external function to list of thunks pointing to it
      */
-    private Map<Function, List<Function>> buildThunkMap(Program program) {
+    protected Map<Function, List<Function>> buildThunkMap(Program program) {
         Map<Function, List<Function>> thunkMap = new HashMap<>();
         FunctionIterator allFunctions = program.getFunctionManager().getFunctions(true);
 
@@ -445,7 +427,17 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return thunkMap;
     }
 
-    private List<Map<String, Object>> collectImportReferences(
+    /**
+     * Collect references to imported functions, including through thunks.
+     * This method is used by disabled tools (for upstream compatibility).
+     *
+     * @param program The program to analyze
+     * @param matchingImports List of imported functions to find references for
+     * @param thunkMap Map from external function to thunks (from buildThunkMap)
+     * @param maxResults Maximum number of references to return
+     * @return List of reference information maps
+     */
+    protected List<Map<String, Object>> collectImportReferences(
             Program program,
             List<Function> matchingImports,
             Map<Function, List<Function>> thunkMap,
@@ -520,7 +512,96 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return references;
     }
 
-    private List<Map<String, Object>> buildThunkChain(Function function) {
+    /**
+     * Handler method for find-import-references tool.
+     * Extracted from disabled tool handler for reuse and upstream compatibility.
+     *
+     * NOTE: This method is kept in sync with upstream disabled tool handler.
+     * When upstream updates the disabled find-import-references tool, update this method accordingly.
+     *
+     * @param request The tool request
+     * @return Call tool result with import references
+     */
+    protected McpSchema.CallToolResult handleFindImportReferences(CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String importName = getString(request, "importName");
+        String libraryName = getOptionalString(request, "libraryName", null);
+        int maxResults = clamp(getOptionalInt(request, "maxResults", 100), 1, MAX_REFERENCE_RESULTS);
+
+        List<Function> matchingImports = findImportsByName(program, importName, libraryName);
+        if (matchingImports.isEmpty()) {
+            return createErrorResult("Import not found: " + importName +
+                (libraryName != null ? " in " + libraryName : ""));
+        }
+
+        // Build thunk map once for efficiency: external function -> thunks pointing to it
+        Map<Function, List<Function>> thunkMap = buildThunkMap(program);
+
+        // Collect references
+        List<Map<String, Object>> references = collectImportReferences(
+            program, matchingImports, thunkMap, maxResults);
+
+        // Build matched imports info
+        List<Map<String, Object>> importInfoList = new ArrayList<>();
+        for (Function importFunc : matchingImports) {
+            importInfoList.add(buildImportInfo(importFunc));
+        }
+
+        return createJsonResult(Map.of(
+            "programPath", program.getDomainFile().getPathname(),
+            "searchedImport", importName,
+            "matchedImports", importInfoList,
+            "referenceCount", references.size(),
+            "references", references
+        ));
+    }
+
+    /**
+     * Handler method for resolve-thunk tool.
+     * Extracted from disabled tool handler for reuse and upstream compatibility.
+     *
+     * NOTE: This method is kept in sync with upstream disabled tool handler.
+     * When upstream updates the disabled resolve-thunk tool, update this method accordingly.
+     *
+     * @param request The tool request
+     * @return Call tool result with thunk chain information
+     */
+    protected McpSchema.CallToolResult handleResolveThunk(CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        Address address = getAddressFromArgs(request, program, "address");
+
+        Function function = program.getFunctionManager().getFunctionAt(address);
+        if (function == null) {
+            function = program.getFunctionManager().getFunctionContaining(address);
+        }
+        if (function == null) {
+            return createErrorResult("No function found at address: " +
+                AddressUtil.formatAddress(address));
+        }
+
+        List<Map<String, Object>> chain = buildThunkChain(function);
+        Map<String, Object> finalTarget = chain.get(chain.size() - 1);
+        boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("startAddress", AddressUtil.formatAddress(address));
+        result.put("chain", chain);
+        result.put("chainLength", chain.size());
+        result.put("finalTarget", finalTarget);
+        result.put("isResolved", isResolved);
+
+        return createJsonResult(result);
+    }
+
+    /**
+     * Build a thunk chain by following thunk targets.
+     * This method is used by disabled tools (for upstream compatibility).
+     *
+     * @param function Starting function (may be a thunk)
+     * @return List of function information maps in the thunk chain
+     */
+    public List<Map<String, Object>> buildThunkChain(Function function) {
         List<Map<String, Object>> chain = new ArrayList<>();
         Function current = function;
         int depth = 0;
@@ -565,10 +646,21 @@ public class ImportExportToolProvider extends AbstractToolProvider {
     }
 
     // ========================================================================
+    // ========================================================================
     // Helper Methods
+    //
+    // NOTE: These helper methods are kept in sync with upstream disabled tool handlers.
+    // When upstream updates the disabled tool logic, update these methods accordingly.
     // ========================================================================
 
-    private Map<String, Object> buildImportInfo(Function importFunc) {
+    /**
+     * Build import information map from a function.
+     * This method is used by disabled tools (for upstream compatibility).
+     *
+     * @param importFunc The imported function
+     * @return Map with import information
+     */
+    protected Map<String, Object> buildImportInfo(Function importFunc) {
         Map<String, Object> info = new HashMap<>();
         info.put("name", importFunc.getName());
 
@@ -585,7 +677,14 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return info;
     }
 
-    private List<Map<String, Object>> groupImportsByLibrary(List<Map<String, Object>> imports) {
+    /**
+     * Group imports by library name.
+     * This method is used by disabled tools and active tools (SymbolToolProvider).
+     *
+     * @param imports List of import information maps
+     * @return List of library groups with their imports
+     */
+    public List<Map<String, Object>> groupImportsByLibrary(List<Map<String, Object>> imports) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         for (Map<String, Object> imp : imports) {
             String library = (String) imp.get("library");
@@ -603,7 +702,16 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return result;
     }
 
-    private <T> List<T> paginate(List<T> list, int startIndex, int maxResults) {
+    /**
+     * Paginate a list with start index and max results.
+     * This method is used by disabled tools and active tools.
+     *
+     * @param list The list to paginate
+     * @param startIndex Starting index (0-based)
+     * @param maxResults Maximum number of results to return
+     * @return Paginated sublist
+     */
+    public <T> List<T> paginate(List<T> list, int startIndex, int maxResults) {
         if (startIndex >= list.size()) {
             return new ArrayList<>();
         }
@@ -611,7 +719,16 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         return new ArrayList<>(list.subList(startIndex, endIndex));
     }
 
-    private int clamp(int value, int min, int max) {
+    /**
+     * Clamp a value between min and max.
+     * This method is used by disabled tools.
+     *
+     * @param value Value to clamp
+     * @param min Minimum value
+     * @param max Maximum value
+     * @return Clamped value
+     */
+    protected int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(value, max));
     }
 

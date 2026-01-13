@@ -46,6 +46,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import reva.plugin.ConfigManager;
 import reva.plugin.ConfigChangeListener;
 import reva.resources.ResourceProvider;
+import reva.resources.impl.ProgramDocumentationResource;
 import reva.resources.impl.ProgramListResource;
 import reva.services.RevaMcpService;
 import reva.tools.ToolProvider;
@@ -66,6 +67,7 @@ import reva.tools.callgraph.CallGraphToolProvider;
 import reva.tools.constants.ConstantSearchToolProvider;
 import reva.tools.vtable.VtableToolProvider;
 import reva.tools.getfunction.GetFunctionToolProvider;
+import reva.tools.imports.ImportExportToolProvider;
 import reva.util.RevaInternalServiceRegistry;
 
 /**
@@ -137,9 +139,11 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         recreateTransportProvider();
 
         // Configure server capabilities
+        // Resources with subscriptions enabled - clients can subscribe to receive real-time updates
+        // The MCP SDK handles subscription requests automatically when enabled
         McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
             .prompts(true)
-            .resources(true, true)
+            .resources(true, true)  // Enable resources with subscriptions
             .tools(true)
             .build();
 
@@ -165,6 +169,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
      */
     private void initializeResourceProviders() {
         resourceProviders.add(new ProgramListResource(server));
+        resourceProviders.add(new ProgramDocumentationResource(server));
 
         // Register all resources with the server
         for (ResourceProvider provider : resourceProviders) {
@@ -189,6 +194,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         toolProviders.add(new StructureToolProvider(server));
         toolProviders.add(new CommentToolProvider(server));
         toolProviders.add(new BookmarkToolProvider(server));
+        toolProviders.add(new ImportExportToolProvider(server));  // DISABLED: Tools are commented out, kept for upstream compatibility
         toolProviders.add(new DataFlowToolProvider(server));
         toolProviders.add(new CallGraphToolProvider(server));
         toolProviders.add(new ConstantSearchToolProvider(server));

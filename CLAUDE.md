@@ -255,7 +255,7 @@ ReVa includes Claude Code marketplace plugins (`/ReVa/skills/`) for common rever
 - **ctf-pwn**: CTF binary exploitation - buffer overflows, format strings, ROP chains
 - **ctf-crypto**: CTF cryptography challenges - weak crypto, key extraction, algorithm identification
 
-Install via: `claude plugin marketplace add cyberkaida/reverse-engineering-assistant`
+Install via: `claude plugin marketplace add th3w1zard1/reverse-engineering-assistant`
 
 ## External Dependencies
 

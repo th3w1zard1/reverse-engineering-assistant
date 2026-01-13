@@ -96,7 +96,7 @@ Optional servlet filter for API key authentication:
 // Server capabilities (MCP SDK v0.17.0)
 McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
     .prompts(true)           // Support prompt templates
-    .resources(true, true)   // Support resources with subscriptions
+    .resources(true, true)   // Support resources with subscriptions enabled
     .tools(true)             // Support tool calls
     .build();
 

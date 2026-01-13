@@ -104,13 +104,12 @@ public class CommentToolProvider extends AbstractToolProvider {
 
     private void registerManageCommentsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("action", Map.of(
             "type", "string",
-            "description", "Action to perform: 'set', 'get', 'remove', 'search', 'search_decomp', or 'suggest'",
-            "enum", List.of("set", "get", "remove", "search", "search_decomp", "suggest")
+            "description", "Action to perform: 'set', 'get', 'remove', 'search', or 'search_decomp'",
+            "enum", List.of("set", "get", "remove", "search", "search_decomp")
         ));
-        properties.put("suggest_comment_type", SchemaUtil.booleanPropertyWithDefault("When action='set', suggest comment type based on address context", false));
         properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the comment (required for set/remove when not using function/line_number)"));
         properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter)"));
         properties.put("function", SchemaUtil.stringProperty("Function name or address when setting decompilation line comment or searching decompilation"));
@@ -142,7 +141,7 @@ public class CommentToolProvider extends AbstractToolProvider {
         properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return", 100));
         properties.put("override_max_functions_limit", SchemaUtil.booleanPropertyWithDefault("Whether to override the maximum function limit for decompiler searches", false));
 
-        List<String> required = List.of("programPath", "action");
+        List<String> required = List.of("action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("manage-comments")
@@ -167,10 +166,8 @@ public class CommentToolProvider extends AbstractToolProvider {
                         return handleSearchComments(program, request);
                     case "search_decomp":
                         return handleSearchDecompilation(program, request, exchange);
-                    case "suggest":
-                        return handleSuggestComment(program, request);
                     default:
-                        return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, remove, search, search_decomp, suggest");
+                        return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, remove, search, search_decomp");
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
@@ -309,14 +306,19 @@ public class CommentToolProvider extends AbstractToolProvider {
             return createErrorResult("Could not resolve address or symbol: " + addressStr);
         }
 
+        // Intelligent bookmarking: check if address should be bookmarked
+        int bookmarkThreshold = reva.util.EnvConfigUtil.getIntDefault("auto_bookmark_threshold",
+            reva.util.IntelligentBookmarkUtil.getDefaultThreshold());
+        reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, address, bookmarkThreshold);
+
         String commentTypeStr = getOptionalString(request, "comment_type", null);
         if (commentTypeStr == null) {
             commentTypeStr = getOptionalString(request, "commentType", null);
         }
 
-        // Check if we should suggest comment type
-        boolean suggestCommentType = getOptionalBoolean(request, "suggest_comment_type", false);
-        if (suggestCommentType && commentTypeStr == null) {
+        // Auto-label comment type if not provided (controlled by environment variable)
+        boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
+        if (autoLabel && commentTypeStr == null) {
             Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
             commentTypeStr = (String) suggestion.get("comment_type");
         }
@@ -325,7 +327,17 @@ public class CommentToolProvider extends AbstractToolProvider {
             commentTypeStr = "eol"; // Default fallback
         }
 
-        String comment = getString(request, "comment");
+        String comment = getOptionalString(request, "comment", null);
+
+        // Auto-label comment text if not provided (controlled by environment variable)
+        if (autoLabel && (comment == null || comment.trim().isEmpty())) {
+            Map<String, Object> commentSuggestion = SmartSuggestionsUtil.suggestCommentText(program, address);
+            comment = (String) commentSuggestion.get("text");
+        }
+
+        if (comment == null || comment.trim().isEmpty()) {
+            return createErrorResult("comment is required for action='set'");
+        }
 
         CommentType commentType = COMMENT_TYPES.get(commentTypeStr.toLowerCase());
         if (commentType == null) {
@@ -685,6 +697,11 @@ public class CommentToolProvider extends AbstractToolProvider {
             return createErrorResult("Could not resolve address or symbol: " + addressStr);
         }
 
+        // Intelligent bookmarking: check if address should be bookmarked
+        int bookmarkThreshold = reva.util.EnvConfigUtil.getIntDefault("auto_bookmark_threshold",
+            reva.util.IntelligentBookmarkUtil.getDefaultThreshold());
+        reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, address, bookmarkThreshold);
+
         String commentTypeStr = getOptionalString(request, "comment_type", null);
         if (commentTypeStr == null) {
             commentTypeStr = getOptionalString(request, "commentType", null);
@@ -905,34 +922,6 @@ public class CommentToolProvider extends AbstractToolProvider {
             logError("Error during decompilation search", e);
             return createErrorResult("Search failed: " + e.getMessage());
         }
-    }
-
-    /**
-     * Handle suggest action - provide smart suggestions for comment types
-     */
-    private McpSchema.CallToolResult handleSuggestComment(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        String addressStr = getOptionalString(request, "address", null);
-        if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
-        }
-        if (addressStr == null) {
-            return createErrorResult("address is required for action='suggest'");
-        }
-
-        Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
-        if (address == null) {
-            return createErrorResult("Could not resolve address or symbol: " + addressStr);
-        }
-
-        Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
-        Map<String, Object> commentSuggestion = SmartSuggestionsUtil.suggestCommentText(program, address);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("address", AddressUtil.formatAddress(address));
-        result.put("suggestion", suggestion);
-        result.put("recommended_comment", commentSuggestion);
-
-        return createJsonResult(result);
     }
 
     /**

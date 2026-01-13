@@ -16,12 +16,14 @@
 package reva.tools.project;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.Objects;
 
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
@@ -35,7 +37,9 @@ import ghidra.framework.model.ProjectLocator;
 import ghidra.framework.model.ToolManager;
 import ghidra.base.project.GhidraProject;
 import ghidra.app.services.ProgramManager;
+import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
+import ghidra.program.util.ProgramLocation;
 import ghidra.program.model.lang.CompilerSpec;
 import ghidra.program.model.lang.CompilerSpecID;
 import ghidra.program.model.lang.Language;
@@ -45,6 +49,8 @@ import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.model.lang.LanguageService;
 import ghidra.program.util.DefaultLanguageService;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.DataIterator;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TimeoutTaskMonitor;
@@ -55,6 +61,7 @@ import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.LoadResults;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.app.util.opinion.Loaded;
+import ghidra.app.util.opinion.Loader;
 import ghidra.formats.gfilesystem.FSRL;
 import ghidra.formats.gfilesystem.FSUtilities;
 import ghidra.formats.gfilesystem.FileSystemService;
@@ -62,9 +69,15 @@ import ghidra.plugins.importer.batch.BatchGroup;
 import ghidra.plugins.importer.batch.BatchGroup.BatchLoadConfig;
 import ghidra.plugins.importer.batch.BatchGroupLoadSpec;
 import ghidra.plugins.importer.batch.BatchInfo;
+// ImportBatchTask is not available - using custom import loop instead
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.framework.store.local.LocalFileSystem;
+import ghidra.framework.client.ClientAuthenticator;
+import ghidra.framework.client.ClientUtil;
+import ghidra.framework.client.PasswordClientAuthenticator;
 import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.spec.McpSchema;
 import reva.debug.DebugCaptureService;
 import reva.plugin.RevaProgramManager;
 import reva.plugin.ConfigManager;
@@ -72,18 +85,20 @@ import reva.tools.AbstractToolProvider;
 import reva.util.SchemaUtil;
 import reva.util.RevaInternalServiceRegistry;
 import reva.util.ToolLogCollector;
+import reva.util.ProjectUtil;
+import reva.util.AddressUtil;
 
 /**
  * Tool provider for project-related operations. Provides tools to get the
  * current program, list project files, and perform version control operations.
  */
-
 public class ProjectToolProvider extends AbstractToolProvider {
 
     private final boolean headlessMode;
 
     /**
      * Constructor
+     *
      * @param server The MCP server
      * @param headlessMode True if running in headless mode (no GUI context)
      */
@@ -101,19 +116,20 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // These tools were merged into 'open' but kept here as disabled
         // registerOpenProjectTool();  // DISABLED - use 'open' with .gpr file instead
         // registerOpenProgramTool();  // DISABLED - use 'open' with program file instead
-
         // GUI-only tools: require ToolManager which isn't available in headless mode
         if (!headlessMode) {
             registerGetCurrentProgramTool();
             registerListOpenProgramsTool();
             registerOpenProgramInCodeBrowserTool();
-            registerOpenAllProgramsInCodeBrowserTool();
+            registerGetCurrentAddressTool();
+            registerGetCurrentFunctionTool();
+            // registerOpenAllProgramsInCodeBrowserTool();  // DISABLED - use 'open' with extensions parameter instead
         }
         registerListProjectFilesTool();
         registerCheckinProgramTool();
         registerAnalyzeProgramTool();
         registerChangeProcessorTool();
-        registerImportFileTool();
+        registerManageFilesTool();
         registerCaptureDebugInfoTool();
     }
 
@@ -128,22 +144,46 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-current-program")
-            .title("Get Current Program")
-            .description("Get the currently active program in Ghidra")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("get-current-program")
+                .title("Get Current Program")
+                .description("Get the currently active program in Ghidra")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get all open programs
-            List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
-            if (openPrograms.isEmpty()) {
-                return createErrorResult("No programs are currently open in Ghidra");
+            Program program = null;
+
+            // In GUI mode, try to get the current program from the active Code Browser tool
+            // This matches GhidraMCP's behavior of getting the "current" program, not just any open program
+            if (!headlessMode) {
+                Project project = AppInfo.getActiveProject();
+                if (project != null) {
+                    ToolManager toolManager = project.getToolManager();
+                    if (toolManager != null) {
+                        // Find a Code Browser tool with ProgramManager service
+                        PluginTool[] runningTools = toolManager.getRunningTools();
+                        for (PluginTool runningTool : runningTools) {
+                            ProgramManager programManager = runningTool.getService(ProgramManager.class);
+                            if (programManager != null) {
+                                program = programManager.getCurrentProgram();
+                                if (program != null) {
+                                    break; // Found the current program
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            // For now, just return the first program (assuming it's the active one)
-            Program program = openPrograms.get(0);
+            // Fallback: if no current program found in GUI, or in headless mode, use first open program
+            if (program == null) {
+                List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
+                if (openPrograms.isEmpty()) {
+                    return createErrorResult("No programs are currently open in Ghidra");
+                }
+                program = openPrograms.get(0);
+            }
 
             // Create result data
             Map<String, Object> programInfo = new HashMap<>();
@@ -162,27 +202,155 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
+     * Register a tool to get the currently selected address in the GUI
+     */
+    private void registerGetCurrentAddressTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        // This tool doesn't require any parameters
+        List<String> required = new ArrayList<>();
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name("get-current-address")
+                .title("Get Current Address")
+                .description("Get the address currently selected by the user in the Code Browser")
+                .inputSchema(createSchema(properties, required))
+                .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            // Get the active project
+            Project project = AppInfo.getActiveProject();
+            if (project == null) {
+                return createErrorResult("No active project found");
+            }
+
+            // Get the tool manager to find Code Browser tools
+            ToolManager toolManager = project.getToolManager();
+            if (toolManager == null) {
+                return createErrorResult("Tool manager not available");
+            }
+
+            // Find a Code Browser tool with CodeViewerService
+            PluginTool[] runningTools = toolManager.getRunningTools();
+            CodeViewerService codeViewerService = null;
+            for (PluginTool runningTool : runningTools) {
+                codeViewerService = runningTool.getService(CodeViewerService.class);
+                if (codeViewerService != null) {
+                    break;
+                }
+            }
+
+            if (codeViewerService == null) {
+                return createErrorResult("Code viewer service not available. Please open a program in Code Browser.");
+            }
+
+            // Get the current location
+            ProgramLocation location = codeViewerService.getCurrentLocation();
+            if (location == null) {
+                return createErrorResult("No current location - no address is currently selected");
+            }
+
+            // Create result data
+            Map<String, Object> result = new HashMap<>();
+            result.put("address", AddressUtil.formatAddress(location.getAddress()));
+            result.put("programPath", location.getProgram().getDomainFile().getPathname());
+
+            return createJsonResult(result);
+        });
+    }
+
+    /**
+     * Register a tool to get the currently selected function in the GUI
+     */
+    private void registerGetCurrentFunctionTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        // This tool doesn't require any parameters
+        List<String> required = new ArrayList<>();
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name("get-current-function")
+                .title("Get Current Function")
+                .description("Get the function currently selected by the user in the Code Browser")
+                .inputSchema(createSchema(properties, required))
+                .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            // Get the active project
+            Project project = AppInfo.getActiveProject();
+            if (project == null) {
+                return createErrorResult("No active project found");
+            }
+
+            // Get the tool manager to find Code Browser tools
+            ToolManager toolManager = project.getToolManager();
+            if (toolManager == null) {
+                return createErrorResult("Tool manager not available");
+            }
+
+            // Find a Code Browser tool with CodeViewerService
+            PluginTool[] runningTools = toolManager.getRunningTools();
+            CodeViewerService codeViewerService = null;
+            for (PluginTool runningTool : runningTools) {
+                codeViewerService = runningTool.getService(CodeViewerService.class);
+                if (codeViewerService != null) {
+                    break;
+                }
+            }
+
+            if (codeViewerService == null) {
+                return createErrorResult("Code viewer service not available. Please open a program in Code Browser.");
+            }
+
+            // Get the current location
+            ProgramLocation location = codeViewerService.getCurrentLocation();
+            if (location == null) {
+                return createErrorResult("No current location - no address is currently selected");
+            }
+
+            Program program = location.getProgram();
+            Function func = program.getFunctionManager().getFunctionContaining(location.getAddress());
+            if (func == null) {
+                return createErrorResult("No function at current location: " + AddressUtil.formatAddress(location.getAddress()));
+            }
+
+            // Create result data
+            Map<String, Object> result = new HashMap<>();
+            result.put("functionName", func.getName());
+            result.put("address", AddressUtil.formatAddress(func.getEntryPoint()));
+            result.put("signature", func.getSignature().toString());
+            result.put("programPath", program.getDomainFile().getPathname());
+
+            return createJsonResult(result);
+        });
+    }
+
+    /**
      * Register a tool to list files and folders in the Ghidra project
      */
     private void registerListProjectFilesTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("folderPath", SchemaUtil.stringProperty(
-            "Path to the folder to list contents of. Use '/' for the root folder."
+                "Path to the folder to list contents of. Use '/' for the root folder."
         ));
         properties.put("recursive", SchemaUtil.booleanPropertyWithDefault(
-            "Whether to list files recursively", false
+                "Whether to list files recursively", false
         ));
 
         List<String> required = List.of("folderPath");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-project-files")
-            .title("List Project Files")
-            .description("List files and folders in the Ghidra project")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("list-project-files")
+                .title("List Project Files")
+                .description("List files and folders in the Ghidra project")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -253,11 +421,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-open-programs")
-            .title("List Open Programs")
-            .description("List all programs currently open in Ghidra across all tools")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("list-open-programs")
+                .title("List Open Programs")
+                .description("List all programs currently open in Ghidra across all tools")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -304,24 +472,24 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-            "Path to the program to checkin (e.g., '/Hatchery.exe')"
+                "Path to the program to checkin (e.g., '/Hatchery.exe')"
         ));
         properties.put("message", SchemaUtil.stringProperty(
-            "Commit message for the checkin"
+                "Commit message for the checkin"
         ));
         properties.put("keepCheckedOut", SchemaUtil.booleanPropertyWithDefault(
-            "Whether to keep the program checked out after checkin", false
+                "Whether to keep the program checked out after checkin", false
         ));
 
         List<String> required = List.of("programPath", "message");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("checkin-program")
-            .title("Checkin Program")
-            .description("Checkin (commit) a program to version control with a commit message")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("checkin-program")
+                .title("Checkin Program")
+                .description("Checkin (commit) a program to version control with a commit message")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -388,11 +556,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("isCheckedOut", domainFile.isCheckedOut());
 
                     return createJsonResult(result);
-                }
-                else if (domainFile.canCheckin()) {
+                } else if (domainFile.canCheckin()) {
                     // Existing versioned file - check in changes
                     DefaultCheckinHandler checkinHandler = new DefaultCheckinHandler(
-                        message + "\n💜🐉✨ (ReVa)", keepCheckedOut, false);
+                            message + "\n💜🐉✨ (ReVa)", keepCheckedOut, false);
                     domainFile.checkin(checkinHandler, TaskMonitor.DUMMY);
 
                     // Re-open program to cache if it was cached and we're keeping it checked out
@@ -413,8 +580,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("isCheckedOut", domainFile.isCheckedOut());
 
                     return createJsonResult(result);
-                }
-                else if (!domainFile.isVersioned()) {
+                } else if (!domainFile.isVersioned()) {
                     // Not versioned - changes were already saved at the beginning
                     Map<String, Object> result = new HashMap<>();
                     result.put("success", true);
@@ -425,16 +591,13 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("info", "Program is not under version control - changes were saved instead");
 
                     return createJsonResult(result);
-                }
-                else {
+                } else {
                     // Other version control errors
                     if (!domainFile.isCheckedOut()) {
                         return createErrorResult("Program is not checked out and cannot be modified: " + programPath);
-                    }
-                    else if (!domainFile.modifiedSinceCheckout()) {
+                    } else if (!domainFile.modifiedSinceCheckout()) {
                         return createErrorResult("Program has no changes since checkout: " + programPath);
-                    }
-                    else {
+                    } else {
                         return createErrorResult("Program cannot be checked in for an unknown reason: " + programPath);
                     }
                 }
@@ -447,6 +610,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively collect all program paths from a folder and its subfolders
+     *
      * @param folder The folder to collect from
      * @param programPaths List to accumulate program paths
      */
@@ -465,10 +629,13 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Collect imported files, optionally analyze them, and add them to version control
+     * Collect imported files, optionally analyze them, and add them to version
+     * control
+     *
      * @param destFolder The destination folder where files were imported
      * @param importedBaseName The base name of the imported file/directory
-     * @param analyzeAfterImport Whether to run auto-analysis on imported programs
+     * @param analyzeAfterImport Whether to run auto-analysis on imported
+     * programs
      * @param analysisTimeoutSeconds Timeout in seconds for analysis operations
      * @param versionedFiles List to track successfully versioned files
      * @param analyzedFiles List to track successfully analyzed files
@@ -476,9 +643,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param monitor Task monitor for cancellation and timeout checking
      */
     private void collectImportedFiles(DomainFolder destFolder, String importedBaseName,
-                                     boolean analyzeAfterImport, int analysisTimeoutSeconds,
-                                     List<String> versionedFiles, List<String> analyzedFiles,
-                                     List<String> errors, TaskMonitor monitor) {
+            boolean analyzeAfterImport, int analysisTimeoutSeconds,
+            List<String> versionedFiles, List<String> analyzedFiles,
+            List<String> errors, TaskMonitor monitor) {
         try {
             // Find newly imported files in the destination folder
             for (DomainFile file : destFolder.getFiles()) {
@@ -507,8 +674,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                                     analysisManager.waitForAnalysis(null, analysisMonitor);
 
                                     if (analysisMonitor.isCancelled()) {
-                                        errors.add("Analysis timed out for " + file.getPathname() +
-                                            " after " + analysisTimeoutSeconds + " seconds");
+                                        errors.add("Analysis timed out for " + file.getPathname()
+                                                + " after " + analysisTimeoutSeconds + " seconds");
                                     } else {
                                         // Save program after analysis
                                         program.save("Auto-analysis complete", monitor);
@@ -533,8 +700,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     try {
                         // Use different commit message based on whether analysis was performed
                         String commitMessage = wasAnalyzed
-                            ? "Initial import via ReVa (analyzed)"
-                            : "Initial import via ReVa";
+                                ? "Initial import via ReVa (analyzed)"
+                                : "Initial import via ReVa";
                         file.addToVersionControl(commitMessage, false, monitor);
                         versionedFiles.add(file.getPathname());
                     } catch (Exception e) {
@@ -546,7 +713,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             // Recursively process subfolders
             for (DomainFolder subfolder : destFolder.getFolders()) {
                 collectImportedFiles(subfolder, importedBaseName, analyzeAfterImport, analysisTimeoutSeconds,
-                    versionedFiles, analyzedFiles, errors, monitor);
+                        versionedFiles, analyzedFiles, errors, monitor);
             }
         } catch (Exception e) {
             errors.add("Error collecting imported files: " + e.getMessage());
@@ -555,6 +722,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Collect files and subfolders from a folder
+     *
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
@@ -604,6 +772,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively collect files and subfolders from a folder
+     *
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
@@ -626,18 +795,18 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-            "Path to the program to analyze (e.g., '/Hatchery.exe')"
+                "Path to the program to analyze (e.g., '/Hatchery.exe')"
         ));
 
         List<String> required = List.of("programPath");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("analyze-program")
-            .title("Analyze Program")
-            .description("Run Ghidra's auto-analysis on a program")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("analyze-program")
+                .title("Analyze Program")
+                .description("Run Ghidra's auto-analysis on a program")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -676,30 +845,31 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to change the processor architecture of an existing program
+     * Register a tool to change the processor architecture of an existing
+     * program
      */
     private void registerChangeProcessorTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-            "Path to the program to modify (e.g., '/Hatchery.exe')"
+                "Path to the program to modify (e.g., '/Hatchery.exe')"
         ));
         properties.put("languageId", SchemaUtil.stringProperty(
-            "Language ID for the new processor (e.g., 'x86:LE:64:default')"
+                "Language ID for the new processor (e.g., 'x86:LE:64:default')"
         ));
         properties.put("compilerSpecId", SchemaUtil.stringProperty(
-            "Compiler spec ID (optional, defaults to the language's default)"
+                "Compiler spec ID (optional, defaults to the language's default)"
         ));
 
         List<String> required = List.of("programPath", "languageId");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("change-processor")
-            .title("Change Processor")
-            .description("Change the processor architecture of an existing program")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("change-processor")
+                .title("Change Processor")
+                .description("Change the processor architecture of an existing program")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -772,18 +942,23 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to import files into the Ghidra project
+     * Register a tool to import/export files in the Ghidra project
      */
-    private void registerImportFileTool() {
+    private void registerManageFilesTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
 
-        // path parameter (required)
-        // Note: The MCP client and Ghidra may have different working directories,
-        // so absolute paths are recommended for reliable file resolution
+        // operation parameter (required)
+        properties.put("operation", Map.of(
+                "type", "string",
+                "description", "Operation to perform: 'import' (import files into project) or 'export' (export program data to files)",
+                "enum", List.of("import", "export")
+        ));
+
+        // path parameter (required for import)
         Map<String, Object> pathProperty = new HashMap<>();
         pathProperty.put("type", "string");
-        pathProperty.put("description", "Absolute file system path to import (file, directory, or archive). Use absolute paths to ensure proper file resolution as the MCP client and Ghidra may have different working directories.");
+        pathProperty.put("description", "For import: Absolute file system path to import (file, directory, or archive). For export: File system path where to save the exported file. Use absolute paths to ensure proper file resolution.");
         properties.put("path", pathProperty);
 
         // destinationFolder parameter (optional)
@@ -828,464 +1003,548 @@ public class ProjectToolProvider extends AbstractToolProvider {
         mirrorFsProperty.put("description", "Mirror the filesystem layout when importing (default: false)");
         properties.put("mirrorFs", mirrorFsProperty);
 
-        // enableVersionControl parameter (optional)
+        // enableVersionControl parameter (optional, for import)
         Map<String, Object> versionControlProperty = new HashMap<>();
         versionControlProperty.put("type", "boolean");
-        versionControlProperty.put("description", "Automatically add imported files to version control (default: true)");
+        versionControlProperty.put("description", "For import: Automatically add imported files to version control (default: true)");
         properties.put("enableVersionControl", versionControlProperty);
 
-        List<String> required = List.of("path");
+        // Export-specific parameters
+        properties.put("programPath", SchemaUtil.stringProperty("For export: Path to the program to export (e.g., '/Hatchery.exe')"));
+        properties.put("export_type", Map.of(
+                "type", "string",
+                "description", "For export: Type of export: 'program' (export binary), 'function_info' (export function information as JSON/CSV), 'strings' (export strings as text)",
+                "enum", List.of("program", "function_info", "strings")
+        ));
+        properties.put("format", SchemaUtil.stringProperty("For export: Export format for function_info: 'json' or 'csv' (default: 'json')"));
+        properties.put("include_parameters", SchemaUtil.booleanPropertyWithDefault("For export: Include function parameters in function_info export", true));
+        properties.put("include_variables", SchemaUtil.booleanPropertyWithDefault("For export: Include local variables in function_info export", true));
+        properties.put("include_comments", SchemaUtil.booleanPropertyWithDefault("For export: Include comments in function_info export", false));
+
+        List<String> required = List.of("operation", "path");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("import-file")
-            .title("Import File")
-            .description("Import files, directories, or archives into the Ghidra project using batch import")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("manage-files")
+                .title("Manage Files")
+                .description("Import files into the Ghidra project or export program data to files")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
             try {
-                // Get required parameter
-                String path = getString(request, "path");
+                String operation = getString(request, "operation");
 
-                // Get configuration for defaults
-                ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
-                boolean defaultAnalyze = configManager != null ? configManager.isWaitForAnalysisOnImport() : true;
-                int defaultMaxDepth = configManager != null ? configManager.getImportMaxDepth() : 10;
-
-                // Get optional parameters with defaults
-                String destinationFolder = getOptionalString(request, "destinationFolder", "/");
-                boolean recursive = getOptionalBoolean(request, "recursive", true);
-                int maxDepth = getOptionalInt(request, "maxDepth", defaultMaxDepth);
-                boolean analyzeAfterImport = getOptionalBoolean(request, "analyzeAfterImport", defaultAnalyze);
-                boolean enableVersionControl = getOptionalBoolean(request, "enableVersionControl", true);
-                boolean stripLeadingPath = getOptionalBoolean(request, "stripLeadingPath", true);
-                boolean stripAllContainerPath = getOptionalBoolean(request, "stripAllContainerPath", false);
-                boolean mirrorFs = getOptionalBoolean(request, "mirrorFs", false);
-
-                // Validate file exists
-                File file = new File(path);
-                if (!file.exists()) {
-                    return createErrorResult("File or directory does not exist: " + path);
-                }
-
-                // Get the active project
-                Project project = AppInfo.getActiveProject();
-                if (project == null) {
-                    return createErrorResult("No active project found");
-                }
-
-                // Get destination folder
-                DomainFolder destFolder;
-                if (destinationFolder.equals("/")) {
-                    destFolder = project.getProjectData().getRootFolder();
+                if ("import".equals(operation)) {
+                    return handleImportOperation(exchange, request);
+                } else if ("export".equals(operation)) {
+                    return handleExportOperation(request);
                 } else {
-                    destFolder = project.getProjectData().getFolder(destinationFolder);
-                    if (destFolder == null) {
-                        return createErrorResult("Destination folder not found: " + destinationFolder);
-                    }
+                    return createErrorResult("Invalid operation: " + operation + ". Must be 'import' or 'export'");
                 }
-
-                // Create BatchInfo with specified max depth
-                BatchInfo batchInfo = new BatchInfo(recursive ? maxDepth : 1);
-
-                // Convert file to FSRL and add to batch
-                FSRL fsrl = FileSystemService.getInstance().getLocalFSRL(file);
-                boolean hasImportableFiles = batchInfo.addFile(fsrl, TaskMonitor.DUMMY);
-
-                if (!hasImportableFiles) {
-                    return createErrorResult("No importable files found in: " + path);
-                }
-
-                // Check if any files were actually discovered
-                if (batchInfo.getTotalCount() == 0) {
-                    return createErrorResult("No supported file formats found in: " + path);
-                }
-
-                // Use configuration for timeouts
-                int importTimeoutSeconds = configManager != null ?
-                    configManager.getDecompilerTimeoutSeconds() * 2 : 300; // 2x decompiler timeout or 5 min default
-                int analysisTimeoutSeconds = configManager != null ?
-                    configManager.getImportAnalysisTimeoutSeconds() : 600; // Default 10 minutes
-
-                // Create timeout-protected monitor for import operations
-                TaskMonitor importMonitor = TimeoutTaskMonitor.timeoutIn(importTimeoutSeconds, TimeUnit.SECONDS);
-
-                // Track imported files with accurate DomainFile references
-                List<DomainFile> importedDomainFiles = new ArrayList<>();
-                List<String> importedProgramPaths = new ArrayList<>();
-                List<Map<String, Object>> detailedErrors = new ArrayList<>();
-
-                // Progress tracking
-                int totalFiles = batchInfo.getTotalCount();
-                int processedFiles = 0;
-                String progressToken = "import-" + System.currentTimeMillis();
-
-                // Send initial progress notification
-                if (exchange != null) {
-                    exchange.progressNotification(new McpSchema.ProgressNotification(
-                        progressToken, 0.0, (double) totalFiles,
-                        "Starting import of " + totalFiles + " file(s) from " + path + "..."));
-                }
-
-                // Custom import loop - replaces ImportBatchTask to capture actual imported files
-                int enabledGroups = 0;
-                int skippedGroups = 0;
-                importLoop:
-                for (BatchGroup group : batchInfo.getGroups()) {
-                    // Check for cancellation at the start of each group
-                    if (importMonitor.isCancelled()) {
-                        break importLoop;
-                    }
-
-                    // Check if group is enabled (has valid load spec selected)
-                    if (!group.isEnabled()) {
-                        skippedGroups++;
-                        Msg.debug(this, "Skipping disabled batch group: " + group.getCriteria());
-                        continue;
-                    }
-                    enabledGroups++;
-
-                    BatchGroupLoadSpec selectedBatchGroupLoadSpec = group.getSelectedBatchGroupLoadSpec();
-                    if (selectedBatchGroupLoadSpec == null) {
-                        detailedErrors.add(Map.of(
-                            "stage", "discovery",
-                            "error", "Enabled group has no selected load spec",
-                            "errorType", "ConfigurationError",
-                            "details", group.getCriteria().toString()
-                        ));
-                        continue;
-                    }
-
-                    for (BatchLoadConfig config : group.getBatchLoadConfig()) {
-                        if (importMonitor.isCancelled()) {
-                            break importLoop;
-                        }
-
-                        try (ByteProvider byteProvider = FileSystemService.getInstance()
-                                .getByteProvider(config.getFSRL(), true, importMonitor)) {
-
-                            LoadSpec loadSpec = config.getLoadSpec(selectedBatchGroupLoadSpec);
-                            if (loadSpec == null) {
-                                detailedErrors.add(Map.of(
-                                    "stage", "import",
-                                    "sourceFSRL", config.getFSRL().toString(),
-                                    "preferredName", config.getPreferredFileName(),
-                                    "error", "No load spec matches selected batch group load spec",
-                                    "errorType", "LoadSpecError"
-                                ));
-                                processedFiles++;
-                                continue;
-                            }
-
-                            // Compute destination path using Ghidra's path handling logic
-                            // Handle null UASI by falling back to the config's FSRL
-                            FSRL uasiFsrl = (config.getUasi() != null) ? config.getUasi().getFSRL() : config.getFSRL();
-                            String pathStr = fsrlToPath(config.getFSRL(),
-                                uasiFsrl, stripLeadingPath, stripAllContainerPath);
-
-                            // Sanitize the filename to replace invalid characters with underscores
-                            String sanitizedPath = fixupProjectFilename(pathStr);
-
-                            // Create settings record for Ghidra 12.0+ API
-                            MessageLog log = new MessageLog();
-                            Loader.ImporterSettings settings = new Loader.ImporterSettings(
-                                byteProvider,
-                                sanitizedPath,
-                                project,
-                                destFolder.getPathname(),
-                                mirrorFs,
-                                loadSpec,
-                                loadSpec.getLoader().getDefaultOptions(byteProvider, loadSpec, null, false, mirrorFs),
-                                this,
-                                log,
-                                importMonitor
-                            );
-
-                            // Load and save - capture each DomainFile
-                            try (LoadResults<?> loadResults = loadSpec.getLoader().load(settings)) {
-                                if (loadResults == null) {
-                                    detailedErrors.add(Map.of(
-                                        "stage", "import",
-                                        "sourceFSRL", config.getFSRL().toString(),
-                                        "preferredName", config.getPreferredFileName(),
-                                        "error", "Loader returned null results",
-                                        "errorType", "LoaderError"
-                                    ));
-                                    processedFiles++;
-                                    continue;
-                                }
-
-                                // CRITICAL: Save each loaded object and capture DomainFile
-                                for (Loaded<?> loaded : loadResults) {
-                                    DomainFile savedFile = loaded.save(importMonitor);
-                                    importedDomainFiles.add(savedFile);
-                                    importedProgramPaths.add(savedFile.getPathname());
-                                    Msg.info(this, "Imported: " + config.getFSRL() + " -> " + savedFile.getPathname());
-                                }
-
-                                // Track progress per source file and send notification
-                                processedFiles++;
-                                if (exchange != null) {
-                                    // Progress tracks source files, but message shows total imported files
-                                    String progressMsg = String.format("Processed %d/%d sources (%d files imported): %s",
-                                        processedFiles, totalFiles, importedDomainFiles.size(), config.getPreferredFileName());
-                                    exchange.progressNotification(new McpSchema.ProgressNotification(
-                                        progressToken, (double) processedFiles, (double) totalFiles, progressMsg));
-                                }
-
-                                if (log.hasMessages()) {
-                                    Msg.info(this, "Import log for " + config.getFSRL() + ": " + log.toString());
-                                }
-                            }
-                        } catch (Exception e) {
-                            detailedErrors.add(Map.of(
-                                "stage", "import",
-                                "sourceFSRL", config.getFSRL().toString(),
-                                "preferredName", config.getPreferredFileName(),
-                                "error", Objects.requireNonNullElse(e.getMessage(), e.toString()),
-                                "errorType", e.getClass().getSimpleName()
-                            ));
-                            processedFiles++;
-                            Msg.error(this, "Import failed for " + config.getFSRL(), e);
-                        }
-                    }
-                }
-
-                // Check for timeout
-                if (importMonitor.isCancelled() && importedDomainFiles.isEmpty()) {
-                    return createErrorResult("Import timed out after " + importTimeoutSeconds + " seconds. " +
-                        "Try importing fewer files or increase timeout in ReVa configuration.");
-                }
-
-                // Report if no groups were enabled for import
-                if (enabledGroups == 0 && importedDomainFiles.isEmpty()) {
-                    detailedErrors.add(Map.of(
-                        "stage", "discovery",
-                        "error", "No enabled batch groups found",
-                        "errorType", "NoImportableFiles",
-                        "filesDiscovered", batchInfo.getTotalCount(),
-                        "groupsCreated", batchInfo.getGroups().size(),
-                        "skippedGroups", skippedGroups
-                    ));
-                }
-
-                // Track version control and analysis results
-                List<String> versionedFiles = new ArrayList<>();
-                List<String> analyzedFiles = new ArrayList<>();
-
-                // Process imported files: analyze if requested, then add to version control
-                // Use the tracked importedDomainFiles list for accurate processing
-                if ((enableVersionControl || analyzeAfterImport) && !importedDomainFiles.isEmpty()) {
-                    int totalFilesToProcess = importedDomainFiles.size();
-
-                    for (int fileIndex = 0; fileIndex < totalFilesToProcess; fileIndex++) {
-                        DomainFile domainFile = importedDomainFiles.get(fileIndex);
-
-                        // Create per-file timeout to ensure each file gets equal treatment
-                        TaskMonitor postMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
-
-                        if (postMonitor.isCancelled()) {
-                            // Record timeout error and skipped files
-                            detailedErrors.add(Map.of(
-                                "stage", "postProcessing",
-                                "error", "Post-processing timed out",
-                                "errorType", "TimeoutError"
-                            ));
-
-                            // Record individual timeout/skip error for each remaining file
-                            for (int j = fileIndex; j < totalFilesToProcess; j++) {
-                                DomainFile remainingFile = importedDomainFiles.get(j);
-                                detailedErrors.add(Map.of(
-                                    "stage", "postProcessing",
-                                    "programPath", remainingFile.getPathname(),
-                                    "error", "Post-processing skipped due to prior timeout",
-                                    "errorType", "TimeoutError"
-                                ));
-                            }
-                            break;
-                        }
-
-                        try {
-                            // Run analysis if requested
-                            if (analyzeAfterImport && domainFile.getContentType().equals("Program")) {
-                                DomainObject domainObject = null;
-                                try {
-                                    // IMPORTANT: okToRecover (3rd param) must be TRUE. If false, getDomainObject()
-                                    // returns null for programs that aren't already open, silently skipping analysis.
-                                    domainObject = domainFile.getDomainObject(this, false, true, postMonitor);
-                                    if (domainObject instanceof Program program) {
-                                        AutoAnalysisManager analysisManager = AutoAnalysisManager.getAnalysisManager(program);
-                                        if (analysisManager != null) {
-                                            TaskMonitor analysisMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
-                                            analysisManager.startAnalysis(analysisMonitor);
-                                            analysisManager.waitForAnalysis(null, analysisMonitor);
-
-                                            if (!analysisMonitor.isCancelled()) {
-                                                program.save("Analysis completed via ReVa import", postMonitor);
-                                                analyzedFiles.add(domainFile.getPathname());
-                                            } else {
-                                                detailedErrors.add(Map.of(
-                                                    "stage", "analysis",
-                                                    "programPath", domainFile.getPathname(),
-                                                    "error", "Analysis timed out",
-                                                    "errorType", "TimeoutError"
-                                                ));
-                                            }
-                                        }
-                                    }
-                                } finally {
-                                    // Always release the domain object to prevent resource leaks
-                                    if (domainObject != null) {
-                                        domainObject.release(this);
-                                    }
-                                }
-                            }
-
-                            // Add to version control if requested
-                            if (enableVersionControl) {
-                                if (domainFile.canAddToRepository()) {
-                                    String vcMessage = analyzeAfterImport && analyzedFiles.contains(domainFile.getPathname())
-                                        ? "Initial import via ReVa (analyzed)"
-                                        : "Initial import via ReVa";
-                                    // Second parameter false = check in immediately (don't keep checked out)
-                                    domainFile.addToVersionControl(vcMessage, false, postMonitor);
-                                    versionedFiles.add(domainFile.getPathname());
-                                }
-                            }
-                        } catch (Exception e) {
-                            detailedErrors.add(Map.of(
-                                "stage", "postProcessing",
-                                "programPath", domainFile.getPathname(),
-                                "error", Objects.requireNonNullElse(e.getMessage(), e.toString()),
-                                "errorType", e.getClass().getSimpleName()
-                            ));
-                        }
-                    }
-                }
-
-                // Create result data
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", !importedDomainFiles.isEmpty());
-                result.put("importedFrom", path);
-                result.put("destinationFolder", destinationFolder);
-                result.put("filesDiscovered", batchInfo.getTotalCount());
-                result.put("filesImported", importedDomainFiles.size());
-                result.put("groupsCreated", batchInfo.getGroups().size());
-                result.put("enabledGroups", enabledGroups);
-                result.put("skippedGroups", skippedGroups);
-                result.put("maxDepthUsed", maxDepth);
-                result.put("wasRecursive", recursive);
-                result.put("analyzeAfterImport", analyzeAfterImport);
-                result.put("enableVersionControl", enableVersionControl);
-                result.put("stripLeadingPath", stripLeadingPath);
-                result.put("stripAllContainerPath", stripAllContainerPath);
-                result.put("mirrorFs", mirrorFs);
-                result.put("importedPrograms", importedProgramPaths);
-
-                if (enableVersionControl) {
-                    result.put("filesAddedToVersionControl", versionedFiles.size());
-                    result.put("versionedPrograms", versionedFiles);
-                }
-
-                if (analyzeAfterImport) {
-                    result.put("filesAnalyzed", analyzedFiles.size());
-                    result.put("analyzedPrograms", analyzedFiles);
-                }
-
-                // Include detailed error information
-                if (!detailedErrors.isEmpty()) {
-                    result.put("errors", detailedErrors);
-                    result.put("errorCount", detailedErrors.size());
-
-                    // Build error summary by stage
-                    Map<String, Long> errorsByStage = new HashMap<>();
-                    for (Map<String, Object> error : detailedErrors) {
-                        String stage = (String) error.getOrDefault("stage", "unknown");
-                        errorsByStage.merge(stage, 1L, Long::sum);
-                    }
-                    StringBuilder summary = new StringBuilder();
-                    summary.append(detailedErrors.size()).append(" error(s): ");
-                    boolean first = true;
-                    for (Map.Entry<String, Long> entry : errorsByStage.entrySet()) {
-                        if (!first) summary.append(", ");
-                        summary.append(entry.getValue()).append(" during ").append(entry.getKey());
-                        first = false;
-                    }
-                    result.put("errorSummary", summary.toString());
-                }
-
-                // Build completion message
-                String message = "Import completed. " + importedDomainFiles.size() + " of " +
-                    batchInfo.getTotalCount() + " files imported";
-                if (analyzeAfterImport && analyzedFiles.size() > 0) {
-                    message += ", " + analyzedFiles.size() + " analyzed";
-                }
-                if (enableVersionControl && versionedFiles.size() > 0) {
-                    message += ", " + versionedFiles.size() + " added to version control";
-                }
-                if (!detailedErrors.isEmpty()) {
-                    message += " (" + detailedErrors.size() + " error(s))";
-                }
-                result.put("message", message + ".");
-
-                // Send final progress notification
-                if (exchange != null) {
-                    exchange.progressNotification(new McpSchema.ProgressNotification(
-                        progressToken, (double) totalFiles, (double) totalFiles,
-                        message + "."));
-                }
-
-                return createJsonResult(result);
-
             } catch (IllegalArgumentException e) {
-                return createErrorResult("Invalid parameter: " + e.getMessage());
+                return createErrorResult(e.getMessage());
             } catch (Exception e) {
-                return createErrorResult("Import failed: " + e.getMessage());
+                logError("Error in manage-files tool", e);
+                return createErrorResult("Operation failed: " + e.getMessage());
             }
         });
     }
 
+    private McpSchema.CallToolResult handleImportOperation(io.modelcontextprotocol.server.McpSyncServerExchange exchange, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Get required parameter
+        String path = getString(request, "path");
+
+        // Get configuration for defaults
+        ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
+        boolean defaultAnalyze = configManager != null ? configManager.isWaitForAnalysisOnImport() : true;
+        int defaultMaxDepth = configManager != null ? configManager.getImportMaxDepth() : 10;
+
+        // Get optional parameters with defaults
+        String destinationFolder = getOptionalString(request, "destinationFolder", "/");
+        boolean recursive = getOptionalBoolean(request, "recursive", true);
+        int maxDepth = getOptionalInt(request, "maxDepth", defaultMaxDepth);
+        boolean analyzeAfterImport = getOptionalBoolean(request, "analyzeAfterImport", defaultAnalyze);
+        boolean enableVersionControl = getOptionalBoolean(request, "enableVersionControl", true);
+        boolean stripLeadingPath = getOptionalBoolean(request, "stripLeadingPath", true);
+        boolean stripAllContainerPath = getOptionalBoolean(request, "stripAllContainerPath", false);
+        boolean mirrorFs = getOptionalBoolean(request, "mirrorFs", false);
+
+        // Validate file exists
+        File file = new File(path);
+        if (!file.exists()) {
+            return createErrorResult("File or directory does not exist: " + path);
+        }
+
+        // Get the active project
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            return createErrorResult("No active project found");
+        }
+
+        // Get destination folder
+        DomainFolder destFolder;
+        if (destinationFolder.equals("/")) {
+            destFolder = project.getProjectData().getRootFolder();
+        } else {
+            destFolder = project.getProjectData().getFolder(destinationFolder);
+            if (destFolder == null) {
+                return createErrorResult("Destination folder not found: " + destinationFolder);
+            }
+        }
+
+        // Create BatchInfo with specified max depth
+        BatchInfo batchInfo = new BatchInfo(recursive ? maxDepth : 1);
+
+        // Convert file to FSRL and add to batch
+        FSRL fsrl = FileSystemService.getInstance().getLocalFSRL(file);
+        boolean hasImportableFiles;
+        try {
+            hasImportableFiles = batchInfo.addFile(fsrl, TaskMonitor.DUMMY);
+        } catch (java.io.IOException | ghidra.util.exception.CancelledException e) {
+            return createErrorResult("Failed to add file to batch: " + e.getMessage());
+        }
+
+        if (!hasImportableFiles) {
+            return createErrorResult("No importable files found in: " + path);
+        }
+
+        // Check if any files were actually discovered
+        if (batchInfo.getTotalCount() == 0) {
+            return createErrorResult("No supported file formats found in: " + path);
+        }
+
+        // Use configuration for timeouts
+        int importTimeoutSeconds = configManager != null
+                ? configManager.getDecompilerTimeoutSeconds() * 2 : 300; // 2x decompiler timeout or 5 min default
+        int analysisTimeoutSeconds = configManager != null
+                ? configManager.getImportAnalysisTimeoutSeconds() : 600; // Default 10 minutes
+
+        // Create timeout-protected monitor for import operations
+        TaskMonitor importMonitor = TimeoutTaskMonitor.timeoutIn(importTimeoutSeconds, TimeUnit.SECONDS);
+
+        // Track imported files with accurate DomainFile references
+        List<DomainFile> importedDomainFiles = new ArrayList<>();
+        List<String> importedProgramPaths = new ArrayList<>();
+        List<Map<String, Object>> detailedErrors = new ArrayList<>();
+
+        // Progress tracking
+        int totalFiles = batchInfo.getTotalCount();
+        int processedFiles = 0;
+        String progressToken = "import-" + System.currentTimeMillis();
+
+        // Send initial progress notification
+        if (exchange != null) {
+            exchange.progressNotification(new McpSchema.ProgressNotification(
+                    progressToken, 0.0, (double) totalFiles,
+                    "Starting import of " + totalFiles + " file(s) from " + path + "..."));
+        }
+
+        // Custom import loop - replaces ImportBatchTask to capture actual imported files
+        int enabledGroups = 0;
+        int skippedGroups = 0;
+        importLoop:
+        for (BatchGroup group : batchInfo.getGroups()) {
+            // Check for cancellation at the start of each group
+            if (importMonitor.isCancelled()) {
+                break importLoop;
+            }
+
+            // Check if group is enabled (has valid load spec selected)
+            if (!group.isEnabled()) {
+                skippedGroups++;
+                Msg.debug(this, "Skipping disabled batch group: " + group.getCriteria());
+                continue;
+            }
+            enabledGroups++;
+
+            BatchGroupLoadSpec selectedBatchGroupLoadSpec = group.getSelectedBatchGroupLoadSpec();
+            if (selectedBatchGroupLoadSpec == null) {
+                detailedErrors.add(Map.of(
+                        "stage", "discovery",
+                        "error", "Enabled group has no selected load spec",
+                        "errorType", "ConfigurationError",
+                        "details", group.getCriteria().toString()
+                ));
+                continue;
+            }
+
+            for (BatchLoadConfig config : group.getBatchLoadConfig()) {
+                if (importMonitor.isCancelled()) {
+                    break importLoop;
+                }
+
+                try (ByteProvider byteProvider = FileSystemService.getInstance()
+                        .getByteProvider(config.getFSRL(), true, importMonitor)) {
+
+                    LoadSpec loadSpec = config.getLoadSpec(selectedBatchGroupLoadSpec);
+                    if (loadSpec == null) {
+                        detailedErrors.add(Map.of(
+                                "stage", "import",
+                                "sourceFSRL", config.getFSRL().toString(),
+                                "preferredName", config.getPreferredFileName(),
+                                "error", "No load spec matches selected batch group load spec",
+                                "errorType", "LoadSpecError"
+                        ));
+                        processedFiles++;
+                        continue;
+                    }
+
+                    // Compute destination path using Ghidra's path handling logic
+                    // Handle null UASI by falling back to the config's FSRL
+                    FSRL uasiFsrl = (config.getUasi() != null) ? config.getUasi().getFSRL() : config.getFSRL();
+                    String pathStr = fsrlToPath(config.getFSRL(),
+                            uasiFsrl, stripLeadingPath, stripAllContainerPath);
+
+                    // Sanitize the filename to replace invalid characters with underscores
+                    String sanitizedPath = fixupProjectFilename(pathStr);
+
+                    // Create settings record for Ghidra 12.0+ API
+                    MessageLog log = new MessageLog();
+                    Loader.ImporterSettings settings = new Loader.ImporterSettings(
+                            byteProvider,
+                            sanitizedPath,
+                            project,
+                            destFolder.getPathname(),
+                            mirrorFs,
+                            loadSpec,
+                            loadSpec.getLoader().getDefaultOptions(byteProvider, loadSpec, null, false, mirrorFs),
+                            this,
+                            log,
+                            importMonitor
+                    );
+
+                    // Load and save - capture each DomainFile
+                    try (LoadResults<?> loadResults = loadSpec.getLoader().load(settings)) {
+                        if (loadResults == null) {
+                            detailedErrors.add(Map.of(
+                                    "stage", "import",
+                                    "sourceFSRL", config.getFSRL().toString(),
+                                    "preferredName", config.getPreferredFileName(),
+                                    "error", "Loader returned null results",
+                                    "errorType", "LoaderError"
+                            ));
+                            processedFiles++;
+                            continue;
+                        }
+
+                        // CRITICAL: Save each loaded object and capture DomainFile
+                        for (Loaded<?> loaded : loadResults) {
+                            DomainFile savedFile = loaded.save(importMonitor);
+                            importedDomainFiles.add(savedFile);
+                            importedProgramPaths.add(savedFile.getPathname());
+                            Msg.info(this, "Imported: " + config.getFSRL() + " -> " + savedFile.getPathname());
+                        }
+
+                        // Track progress per source file and send notification
+                        processedFiles++;
+                        if (exchange != null) {
+                            // Progress tracks source files, but message shows total imported files
+                            String progressMsg = String.format("Processed %d/%d sources (%d files imported): %s",
+                                    processedFiles, totalFiles, importedDomainFiles.size(), config.getPreferredFileName());
+                            exchange.progressNotification(new McpSchema.ProgressNotification(
+                                    progressToken, (double) processedFiles, (double) totalFiles, progressMsg));
+                        }
+
+                        if (log.hasMessages()) {
+                            Msg.info(this, "Import log for " + config.getFSRL() + ": " + log.toString());
+                        }
+                    }
+                } catch (Exception e) {
+                    detailedErrors.add(Map.of(
+                            "stage", "import",
+                            "sourceFSRL", config.getFSRL().toString(),
+                            "preferredName", config.getPreferredFileName(),
+                            "error", Objects.requireNonNullElse(e.getMessage(), e.toString()),
+                            "errorType", e.getClass().getSimpleName()
+                    ));
+                    processedFiles++;
+                    Msg.error(this, "Import failed for " + config.getFSRL(), e);
+                }
+            }
+        }
+
+        // Check for timeout
+        if (importMonitor.isCancelled() && importedDomainFiles.isEmpty()) {
+            return createErrorResult("Import timed out after " + importTimeoutSeconds + " seconds. "
+                    + "Try importing fewer files or increase timeout in ReVa configuration.");
+        }
+
+        // Report if no groups were enabled for import
+        if (enabledGroups == 0 && importedDomainFiles.isEmpty()) {
+            detailedErrors.add(Map.of(
+                    "stage", "discovery",
+                    "error", "No enabled batch groups found",
+                    "errorType", "NoImportableFiles",
+                    "filesDiscovered", batchInfo.getTotalCount(),
+                    "groupsCreated", batchInfo.getGroups().size(),
+                    "skippedGroups", skippedGroups
+            ));
+        }
+
+        // Track version control and analysis results
+        List<String> versionedFiles = new ArrayList<>();
+        List<String> analyzedFiles = new ArrayList<>();
+
+        // Process imported files: analyze if requested, then add to version control
+        // Use the tracked importedDomainFiles list for accurate processing
+        if ((enableVersionControl || analyzeAfterImport) && !importedDomainFiles.isEmpty()) {
+            int totalFilesToProcess = importedDomainFiles.size();
+
+            for (int fileIndex = 0; fileIndex < totalFilesToProcess; fileIndex++) {
+                DomainFile domainFile = importedDomainFiles.get(fileIndex);
+
+                // Create per-file timeout to ensure each file gets equal treatment
+                TaskMonitor postMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
+
+                if (postMonitor.isCancelled()) {
+                    // Record timeout error and skipped files
+                    detailedErrors.add(Map.of(
+                            "stage", "postProcessing",
+                            "error", "Post-processing timed out",
+                            "errorType", "TimeoutError"
+                    ));
+
+                    // Record individual timeout/skip error for each remaining file
+                    for (int j = fileIndex; j < totalFilesToProcess; j++) {
+                        DomainFile remainingFile = importedDomainFiles.get(j);
+                        detailedErrors.add(Map.of(
+                                "stage", "postProcessing",
+                                "programPath", remainingFile.getPathname(),
+                                "error", "Post-processing skipped due to prior timeout",
+                                "errorType", "TimeoutError"
+                        ));
+                    }
+                    break;
+                }
+
+                try {
+                    // Run analysis if requested
+                    if (analyzeAfterImport && domainFile.getContentType().equals("Program")) {
+                        DomainObject domainObject = null;
+                        try {
+                            // IMPORTANT: okToRecover (3rd param) must be TRUE. If false, getDomainObject()
+                            // returns null for programs that aren't already open, silently skipping analysis.
+                            domainObject = domainFile.getDomainObject(this, false, true, postMonitor);
+                            if (domainObject instanceof Program program) {
+                                AutoAnalysisManager analysisManager = AutoAnalysisManager.getAnalysisManager(program);
+                                if (analysisManager != null) {
+                                    TaskMonitor analysisMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
+                                    analysisManager.startAnalysis(analysisMonitor);
+                                    analysisManager.waitForAnalysis(null, analysisMonitor);
+
+                                    if (!analysisMonitor.isCancelled()) {
+                                        program.save("Analysis completed via ReVa import", postMonitor);
+                                        analyzedFiles.add(domainFile.getPathname());
+                                    } else {
+                                        detailedErrors.add(Map.of(
+                                                "stage", "analysis",
+                                                "programPath", domainFile.getPathname(),
+                                                "error", "Analysis timed out",
+                                                "errorType", "TimeoutError"
+                                        ));
+                                    }
+                                }
+                            }
+                        } finally {
+                            // Always release the domain object to prevent resource leaks
+                            if (domainObject != null) {
+                                domainObject.release(this);
+                            }
+                        }
+                    }
+
+                    // Add to version control if requested
+                    if (enableVersionControl) {
+                        if (domainFile.canAddToRepository()) {
+                            String vcMessage = analyzeAfterImport && analyzedFiles.contains(domainFile.getPathname())
+                                    ? "Initial import via ReVa (analyzed)"
+                                    : "Initial import via ReVa";
+                            // Second parameter false = check in immediately (don't keep checked out)
+                            domainFile.addToVersionControl(vcMessage, false, postMonitor);
+                            versionedFiles.add(domainFile.getPathname());
+                        }
+                    }
+                } catch (Exception e) {
+                    detailedErrors.add(Map.of(
+                            "stage", "postProcessing",
+                            "programPath", domainFile.getPathname(),
+                            "error", Objects.requireNonNullElse(e.getMessage(), e.toString()),
+                            "errorType", e.getClass().getSimpleName()
+                    ));
+                }
+            }
+        }
+
+        // Create result data
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", !importedDomainFiles.isEmpty());
+        result.put("importedFrom", path);
+        result.put("destinationFolder", destinationFolder);
+        result.put("filesDiscovered", batchInfo.getTotalCount());
+        result.put("filesImported", importedDomainFiles.size());
+        result.put("groupsCreated", batchInfo.getGroups().size());
+        result.put("enabledGroups", enabledGroups);
+        result.put("skippedGroups", skippedGroups);
+        result.put("maxDepthUsed", maxDepth);
+        result.put("wasRecursive", recursive);
+        result.put("analyzeAfterImport", analyzeAfterImport);
+        result.put("enableVersionControl", enableVersionControl);
+        result.put("stripLeadingPath", stripLeadingPath);
+        result.put("stripAllContainerPath", stripAllContainerPath);
+        result.put("mirrorFs", mirrorFs);
+        result.put("importedPrograms", importedProgramPaths);
+
+        if (enableVersionControl) {
+            result.put("filesAddedToVersionControl", versionedFiles.size());
+            result.put("versionedPrograms", versionedFiles);
+        }
+
+        if (analyzeAfterImport) {
+            result.put("filesAnalyzed", analyzedFiles.size());
+            result.put("analyzedPrograms", analyzedFiles);
+        }
+
+        // Include detailed error information
+        if (!detailedErrors.isEmpty()) {
+            result.put("errors", detailedErrors);
+            result.put("errorCount", detailedErrors.size());
+
+            // Build error summary by stage
+            Map<String, Long> errorsByStage = new HashMap<>();
+            for (Map<String, Object> error : detailedErrors) {
+                String stage = (String) error.getOrDefault("stage", "unknown");
+                errorsByStage.merge(stage, 1L, Long::sum);
+            }
+            StringBuilder summary = new StringBuilder();
+            summary.append(detailedErrors.size()).append(" error(s): ");
+            boolean first = true;
+            for (Map.Entry<String, Long> entry : errorsByStage.entrySet()) {
+                if (!first) {
+                    summary.append(", ");
+                }
+                summary.append(entry.getValue()).append(" during ").append(entry.getKey());
+                first = false;
+            }
+            result.put("errorSummary", summary.toString());
+        }
+
+        // Build completion message
+        String message = "Import completed. " + importedDomainFiles.size() + " of "
+                + batchInfo.getTotalCount() + " files imported";
+        if (analyzeAfterImport && !analyzedFiles.isEmpty()) {
+            message += ", " + analyzedFiles.size() + " analyzed";
+        }
+        if (enableVersionControl && !versionedFiles.isEmpty()) {
+            message += ", " + versionedFiles.size() + " added to version control";
+        }
+        if (!detailedErrors.isEmpty()) {
+            message += " (" + detailedErrors.size() + " error(s))";
+        }
+        result.put("message", message + ".");
+
+        // Send final progress notification
+        if (exchange != null) {
+            exchange.progressNotification(new McpSchema.ProgressNotification(
+                    progressToken, (double) totalFiles, (double) totalFiles,
+                    message + "."));
+        }
+
+        return createJsonResult(result);
+    }
+
+    private McpSchema.CallToolResult handleExportOperation(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Program program = getProgramFromArgs(request);
+        String exportType = getString(request, "export_type");
+        String outputPath = getString(request, "path"); // Use 'path' parameter for export output
+
+        switch (exportType) {
+            case "program":
+                return handleExportProgram(program, outputPath);
+            case "function_info":
+                return handleExportFunctionInfo(program, request, outputPath);
+            case "strings":
+                return handleExportStrings(program, outputPath);
+            default:
+                return createErrorResult("Invalid export_type: " + exportType);
+        }
+    }
+
     /**
-     * Register a unified tool to open either a Ghidra project or a program.
-     * Automatically detects the type based on the path (.gpr file = project, otherwise = program).
+     * Register a unified tool to open either a Ghidra project, a program file,
+     * or multiple programs by extension. Automatically detects the operation
+     * type: - If extensions parameter is provided: opens all matching programs
+     * in Code Browser (bulk operation) - If path is a .gpr file: opens the
+     * project - Otherwise: imports/opens the program file
      */
     private void registerOpenTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("path", SchemaUtil.stringProperty(
-            "Path to open: a Ghidra project file (.gpr) or a program file. " +
-            "If .gpr, opens the project. Otherwise, imports/opens the program in the active project."
+                "Path to open: a Ghidra project file (.gpr), a program file, or a project folder path. "
+                + "If extensions is provided, this is treated as a folder path (default: '/'). "
+                + "If .gpr, opens the project. Otherwise, imports/opens the program in the active project."
+        ));
+        properties.put("extensions", SchemaUtil.stringProperty(
+                "Optional: comma-separated list of file extensions to open (e.g., 'exe,dll' or 'exe'). "
+                + "If provided, opens all matching programs in Code Browser instead of opening a single file. "
+                + "Defaults to 'exe,dll' when extensions is provided. Ignored if not provided."
         ));
         properties.put("openAllPrograms", SchemaUtil.booleanPropertyWithDefault(
-            "For projects: whether to automatically open all programs into memory (default: true). " +
-            "Ignored for program files.", true
+                "For projects: whether to automatically open all programs into memory (default: true). "
+                + "Ignored for program files or when extensions is provided.", true
         ));
         properties.put("destinationFolder", SchemaUtil.stringProperty(
-            "For programs: project folder for new imports (default: '/'). Ignored for projects or if program exists."
+                "For programs: project folder for new imports (default: '/'). Ignored for projects, bulk operations, or if program exists."
         ));
         properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
-            "For programs: run auto-analysis on new imports (default: true). Ignored for projects or if program exists.",
-            true
+                "For programs: run auto-analysis on new imports (default: true). Ignored for projects, bulk operations, or if program exists.",
+                true
         ));
         properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
-            "For programs: add new imports to version control (default: true). Ignored for projects or if program exists.",
-            true
+                "For programs: add new imports to version control (default: true). Ignored for projects, bulk operations, or if program exists.",
+                true
+        ));
+        properties.put("serverUsername", SchemaUtil.stringProperty(
+                "For shared projects: Username for Ghidra Server authentication. "
+                + "If not provided, will check REVA_SERVER_USERNAME environment variable. "
+                + "Required for shared projects connected to a Ghidra Server."
+        ));
+        properties.put("serverPassword", SchemaUtil.stringProperty(
+                "For shared projects: Password for Ghidra Server authentication. "
+                + "If not provided, will check REVA_SERVER_PASSWORD environment variable. "
+                + "Required for shared projects connected to a Ghidra Server."
+        ));
+        properties.put("serverHost", SchemaUtil.stringProperty(
+                "For shared projects: Ghidra Server hostname or IP address. "
+                + "If not provided, will check REVA_SERVER_HOST environment variable. "
+                + "Note: Server address is typically stored in the project file. "
+                + "This parameter may be used if the server has moved or to override the stored address."
+        ));
+        properties.put("serverPort", Map.of(
+                "type", "integer",
+                "description", "For shared projects: Ghidra Server port (default: 13100). "
+                + "If not provided, will check REVA_SERVER_PORT environment variable. "
+                + "Note: Server port is typically stored in the project file. "
+                + "This parameter may be used if the server port has changed or to override the stored port.",
+                "default", 13100
         ));
 
-        List<String> required = List.of("path");
+        // path is required for single file/project operations, optional for bulk operations (when extensions is provided)
+        // We'll validate this in the handler since schema validation happens before we can check if extensions is provided
+        List<String> required = new ArrayList<>();
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("open")
-            .title("Open")
-            .description("Open a Ghidra project (.gpr file) or a program file. " +
-                "For projects: opens the project and optionally loads all programs into memory. " +
-                "For programs: imports if missing, opens if exists. Always saves to project. Caches for other tools.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("open")
+                .title("Open")
+                .description("Open a Ghidra project (.gpr file), a program file, or multiple programs by extension. "
+                        + "For projects: opens the project and optionally loads all programs into memory. "
+                        + "For single programs: imports if missing, opens if exists. Always saves to project. Caches for other tools. "
+                        + "For bulk operations: provide 'extensions' parameter to open all matching programs in Code Browser.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -1294,13 +1553,20 @@ public class ProjectToolProvider extends AbstractToolProvider {
             logCollector.start();
 
             try {
-                // Get the path from the request
-                String path;
-                try {
-                    path = getString(request, "path");
-                } catch (IllegalArgumentException e) {
+                // Check if this is a bulk operation (extensions provided)
+                String extensionsStr = getOptionalString(request, "extensions", null);
+                if (extensionsStr != null && !extensionsStr.trim().isEmpty()) {
+                    // Handle bulk open operation (open all programs matching extensions)
                     logCollector.stop();
-                    return createErrorResult(e.getMessage());
+                    String folderPath = getOptionalString(request, "path", "/");
+                    return handleOpenAllProgramsByExtension(extensionsStr, folderPath);
+                }
+
+                // Get the path from the request (required for single file/project operations)
+                String path = getOptionalString(request, "path", null);
+                if (path == null || path.trim().isEmpty()) {
+                    logCollector.stop();
+                    return createErrorResult("Path is required when extensions is not provided");
                 }
 
                 // Validate the file exists
@@ -1315,16 +1581,16 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
                 if (isProject) {
                     // Handle project opening
-                    return handleOpenProject(request, path, logCollector);
+                    return handleOpenProject(request.arguments(), path, logCollector);
                 } else {
                     // Handle program opening (stop log collector first as it's not used for programs)
                     logCollector.stop();
-                    return handleOpenProgram(request, path);
+                    return handleOpenProgram(request.arguments(), path);
                 }
 
             } catch (IllegalArgumentException e) {
                 logCollector.stop();
-                return createErrorResult("Invalid path: " + e.getMessage());
+                return createErrorResult("Invalid parameter: " + e.getMessage());
             } catch (Exception e) {
                 logCollector.stop();
                 return createErrorResult("Failed to open: " + e.getMessage());
@@ -1333,12 +1599,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * DISABLED: Legacy tool - kept for compatibility with upstream repo.
-     * This tool was merged into 'open' but kept here as disabled.
-     * Use 'open' with a .gpr file path instead.
+     * DISABLED: Legacy tool - kept for compatibility with upstream repo. This
+     * tool was merged into 'open' but kept here as disabled. Use 'open' with a
+     * .gpr file path instead.
      *
-     * Original tool: open-project
-     * Merged into: open (detects .gpr files automatically)
+     * Original tool: open-project Merged into: open (detects .gpr files
+     * automatically)
      */
     /*
     private void registerOpenProjectTool() {
@@ -1397,15 +1663,14 @@ public class ProjectToolProvider extends AbstractToolProvider {
             }
         });
     }
-    */
-
+     */
     /**
-     * DISABLED: Legacy tool - kept for compatibility with upstream repo.
-     * This tool was merged into 'open' but kept here as disabled.
-     * Use 'open' with a program file path instead.
+     * DISABLED: Legacy tool - kept for compatibility with upstream repo. This
+     * tool was merged into 'open' but kept here as disabled. Use 'open' with a
+     * program file path instead.
      *
-     * Original tool: open-program
-     * Merged into: open (detects program files automatically)
+     * Original tool: open-program Merged into: open (detects program files
+     * automatically)
      */
     /*
     private void registerOpenProgramTool() {
@@ -1458,14 +1723,114 @@ public class ProjectToolProvider extends AbstractToolProvider {
             }
         });
     }
-    */
+     */
+    /**
+     * Get server credentials from request parameters or environment variables.
+     * Checks request parameters first, then falls back to environment
+     * variables.
+     *
+     * @param request The request containing optional
+     * serverUsername/serverPassword
+     * @return Array with [username, password] or [null, null] if not found
+     */
+    private String[] getServerCredentials(Map<String, Object> request) {
+        // Try request parameters first
+        String username = getOptionalString(request, "serverUsername", null);
+        String password = getOptionalString(request, "serverPassword", null);
+
+        // Fall back to environment variables if not in request
+        if (username == null || username.trim().isEmpty()) {
+            username = System.getenv("REVA_SERVER_USERNAME");
+        }
+        if (password == null || password.trim().isEmpty()) {
+            password = System.getenv("REVA_SERVER_PASSWORD");
+        }
+
+        // Return nulls if still not found (trim to handle empty strings)
+        if (username != null) {
+            username = username.trim();
+            if (username.isEmpty()) {
+                username = null;
+            }
+        }
+        if (password != null) {
+            password = password.trim();
+            if (password.isEmpty()) {
+                password = null;
+            }
+        }
+
+        return new String[]{username, password};
+    }
 
     /**
-     * Handle opening a Ghidra project
+     * Get server address (host and port) from request parameters or environment
+     * variables. Checks request parameters first, then falls back to
+     * environment variables.
+     *
+     * @param request The request containing optional serverHost/serverPort
+     * @return Array with [host, port] or [null, null] if not found. Port is
+     * returned as Integer or null.
      */
-    private Map<String, Object> handleOpenProject(Map<String, Object> request, String projectPath, ToolLogCollector logCollector) {
+    private Object[] getServerAddress(Map<String, Object> request) {
+        // Try request parameters first
+        String host = getOptionalString(request, "serverHost", null);
+        // Use getOptionalInteger with Map signature (request is already a Map)
+        Integer port = getOptionalInteger(request, "serverPort", null);
+
+        // Fall back to environment variables if not in request
+        if (host == null || host.trim().isEmpty()) {
+            host = System.getenv("REVA_SERVER_HOST");
+        }
+        if (port == null) {
+            String portStr = System.getenv("REVA_SERVER_PORT");
+            if (portStr != null && !portStr.trim().isEmpty()) {
+                try {
+                    port = Integer.valueOf(portStr.trim());
+                } catch (NumberFormatException e) {
+                    // Invalid port format, leave as null
+                }
+            }
+        }
+
+        // Return nulls if still not found (trim to handle empty strings)
+        if (host != null) {
+            host = host.trim();
+            if (host.isEmpty()) {
+                host = null;
+            }
+        }
+
+        return new Object[]{host, port};
+    }
+
+    /**
+     * Handle opening a Ghidra project.
+     *
+     * NOTE: This method is used by both the active 'open' tool and the disabled
+     * 'open-project' tool. When upstream updates the disabled open-project tool
+     * handler, update this method accordingly to benefit from those
+     * improvements.
+     *
+     * @param request The request containing the project path and other
+     * parameters
+     * @param projectPath The path to the Ghidra project file
+     * @param logCollector The log collector to use
+     * @return A map containing the result of the operation
+     */
+    protected McpSchema.CallToolResult handleOpenProject(Map<String, Object> request, String projectPath, ToolLogCollector logCollector) {
         try {
             boolean shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
+
+            // Get server credentials from parameters or environment variables
+            String[] credentials = getServerCredentials(request);
+            String serverUsername = credentials[0];
+            String serverPassword = credentials[1];
+
+            // Get server address from parameters or environment variables (for reference/documentation)
+            Object[] serverAddress = getServerAddress(request);
+            String serverHost = (String) serverAddress[0];
+            Integer serverPort = (Integer) serverAddress[1];
 
             // Validate the project file exists
             File projectFile = new File(projectPath);
@@ -1480,43 +1845,84 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 return createErrorResult("Project file must have .gpr extension: " + projectPath);
             }
 
-                // Extract project directory and name from the .gpr file path
-                // .gpr file is typically at: <projectDir>/<projectName>.gpr
-                String projectDir = projectFile.getParent();
-                String projectName = projectFile.getName();
-                // Remove .gpr extension
-                if (projectName.toLowerCase().endsWith(".gpr")) {
-                    projectName = projectName.substring(0, projectName.length() - 4);
-                }
+            // Extract project directory and name from the .gpr file path
+            // .gpr file is typically at: <projectDir>/<projectName>.gpr
+            String projectDir = projectFile.getParent();
+            String projectName = projectFile.getName();
+            // Remove .gpr extension
+            if (projectName.toLowerCase().endsWith(".gpr")) {
+                projectName = projectName.substring(0, projectName.length() - 4);
+            }
 
-                if (projectDir == null) {
-                    return createErrorResult("Invalid project path: " + projectPath);
-                }
+            if (projectDir == null) {
+                return createErrorResult("Invalid project path: " + projectPath);
+            }
 
-                // Create ProjectLocator
-                ProjectLocator locator = new ProjectLocator(projectDir, projectName);
+            // Verify the project exists using unified utility
+            File projectDirFile = new File(projectDir);
+            if (!ProjectUtil.projectExists(projectDirFile, projectName)) {
+                logCollector.stop();
+                return createErrorResult("Project not found at: " + projectPath
+                        + " (marker file or project directory missing)");
+            }
 
-                // Verify the project exists
-                if (!locator.getMarkerFile().exists() || !locator.getProjectDir().exists()) {
-                    return createErrorResult("Project not found at: " + projectPath +
-                        " (marker file or project directory missing)");
-                }
-
-                // Check if this project is already open
-                Project project = AppInfo.getActiveProject();
-                boolean projectWasAlreadyOpen = false;
-
-                // First, try to open the project
-                GhidraProject ghidraProject = null;
+            // Set up authentication if credentials are provided
+            // This MUST be done BEFORE opening the project
+            boolean authenticationConfigured = false;
+            if (serverUsername != null && serverPassword != null) {
                 try {
-                    // Open project with upgrade enabled (third parameter = true)
-                    // This will automatically upgrade programs if needed
-                    ghidraProject = GhidraProject.openProject(projectDir, projectName, true);
-                    project = ghidraProject.getProject();
+                    ClientAuthenticator authenticator = new PasswordClientAuthenticator(serverUsername, serverPassword);
+                    ClientUtil.setClientAuthenticator(authenticator);
+                    authenticationConfigured = true;
+                    logCollector.addLog("INFO", "Authentication configured for shared project (username: " + serverUsername + ")");
+                } catch (Exception e) {
+                    logCollector.stop();
+                    return createErrorResult("Failed to configure authentication: " + e.getMessage());
+                }
+            }
 
-                    // CRITICAL: Save the project immediately after opening to persist any upgrades
-                    // This ensures that upgrade dialogs (if any) result in saved changes
-                    // In headless mode, upgrades should be automatic, but we save to be safe
+            // Use unified project opening utility
+            Project project;
+            boolean projectWasAlreadyOpen;
+            try {
+                ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
+                    projectDirFile, projectName, true, this);
+                project = result.getProject();
+                projectWasAlreadyOpen = result.wasAlreadyOpen();
+
+                if (project == null) {
+                    logCollector.stop();
+                    return createErrorResult("Failed to open or access project: " + projectPath);
+                }
+
+                // Check if this is a shared project (connected to Ghidra Server)
+                // Note: getRepositoryAdapter() is not available in this Ghidra version
+                // Shared project detection would require different API
+                boolean isShared = false; // TODO: Implement shared project detection if needed
+                if (isShared) {
+                    boolean isConnected = false; // TODO: Implement connection check if needed
+                    if (!isConnected) {
+                        if (!authenticationConfigured) {
+                            logCollector.stop();
+                            return createErrorResult(
+                                    "Shared project requires authentication but no credentials provided. "
+                                    + "Please provide 'serverUsername' and 'serverPassword' parameters, "
+                                    + "or set REVA_SERVER_USERNAME and REVA_SERVER_PASSWORD environment variables."
+                            );
+                        } else {
+                            logCollector.addLog("WARN",
+                                    "Shared project opened but server connection failed. "
+                                    + "Please verify credentials and server availability.");
+                        }
+                    } else {
+                        logCollector.addLog("INFO", "Successfully connected to shared project server");
+                    }
+                }
+
+                // CRITICAL: Save the project immediately after opening to persist any upgrades
+                // This ensures that upgrade dialogs (if any) result in saved changes
+                // In headless mode, upgrades should be automatic, but we save to be safe
+                if (!projectWasAlreadyOpen) {
                     try {
                         // Save project - upgrades are automatically handled
                         String saveMsg = "Project opened (upgrades handled automatically)";
@@ -1528,148 +1934,174 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         logCollector.addLog("WARN", saveWarnMsg);
                         // Don't fail the operation if save fails - project is still open
                     }
-                } catch (Exception e) {
-                    // If opening fails (likely because project is already locked/open), use active project
-                    String errorMsg = e.getMessage();
-                    if (errorMsg != null && (errorMsg.contains("lock") || errorMsg.contains("Lock") || errorMsg.contains("Unable"))) {
-                        // Project is locked - use active project if available
-                        Project activeProject = AppInfo.getActiveProject();
-                        if (activeProject != null) {
-                            // Verify the active project matches the requested one by checking location
-                            String activeProjectDir = activeProject.getProjectLocator().getProjectDir().getAbsolutePath();
-                            String requestedProjectDir = new File(projectDir).getAbsolutePath();
-
-                            if (activeProjectDir.equals(requestedProjectDir) || activeProject.getName().equals(projectName)) {
-                                project = activeProject;
-                                projectWasAlreadyOpen = true;
-                                String logMsg = "Project is locked (already open), using active project: " + activeProject.getName();
-                                Msg.info(this, logMsg);
-                                logCollector.addLog("INFO", logMsg);
-                            } else {
-                                return createErrorResult(String.format(
-                                    "Project is locked. Active project '%s' at '%s' does not match requested project '%s' at '%s'. " +
-                                    "Please close the other project or open the correct one.",
-                                    activeProject.getName(), activeProjectDir, projectName, requestedProjectDir
-                                ));
-                            }
-                        } else {
-                            return createErrorResult("Project is locked and no active project available. Please close the project in Ghidra first or ensure a project is open.");
-                        }
-                    } else {
-                        // Some other error - re-throw it
-                        throw e;
-                    }
                 }
-
-                // Verify we have a valid project
-                if (project == null) {
-                    return createErrorResult("Failed to open or access project: " + projectPath);
-                }
-
-                // Upgrades are handled automatically when opening programs
-                // No need to check for unsaved changes - Ghidra handles this internally
-
-                // Collect all programs in the project
-                List<DomainFile> allPrograms = new ArrayList<>();
-                try {
-                    DomainFolder rootFolder = project.getProjectData().getRootFolder();
-                    collectAllPrograms(rootFolder, allPrograms);
-                } catch (Exception e) {
-                    String logMsg = "Error collecting programs: " + e.getMessage();
-                    Msg.warn(this, logMsg);
-                    logCollector.addLog("WARN", logMsg);
-                }
-
-                // Open programs into memory if requested (default: true)
-                List<String> openedPrograms = new ArrayList<>();
-                List<String> failedPrograms = new ArrayList<>();
-                List<String> availablePrograms = new ArrayList<>();
-
-                for (DomainFile domainFile : allPrograms) {
-                    availablePrograms.add(domainFile.getPathname());
-                }
-
-                if (shouldOpenAllPrograms) {
-                    for (DomainFile domainFile : allPrograms) {
-                        String programPath = domainFile.getPathname();
-                        try {
-                            // Use RevaProgramManager to open the program - this caches it for future access
-                            // This will automatically handle any program upgrades needed
-                            Program program = RevaProgramManager.getProgramByPath(programPath);
-                            if (program != null && !program.isClosed()) {
-                                openedPrograms.add(programPath);
-                                String logMsg = "Opened program: " + programPath;
-                                Msg.info(this, logMsg);
-                                logCollector.addLog("INFO", logMsg);
-
-                                // Programs are automatically saved when opened
-                                // Upgrades are handled automatically by Ghidra
-                            } else {
-                                failedPrograms.add(programPath + " (returned null or closed)");
-                            }
-                        } catch (Exception e) {
-                            failedPrograms.add(programPath + " (" + e.getMessage() + ")");
-                            String logMsg = "Failed to open program " + programPath + ": " + e.getMessage();
-                            Msg.warn(this, logMsg);
-                            logCollector.addLog("WARN", logMsg);
-                        }
-                    }
-
-                    // Programs and project are automatically saved by Ghidra when opened
-                }
-
-                // Create result data
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", true);
-                result.put("projectPath", projectPath);
-                result.put("projectName", project.getName());
-                result.put("projectLocation", projectDir);
-                result.put("projectWasAlreadyOpen", projectWasAlreadyOpen);
-
-                // Get project metadata
-                result.put("isActive", (AppInfo.getActiveProject() == project));
-                result.put("programCount", allPrograms.size());
-                result.put("availablePrograms", availablePrograms);
-                result.put("openAllProgramsRequested", shouldOpenAllPrograms);
-                result.put("programsOpened", openedPrograms.size());
-                result.put("programsFailed", failedPrograms.size());
-
-                if (!openedPrograms.isEmpty()) {
-                    result.put("openedPrograms", openedPrograms);
-                }
-
-                if (!failedPrograms.isEmpty()) {
-                    result.put("failedPrograms", failedPrograms);
-                }
-
-                String message;
-                if (shouldOpenAllPrograms) {
-                    message = String.format(
-                        "Project '%s' opened successfully. %d programs found, %d opened into memory, %d failed.",
-                        project.getName(), allPrograms.size(), openedPrograms.size(), failedPrograms.size()
-                    );
-                } else {
-                    message = String.format(
-                        "Project '%s' opened successfully. %d programs available. Use get-strings, get-functions, etc. with programPath to access them.",
-                        project.getName(), allPrograms.size()
+            } catch (IOException e) {
+                // Check if this is an authentication error
+                String errorMsg = e.getMessage();
+                if (errorMsg != null && (errorMsg.contains("authentication")
+                        || errorMsg.contains("password")
+                        || errorMsg.contains("login")
+                        || errorMsg.contains("unauthorized")
+                        || errorMsg.contains("Access denied")
+                        || errorMsg.contains("Invalid credentials"))) {
+                    logCollector.stop();
+                    return createErrorResult(
+                            "Authentication failed for shared project. "
+                            + "Error: " + errorMsg + ". "
+                            + "Please verify your username and password are correct. "
+                            + "You can provide credentials via 'serverUsername'/'serverPassword' parameters "
+                            + "or REVA_SERVER_USERNAME/REVA_SERVER_PASSWORD environment variables."
                     );
                 }
-                result.put("message", message);
-
-                // Add collected logs to response
-                ToolLogCollector.addLogsToResult(result, logCollector);
-                logCollector.stop();
-
-                return createJsonResult(result);
-
-            } catch (IllegalArgumentException e) {
-                logCollector.stop();
-                return createErrorResult("Invalid project path: " + e.getMessage());
-            } catch (Exception e) {
-                logCollector.stop();
+                // Re-throw other IOExceptions
                 logCollector.stop();
                 return createErrorResult("Failed to open project: " + e.getMessage());
             }
+
+            // Upgrades are handled automatically when opening programs
+            // No need to check for unsaved changes - Ghidra handles this internally
+            // Collect all programs in the project
+            List<DomainFile> allPrograms = new ArrayList<>();
+            try {
+                DomainFolder rootFolder = project.getProjectData().getRootFolder();
+                collectAllPrograms(rootFolder, allPrograms);
+            } catch (Exception e) {
+                String logMsg = "Error collecting programs: " + e.getMessage();
+                Msg.warn(this, logMsg);
+                logCollector.addLog("WARN", logMsg);
+            }
+
+            // Open programs into memory if requested (default: true)
+            List<String> openedPrograms = new ArrayList<>();
+            List<String> failedPrograms = new ArrayList<>();
+            List<String> availablePrograms = new ArrayList<>();
+
+            for (DomainFile domainFile : allPrograms) {
+                availablePrograms.add(domainFile.getPathname());
+            }
+
+            if (shouldOpenAllPrograms) {
+                for (DomainFile domainFile : allPrograms) {
+                    String programPath = domainFile.getPathname();
+                    try {
+                        // Use RevaProgramManager to open the program - this caches it for future access
+                        // This will automatically handle any program upgrades needed
+                        Program program = RevaProgramManager.getProgramByPath(programPath);
+                        if (program != null && !program.isClosed()) {
+                            openedPrograms.add(programPath);
+                            String logMsg = "Opened program: " + programPath;
+                            Msg.info(this, logMsg);
+                            logCollector.addLog("INFO", logMsg);
+
+                            // Programs are automatically saved when opened
+                            // Upgrades are handled automatically by Ghidra
+                        } else {
+                            failedPrograms.add(programPath + " (returned null or closed)");
+                        }
+                    } catch (Exception e) {
+                        failedPrograms.add(programPath + " (" + e.getMessage() + ")");
+                        String logMsg = "Failed to open program " + programPath + ": " + e.getMessage();
+                        Msg.warn(this, logMsg);
+                        logCollector.addLog("WARN", logMsg);
+                    }
+                }
+
+                // Programs and project are automatically saved by Ghidra when opened
+            }
+
+            // Create result data
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("projectPath", projectPath);
+            result.put("projectName", project.getName());
+            result.put("projectLocation", projectDir);
+            result.put("projectWasAlreadyOpen", projectWasAlreadyOpen);
+
+            // Check if project is shared and connection status
+            // Note: getRepositoryAdapter() is not available in this Ghidra version
+            boolean isShared = false; // TODO: Implement shared project detection if needed
+            result.put("isShared", isShared);
+            if (isShared) {
+                boolean isConnected = false; // TODO: Implement connection check if needed
+                result.put("serverConnected", isConnected);
+                if (authenticationConfigured) {
+                    result.put("authenticationUsed", true);
+                }
+
+                // Try to get server address from repository adapter (if available)
+                try {
+                    ghidra.framework.client.RepositoryAdapter repository = null; // TODO: Get repository adapter if needed
+                    if (repository != null) {
+                        ghidra.framework.client.RepositoryServerAdapter serverAdapter = repository.getServer();
+                        if (serverAdapter != null) {
+                            String actualHost = serverAdapter.getServerInfo().getServerName();
+                            int actualPort = serverAdapter.getServerInfo().getPortNumber();
+                            result.put("serverHost", actualHost);
+                            result.put("serverPort", actualPort);
+
+                            // Log if provided host/port differs from actual
+                            if (serverHost != null && !serverHost.equals(actualHost)) {
+                                logCollector.addLog("INFO",
+                                        "Provided serverHost (" + serverHost + ") differs from project's server (" + actualHost + "). "
+                                        + "Using project's stored server address.");
+                            }
+                            if (serverPort != null && serverPort != actualPort) {
+                                logCollector.addLog("INFO",
+                                        "Provided serverPort (" + serverPort + ") differs from project's server port (" + actualPort + "). "
+                                        + "Using project's stored server port.");
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // If we can't get server info, that's okay - just log it
+                    logCollector.addLog("DEBUG", "Could not retrieve server address from repository: " + e.getMessage());
+                }
+
+                // Include provided server address in response (even if not used)
+                if (serverHost != null) {
+                    result.put("providedServerHost", serverHost);
+                }
+                if (serverPort != null) {
+                    result.put("providedServerPort", serverPort);
+                }
+            }
+
+            // Get project metadata
+            result.put("isActive", (AppInfo.getActiveProject() == project));
+            result.put("programCount", allPrograms.size());
+            result.put("availablePrograms", availablePrograms);
+            result.put("openAllProgramsRequested", shouldOpenAllPrograms);
+            result.put("programsOpened", openedPrograms.size());
+            result.put("programsFailed", failedPrograms.size());
+
+            if (!openedPrograms.isEmpty()) {
+                result.put("openedPrograms", openedPrograms);
+            }
+
+            if (!failedPrograms.isEmpty()) {
+                result.put("failedPrograms", failedPrograms);
+            }
+
+            String message;
+            if (shouldOpenAllPrograms) {
+                message = String.format(
+                        "Project '%s' opened successfully. %d programs found, %d opened into memory, %d failed.",
+                        project.getName(), allPrograms.size(), openedPrograms.size(), failedPrograms.size()
+                );
+            } else {
+                message = String.format(
+                        "Project '%s' opened successfully. %d programs available. Use get-strings, get-functions, etc. with programPath to access them.",
+                        project.getName(), allPrograms.size()
+                );
+            }
+            result.put("message", message);
+
+            // Add collected logs to response
+            ToolLogCollector.addLogsToResult(result, logCollector);
+            logCollector.stop();
+
+            return createJsonResult(result);
+
         } catch (IllegalArgumentException e) {
             if (logCollector != null) {
                 logCollector.stop();
@@ -1684,9 +2116,19 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle opening a program
+     * Handle opening a program.
+     *
+     * NOTE: This method is used by both the active 'open' tool and the disabled
+     * 'open-program' tool. When upstream updates the disabled open-program tool
+     * handler, update this method accordingly to benefit from those
+     * improvements.
+     *
+     * @param request The request containing the program path and other
+     * parameters
+     * @param path The path to the program file
+     * @return A map containing the result of the operation
      */
-    private Map<String, Object> handleOpenProgram(Map<String, Object> request, String path) {
+    protected McpSchema.CallToolResult handleOpenProgram(Map<String, Object> request, String path) {
         try {
             // Get optional parameters with defaults
             String destinationFolder = getOptionalString(request, "destinationFolder", "/");
@@ -1709,8 +2151,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
             String fileName = file.getName();
             DomainFile existingProgram = null;
             DomainFolder searchFolder = destinationFolder.equals("/")
-                ? project.getProjectData().getRootFolder()
-                : project.getProjectData().getFolder(destinationFolder);
+                    ? project.getProjectData().getRootFolder()
+                    : project.getProjectData().getFolder(destinationFolder);
 
             if (searchFolder != null) {
                 // Search for existing program in the destination folder and subfolders
@@ -1742,7 +2184,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 // Import the file using shared helper method
                 try {
                     existingProgram = importSingleFile(file, destFolder, analyzeAfterImport, enableVersionControl,
-                        "Initial import via ReVa open");
+                            "Initial import via ReVa open");
                     programPath = existingProgram.getPathname();
                     wasImported = true;
                 } catch (Exception e) {
@@ -1761,7 +2203,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
             // Program is automatically saved when opened
             // Auto-save will handle any modifications made via tools
-
             // Create result data
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
@@ -1776,8 +2217,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
             result.put("symbolCount", program.getSymbolTable().getNumSymbols());
 
             String message = wasImported
-                ? "Program imported and opened successfully: " + programPath
-                : "Program opened successfully: " + programPath;
+                    ? "Program imported and opened successfully: " + programPath
+                    : "Program opened successfully: " + programPath;
             result.put("message", message);
 
             return createJsonResult(result);
@@ -1791,6 +2232,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively count programs in a folder
+     *
      * @param folder The folder to count programs in
      * @return The number of programs found
      */
@@ -1814,6 +2256,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively collect all programs in a folder
+     *
      * @param folder The folder to search
      * @param programs List to add programs to
      */
@@ -1833,23 +2276,25 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Register a tool to open a program in Code Browser
+     *
+     * @return A map containing the result of the operation
      */
     private void registerOpenProgramInCodeBrowserTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-            "Path to the program to open in Code Browser (e.g., '/swkotor.exe')"
+                "Path to the program to open in Code Browser (e.g., '/swkotor.exe')"
         ));
 
         List<String> required = List.of("programPath");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("open-program-in-code-browser")
-            .title("Open Program in Code Browser")
-            .description("Open a program in Ghidra's Code Browser tool. The program will be opened if not already open.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("open-program-in-code-browser")
+                .title("Open Program in Code Browser")
+                .description("Open a program in Ghidra's Code Browser tool. The program will be opened if not already open.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -1944,9 +2389,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 result.put("programName", program.getName());
                 result.put("codeBrowserTool", codeBrowserTool.getName());
                 result.put("wasAlreadyOpen", alreadyOpen);
-                result.put("message", alreadyOpen ?
-                    "Program is already open in Code Browser" :
-                    "Program opened in Code Browser successfully");
+                result.put("message", alreadyOpen
+                        ? "Program is already open in Code Browser"
+                        : "Program opened in Code Browser successfully");
 
                 return createJsonResult(result);
 
@@ -1959,8 +2404,183 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to open all programs (exe/dll) in the project in Code Browser
+     * Handle opening all programs matching specified extensions in Code
+     * Browser. This is a helper method used by the unified 'open' tool when
+     * extensions parameter is provided.
+     *
+     * @param extensionsStr Comma-separated list of extensions (e.g., "exe,dll")
+     * @param folderPath Project folder path to search (default: "/")
+     * @return A map containing the result of the operation
      */
+    /**
+     * Handle opening all programs matching specified extensions.
+     *
+     * NOTE: This method is used by both the active 'open' tool (with extensions
+     * parameter) and the disabled 'open-all-programs-in-code-browser' tool.
+     * When upstream updates the disabled tool handler, update this method
+     * accordingly to benefit from those improvements.
+     *
+     * @param extensionsStr Comma-separated list of file extensions
+     * @param folderPath Folder path to search in (default: "/")
+     * @return Call tool result with opened programs information
+     */
+    protected McpSchema.CallToolResult handleOpenAllProgramsByExtension(String extensionsStr, String folderPath) {
+        try {
+            // Parse extensions
+            String[] extensions = extensionsStr.split(",");
+            Set<String> extensionSet = new HashSet<>();
+            for (String ext : extensions) {
+                String trimmed = ext.trim().toLowerCase();
+                if (!trimmed.isEmpty()) {
+                    // Remove leading dot if present
+                    if (trimmed.startsWith(".")) {
+                        trimmed = trimmed.substring(1);
+                    }
+                    extensionSet.add(trimmed);
+                }
+            }
+
+            if (extensionSet.isEmpty()) {
+                return createErrorResult("No valid extensions specified");
+            }
+
+            // Get the active project
+            Project project = AppInfo.getActiveProject();
+            if (project == null) {
+                return createErrorResult("No active project found");
+            }
+
+            // Get the folder to search
+            DomainFolder folder;
+            if (folderPath.equals("/")) {
+                folder = project.getProjectData().getRootFolder();
+            } else {
+                folder = project.getProjectData().getFolder(folderPath);
+            }
+
+            if (folder == null) {
+                return createErrorResult("Folder not found: " + folderPath);
+            }
+
+            // Collect all matching programs
+            List<DomainFile> matchingPrograms = new ArrayList<>();
+            collectProgramsByExtension(folder, extensionSet, matchingPrograms);
+
+            if (matchingPrograms.isEmpty()) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("programsFound", 0);
+                result.put("programsOpened", 0);
+                result.put("extensions", extensionSet);
+                result.put("message", "No programs found matching extensions: " + extensionSet);
+                return createJsonResult(result);
+            }
+
+            // Get or create Code Browser tool
+            ToolManager toolManager = project.getToolManager();
+            if (toolManager == null) {
+                return createErrorResult("No tool manager available");
+            }
+
+            PluginTool codeBrowserTool = null;
+            PluginTool[] runningTools = toolManager.getRunningTools();
+
+            for (PluginTool runningTool : runningTools) {
+                if ("CodeBrowser".equals(runningTool.getName())) {
+                    codeBrowserTool = runningTool;
+                    break;
+                }
+            }
+
+            // If no Code Browser found, try to use RevaPlugin's tool if it has ProgramManager
+            if (codeBrowserTool == null) {
+                reva.plugin.RevaPlugin revaPlugin = reva.util.RevaInternalServiceRegistry.getService(reva.plugin.RevaPlugin.class);
+                if (revaPlugin != null && revaPlugin.getTool() != null) {
+                    PluginTool revaTool = revaPlugin.getTool();
+                    ProgramManager testManager = revaTool.getService(ProgramManager.class);
+                    if (testManager != null) {
+                        codeBrowserTool = revaTool;
+                        Msg.debug(this, "Using RevaPlugin's tool for opening programs");
+                    }
+                }
+            }
+
+            // If still no tool found, return error (cannot programmatically launch tools)
+            if (codeBrowserTool == null) {
+                return createErrorResult("No Code Browser tool is currently running. Please open Code Browser in Ghidra first, or programs will be opened in the background and available via other tools.");
+            }
+
+            ProgramManager programManager = codeBrowserTool.getService(ProgramManager.class);
+            if (programManager == null) {
+                return createErrorResult("Code Browser tool does not have ProgramManager service");
+            }
+
+            // Get currently open programs to avoid duplicates
+            Program[] openPrograms = programManager.getAllOpenPrograms();
+            Set<String> openProgramPaths = new HashSet<>();
+            for (Program openProg : openPrograms) {
+                openProgramPaths.add(openProg.getDomainFile().getPathname());
+            }
+
+            // Open each matching program
+            List<String> openedPrograms = new ArrayList<>();
+            List<String> alreadyOpenPrograms = new ArrayList<>();
+            List<String> failedPrograms = new ArrayList<>();
+
+            for (DomainFile domainFile : matchingPrograms) {
+                String programPath = domainFile.getPathname();
+
+                if (openProgramPaths.contains(programPath)) {
+                    alreadyOpenPrograms.add(programPath);
+                    continue;
+                }
+
+                try {
+                    programManager.openProgram(domainFile);
+                    openedPrograms.add(programPath);
+                    openProgramPaths.add(programPath); // Track as opened
+                } catch (Exception e) {
+                    failedPrograms.add(programPath + " (" + e.getMessage() + ")");
+                    Msg.error(this, "Failed to open program " + programPath + ": " + e.getMessage());
+                }
+            }
+
+            // Create result data
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programsFound", matchingPrograms.size());
+            result.put("programsOpened", openedPrograms.size());
+            result.put("programsAlreadyOpen", alreadyOpenPrograms.size());
+            result.put("programsFailed", failedPrograms.size());
+            result.put("extensions", extensionSet);
+            result.put("openedPrograms", openedPrograms);
+            result.put("alreadyOpenPrograms", alreadyOpenPrograms);
+            if (!failedPrograms.isEmpty()) {
+                result.put("failedPrograms", failedPrograms);
+            }
+            result.put("message", String.format(
+                    "Opened %d programs, %d were already open, %d failed",
+                    openedPrograms.size(), alreadyOpenPrograms.size(), failedPrograms.size()
+            ));
+
+            return createJsonResult(result);
+
+        } catch (IllegalArgumentException e) {
+            return createErrorResult("Invalid parameter: " + e.getMessage());
+        } catch (Exception e) {
+            return createErrorResult("Failed to open programs: " + e.getMessage());
+        }
+    }
+
+    /**
+     * DISABLED: Legacy tool - kept for compatibility with upstream repo. This
+     * tool was merged into 'open' but kept here as disabled. Use 'open' with
+     * 'extensions' parameter instead.
+     *
+     * Original tool: open-all-programs-in-code-browser Merged into: open (with
+     * extensions parameter)
+     */
+    /*
     private void registerOpenAllProgramsInCodeBrowserTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
@@ -1983,165 +2603,21 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            try {
-                // Get optional parameters
-                String extensionsStr = getOptionalString(request, "extensions", "exe,dll");
-                String folderPath = getOptionalString(request, "folderPath", "/");
-
-                // Parse extensions
-                String[] extensions = extensionsStr.split(",");
-                Set<String> extensionSet = new HashSet<>();
-                for (String ext : extensions) {
-                    String trimmed = ext.trim().toLowerCase();
-                    if (!trimmed.isEmpty()) {
-                        // Remove leading dot if present
-                        if (trimmed.startsWith(".")) {
-                            trimmed = trimmed.substring(1);
-                        }
-                        extensionSet.add(trimmed);
-                    }
-                }
-
-                if (extensionSet.isEmpty()) {
-                    return createErrorResult("No valid extensions specified");
-                }
-
-                // Get the active project
-                Project project = AppInfo.getActiveProject();
-                if (project == null) {
-                    return createErrorResult("No active project found");
-                }
-
-                // Get the folder to search
-                DomainFolder folder;
-                if (folderPath.equals("/")) {
-                    folder = project.getProjectData().getRootFolder();
-                } else {
-                    folder = project.getProjectData().getFolder(folderPath);
-                }
-
-                if (folder == null) {
-                    return createErrorResult("Folder not found: " + folderPath);
-                }
-
-                // Collect all matching programs
-                List<DomainFile> matchingPrograms = new ArrayList<>();
-                collectProgramsByExtension(folder, extensionSet, matchingPrograms);
-
-                if (matchingPrograms.isEmpty()) {
-                    Map<String, Object> result = new HashMap<>();
-                    result.put("success", true);
-                    result.put("programsFound", 0);
-                    result.put("programsOpened", 0);
-                    result.put("extensions", extensionSet);
-                    result.put("message", "No programs found matching extensions: " + extensionSet);
-                    return createJsonResult(result);
-                }
-
-                // Get or create Code Browser tool
-                ToolManager toolManager = project.getToolManager();
-                if (toolManager == null) {
-                    return createErrorResult("No tool manager available");
-                }
-
-                PluginTool codeBrowserTool = null;
-                PluginTool[] runningTools = toolManager.getRunningTools();
-
-                for (PluginTool runningTool : runningTools) {
-                    if ("CodeBrowser".equals(runningTool.getName())) {
-                        codeBrowserTool = runningTool;
-                        break;
-                    }
-                }
-
-                // If no Code Browser found, try to use RevaPlugin's tool if it has ProgramManager
-                if (codeBrowserTool == null) {
-                    reva.plugin.RevaPlugin revaPlugin = reva.util.RevaInternalServiceRegistry.getService(reva.plugin.RevaPlugin.class);
-                    if (revaPlugin != null && revaPlugin.getTool() != null) {
-                        PluginTool revaTool = revaPlugin.getTool();
-                        ProgramManager testManager = revaTool.getService(ProgramManager.class);
-                        if (testManager != null) {
-                            codeBrowserTool = revaTool;
-                            Msg.debug(this, "Using RevaPlugin's tool for opening programs");
-                        }
-                    }
-                }
-
-                // If still no tool found, return error (cannot programmatically launch tools)
-                if (codeBrowserTool == null) {
-                    return createErrorResult("No Code Browser tool is currently running. Please open Code Browser in Ghidra first, or programs will be opened in the background and available via other tools.");
-                }
-
-                ProgramManager programManager = codeBrowserTool.getService(ProgramManager.class);
-                if (programManager == null) {
-                    return createErrorResult("Code Browser tool does not have ProgramManager service");
-                }
-
-                // Get currently open programs to avoid duplicates
-                Program[] openPrograms = programManager.getAllOpenPrograms();
-                Set<String> openProgramPaths = new HashSet<>();
-                for (Program openProg : openPrograms) {
-                    openProgramPaths.add(openProg.getDomainFile().getPathname());
-                }
-
-                // Open each matching program
-                List<String> openedPrograms = new ArrayList<>();
-                List<String> alreadyOpenPrograms = new ArrayList<>();
-                List<String> failedPrograms = new ArrayList<>();
-
-                for (DomainFile domainFile : matchingPrograms) {
-                    String programPath = domainFile.getPathname();
-
-                    if (openProgramPaths.contains(programPath)) {
-                        alreadyOpenPrograms.add(programPath);
-                        continue;
-                    }
-
-                    try {
-                        programManager.openProgram(domainFile);
-                        openedPrograms.add(programPath);
-                        openProgramPaths.add(programPath); // Track as opened
-                    } catch (Exception e) {
-                        failedPrograms.add(programPath + " (" + e.getMessage() + ")");
-                        Msg.error(this, "Failed to open program " + programPath + ": " + e.getMessage());
-                    }
-                }
-
-                // Create result data
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", true);
-                result.put("programsFound", matchingPrograms.size());
-                result.put("programsOpened", openedPrograms.size());
-                result.put("programsAlreadyOpen", alreadyOpenPrograms.size());
-                result.put("programsFailed", failedPrograms.size());
-                result.put("extensions", extensionSet);
-                result.put("openedPrograms", openedPrograms);
-                result.put("alreadyOpenPrograms", alreadyOpenPrograms);
-                if (!failedPrograms.isEmpty()) {
-                    result.put("failedPrograms", failedPrograms);
-                }
-                result.put("message", String.format(
-                    "Opened %d programs, %d were already open, %d failed",
-                    openedPrograms.size(), alreadyOpenPrograms.size(), failedPrograms.size()
-                ));
-
-                return createJsonResult(result);
-
-            } catch (IllegalArgumentException e) {
-                return createErrorResult("Invalid parameter: " + e.getMessage());
-            } catch (Exception e) {
-                return createErrorResult("Failed to open programs: " + e.getMessage());
-            }
+            String extensionsStr = getOptionalString(request, "extensions", "exe,dll");
+            String folderPath = getOptionalString(request, "folderPath", "/");
+            return handleOpenAllProgramsByExtension(extensionsStr, folderPath);
         });
     }
-
+     */
     /**
      * Sanitizes a filename by replacing invalid characters with underscores.
      * This is a copy of ImportBatchTask.fixupProjectFilename which is private.
-     * Copied from Ghidra 12.0 source - update if Ghidra's implementation changes.
+     * Copied from Ghidra 12.0 source - update if Ghidra's implementation
+     * changes.
      *
      * @param filename The filename to sanitize
-     * @return The sanitized filename with invalid characters replaced by underscores
+     * @return The sanitized filename with invalid characters replaced by
+     * underscores
      */
     private String fixupProjectFilename(String filename) {
         // Replace any invalid characters with underscores
@@ -2154,15 +2630,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Convert a file's FSRL into a target project path, using import path options.
-     * This is a copy of ImportBatchTask.fsrlToPath which is package-private.
-     * Copied from Ghidra 12.0 source - update if Ghidra's implementation changes.
-     * TODO: Consider requesting this method be made public in a future Ghidra release.
+     * Convert a file's FSRL into a target project path, using import path
+     * options. This is a copy of ImportBatchTask.fsrlToPath which is
+     * package-private. Copied from Ghidra 12.0 source - update if Ghidra's
+     * implementation changes. TODO: Consider requesting this method be made
+     * public in a future Ghidra release.
      *
      * @param fsrl FSRL of the file to convert
      * @param userSrc FSRL of the user-added source file
      * @param stripLeadingPath Whether to strip the leading path
-     * @param stripInteriorContainerPath Whether to strip interior container paths
+     * @param stripInteriorContainerPath Whether to strip interior container
+     * paths
      * @return Path string for the project destination
      */
     private String fsrlToPath(FSRL fsrl, FSRL userSrc, boolean stripLeadingPath,
@@ -2186,24 +2664,25 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Register a tool to capture ReVa debug information for troubleshooting.
-     * Creates a zip file with system info, logs, configuration, and open programs.
+     * Creates a zip file with system info, logs, configuration, and open
+     * programs.
      */
     private void registerCaptureDebugInfoTool() {
         Map<String, Object> properties = new HashMap<>();
         properties.put("message", Map.of(
-            "type", "string",
-            "description", "Optional message describing the issue being debugged"
+                "type", "string",
+                "description", "Optional message describing the issue being debugged"
         ));
 
         List<String> required = new ArrayList<>();
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("capture-reva-debug-info")
-            .title("Capture ReVa Debug Information")
-            .description("Creates a zip file containing ReVa debug information for troubleshooting issues. " +
-                "Includes system info, Ghidra config, ReVa settings, MCP server status, open programs, and logs.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("capture-reva-debug-info")
+                .title("Capture ReVa Debug Information")
+                .description("Creates a zip file containing ReVa debug information for troubleshooting issues. "
+                        + "Includes system info, Ghidra config, ReVa settings, MCP server status, open programs, and logs.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         registerTool(tool, (exchange, request) -> {
             String message = getOptionalString(request, "message", null);
@@ -2226,8 +2705,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively collect programs matching specified extensions
+     *
      * @param folder The folder to search
-     * @param extensions Set of extensions to match (without leading dot, lowercase)
+     * @param extensions Set of extensions to match (without leading dot,
+     * lowercase)
      * @param programs List to add matching programs to
      */
     private void collectProgramsByExtension(DomainFolder folder, Set<String> extensions, List<DomainFile> programs) {
@@ -2253,23 +2734,31 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Import a single file into the project, optionally analyze it, and optionally add to version control.
-     * This is a shared helper method used by both 'open' (for programs) and 'import-file' tools.
+     * Import a single file into the project, optionally analyze it, and
+     * optionally add to version control. This is a shared helper method used by
+     * both 'open' (for programs) and 'import-file' tools.
      *
      * @param file The file to import
      * @param destFolder The destination folder in the project
      * @param analyzeAfterImport Whether to run auto-analysis after import
-     * @param enableVersionControl Whether to add to version control after import
-     * @param commitMessagePrefix Prefix for version control commit message (e.g., "Initial import via ReVa open")
+     * @param enableVersionControl Whether to add to version control after
+     * import
+     * @param commitMessagePrefix Prefix for version control commit message
+     * (e.g., "Initial import via ReVa open")
      * @return The imported DomainFile
      * @throws Exception If import fails
      */
     private DomainFile importSingleFile(File file, DomainFolder destFolder, boolean analyzeAfterImport,
-                                       boolean enableVersionControl, String commitMessagePrefix) throws Exception {
+            boolean enableVersionControl, String commitMessagePrefix) throws Exception {
         // Import the file using batch import (non-recursive for single file)
         BatchInfo batchInfo = new BatchInfo(1);
         FSRL fsrl = FileSystemService.getInstance().getLocalFSRL(file);
-        boolean hasImportableFiles = batchInfo.addFile(fsrl, TaskMonitor.DUMMY);
+        boolean hasImportableFiles;
+        try {
+            hasImportableFiles = batchInfo.addFile(fsrl, TaskMonitor.DUMMY);
+        } catch (java.io.IOException | ghidra.util.exception.CancelledException e) {
+            throw new Exception("Failed to add file to batch: " + e.getMessage(), e);
+        }
 
         if (!hasImportableFiles || batchInfo.getTotalCount() == 0) {
             throw new Exception("No importable program found in: " + file.getAbsolutePath());
@@ -2277,26 +2766,76 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Get configuration for timeouts
         ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
-        int importTimeoutSeconds = configManager != null ?
-            configManager.getDecompilerTimeoutSeconds() * 2 : 300;
-        int analysisTimeoutSeconds = configManager != null ?
-            configManager.getImportAnalysisTimeoutSeconds() : 600;
+        int importTimeoutSeconds = configManager != null
+                ? configManager.getDecompilerTimeoutSeconds() * 2 : 300;
+        int analysisTimeoutSeconds = configManager != null
+                ? configManager.getImportAnalysisTimeoutSeconds() : 600;
 
         // Create timeout-protected monitor for import task
         TaskMonitor importMonitor = TimeoutTaskMonitor.timeoutIn(importTimeoutSeconds, TimeUnit.SECONDS);
 
-        // Create and run the import task synchronously
-        ImportBatchTask importTask = new ImportBatchTask(batchInfo, destFolder, null, true, false, false);
-        importTask.run(importMonitor);
-
-        // Check for timeout or cancellation
-        if (importMonitor.isCancelled()) {
-            throw new Exception("Import timed out after " + importTimeoutSeconds + " seconds");
+        // Use custom import loop (similar to handleImportOperation)
+        DomainFile importedFile = null;
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            throw new Exception("No active project found");
         }
 
-        // Find the imported file
-        String fileName = file.getName();
-        DomainFile importedFile = findProgramInFolder(destFolder, fileName);
+        for (BatchGroup group : batchInfo.getGroups()) {
+            if (importMonitor.isCancelled()) {
+                throw new Exception("Import timed out after " + importTimeoutSeconds + " seconds");
+            }
+            if (!group.isEnabled()) {
+                continue;
+            }
+            BatchGroupLoadSpec selectedBatchGroupLoadSpec = group.getSelectedBatchGroupLoadSpec();
+            if (selectedBatchGroupLoadSpec == null) {
+                continue;
+            }
+            for (BatchLoadConfig config : group.getBatchLoadConfig()) {
+                if (importMonitor.isCancelled()) {
+                    throw new Exception("Import timed out after " + importTimeoutSeconds + " seconds");
+                }
+                try (ByteProvider byteProvider = FileSystemService.getInstance()
+                        .getByteProvider(config.getFSRL(), true, importMonitor)) {
+                    LoadSpec loadSpec = config.getLoadSpec(selectedBatchGroupLoadSpec);
+                    if (loadSpec == null) {
+                        continue;
+                    }
+                    String sanitizedPath = fixupProjectFilename(config.getPreferredFileName());
+                    MessageLog log = new MessageLog();
+                    Loader.ImporterSettings settings = new Loader.ImporterSettings(
+                            byteProvider,
+                            sanitizedPath,
+                            project,
+                            destFolder.getPathname(),
+                            false, // mirrorFs
+                            loadSpec,
+                            loadSpec.getLoader().getDefaultOptions(byteProvider, loadSpec, null, false, false),
+                            this,
+                            log,
+                            importMonitor
+                    );
+                    try (LoadResults<?> loadResults = loadSpec.getLoader().load(settings)) {
+                        if (loadResults != null) {
+                            for (Loaded<?> loaded : loadResults) {
+                                importedFile = loaded.save(importMonitor);
+                                break; // Only need first file for single file import
+                            }
+                        }
+                    }
+                    if (importedFile != null) {
+                        break;
+                    }
+                } catch (Exception e) {
+                    throw new Exception("Import failed: " + e.getMessage(), e);
+                }
+            }
+            if (importedFile != null) {
+                break;
+            }
+        }
+
         if (importedFile == null) {
             throw new Exception("File was imported but could not be found in project");
         }
@@ -2332,8 +2871,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
         if (enableVersionControl && importedFile.canAddToRepository()) {
             try {
                 String commitMessage = analyzeAfterImport
-                    ? commitMessagePrefix + " (analyzed)"
-                    : commitMessagePrefix;
+                        ? commitMessagePrefix + " (analyzed)"
+                        : commitMessagePrefix;
                 importedFile.addToVersionControl(commitMessage, false, TaskMonitor.DUMMY);
             } catch (Exception e) {
                 logError("Failed to add file to version control: " + importedFile.getPathname(), e);
@@ -2345,7 +2884,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Recursively search for a program file by name in a folder and its subfolders
+     * Recursively search for a program file by name in a folder and its
+     * subfolders
+     *
      * @param folder The folder to search in
      * @param fileName The file name to search for
      * @return The DomainFile if found, null otherwise
@@ -2367,6 +2908,188 @@ public class ProjectToolProvider extends AbstractToolProvider {
         }
 
         return null;
+    }
+
+    private McpSchema.CallToolResult handleExportProgram(Program program, String outputPath) {
+        try {
+            File outputFile = new File(outputPath);
+            if (outputFile.getParentFile() != null && !outputFile.getParentFile().exists()) {
+                outputFile.getParentFile().mkdirs();
+            }
+
+            // Export program using Ghidra's exporter
+            ghidra.app.util.exporter.Exporter exporter = new ghidra.app.util.exporter.BinaryExporter();
+            java.io.File file = new java.io.File(outputPath);
+            exporter.export(file, program, program.getMemory(), TaskMonitor.DUMMY);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", program.getDomainFile().getPathname());
+            result.put("outputPath", outputFile.getAbsolutePath());
+            result.put("exportType", "program");
+            result.put("fileSize", outputFile.length());
+
+            return createJsonResult(result);
+        } catch (Exception e) {
+            return createErrorResult("Failed to export program: " + e.getMessage());
+        }
+    }
+
+    private McpSchema.CallToolResult handleExportFunctionInfo(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, String outputPath) {
+        try {
+            String format = getOptionalString(request, "format", "json");
+            boolean includeParams = getOptionalBoolean(request, "include_parameters", true);
+            boolean includeVars = getOptionalBoolean(request, "include_variables", true);
+            boolean includeComments = getOptionalBoolean(request, "include_comments", false);
+
+            File outputFile = new File(outputPath);
+            if (outputFile.getParentFile() != null && !outputFile.getParentFile().exists()) {
+                outputFile.getParentFile().mkdirs();
+            }
+
+            List<Map<String, Object>> functions = new ArrayList<>();
+            ghidra.program.model.listing.FunctionIterator funcIter = program.getFunctionManager().getFunctions(true);
+            while (funcIter.hasNext()) {
+                ghidra.program.model.listing.Function func = funcIter.next();
+                Map<String, Object> funcInfo = new HashMap<>();
+                funcInfo.put("name", func.getName());
+                funcInfo.put("address", reva.util.AddressUtil.formatAddress(func.getEntryPoint()));
+                funcInfo.put("signature", func.getSignature().toString());
+
+                if (includeParams) {
+                    List<Map<String, Object>> params = new ArrayList<>();
+                    for (ghidra.program.model.listing.Parameter param : func.getParameters()) {
+                        Map<String, Object> paramInfo = new HashMap<>();
+                        paramInfo.put("name", param.getName());
+                        paramInfo.put("type", param.getDataType().toString());
+                        params.add(paramInfo);
+                    }
+                    funcInfo.put("parameters", params);
+                }
+
+                if (includeVars) {
+                    List<Map<String, Object>> vars = new ArrayList<>();
+                    ghidra.program.model.listing.Parameter[] paramArray = func.getParameters();
+                    Set<ghidra.program.model.listing.Parameter> params = new HashSet<ghidra.program.model.listing.Parameter>();
+                    for (ghidra.program.model.listing.Parameter param : paramArray) {
+                        params.add(param);
+                    }
+                    for (ghidra.program.model.listing.Variable var : func.getAllVariables()) {
+                        // Skip parameters - they're already included in the parameters list
+                        if (params.contains(var)) {
+                            continue;
+                        }
+                        Map<String, Object> varInfo = new HashMap<>();
+                        varInfo.put("name", var.getName());
+                        varInfo.put("type", var.getDataType().toString());
+                        vars.add(varInfo);
+                    }
+                    funcInfo.put("variables", vars);
+                }
+
+                if (includeComments) {
+                    String comment = func.getComment();
+                    if (comment != null && !comment.isEmpty()) {
+                        funcInfo.put("comment", comment);
+                    }
+                }
+
+                functions.add(funcInfo);
+            }
+
+            if ("csv".equals(format)) {
+                // Write CSV
+                try (java.io.FileWriter writer = new java.io.FileWriter(outputFile)) {
+                    writer.write("Name,Address,Signature");
+                    if (includeParams) {
+                        writer.write(",Parameters");
+                    }
+                    if (includeVars) {
+                        writer.write(",Variables");
+                    }
+                    if (includeComments) {
+                        writer.write(",Comment");
+                    }
+                    writer.write("\n");
+
+                    for (Map<String, Object> func : functions) {
+                        writer.write("\"" + func.get("name") + "\",");
+                        writer.write("\"" + func.get("address") + "\",");
+                        writer.write("\"" + func.get("signature") + "\"");
+                        if (includeParams) {
+                            @SuppressWarnings("unchecked")
+                            List<Map<String, Object>> params = (List<Map<String, Object>>) func.get("parameters");
+                            writer.write(",\"" + (params != null ? params.size() : 0) + " params\"");
+                        }
+                        if (includeVars) {
+                            @SuppressWarnings("unchecked")
+                            List<Map<String, Object>> vars = (List<Map<String, Object>>) func.get("variables");
+                            writer.write(",\"" + (vars != null ? vars.size() : 0) + " vars\"");
+                        }
+                        if (includeComments) {
+                            writer.write(",\"" + (func.get("comment") != null ? func.get("comment").toString().replace("\"", "\"\"") : "") + "\"");
+                        }
+                        writer.write("\n");
+                    }
+                }
+            } else {
+                // Write JSON
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                mapper.writerWithDefaultPrettyPrinter().writeValue(outputFile, functions);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", program.getDomainFile().getPathname());
+            result.put("outputPath", outputFile.getAbsolutePath());
+            result.put("exportType", "function_info");
+            result.put("format", format);
+            result.put("functionCount", functions.size());
+            result.put("fileSize", outputFile.length());
+
+            return createJsonResult(result);
+        } catch (Exception e) {
+            return createErrorResult("Failed to export function info: " + e.getMessage());
+        }
+    }
+
+    private McpSchema.CallToolResult handleExportStrings(Program program, String outputPath) {
+        try {
+            File outputFile = new File(outputPath);
+            if (outputFile.getParentFile() != null && !outputFile.getParentFile().exists()) {
+                outputFile.getParentFile().mkdirs();
+            }
+
+            List<String> strings = new ArrayList<>();
+            ghidra.program.model.listing.DataIterator dataIter = program.getListing().getDefinedData(true);
+            while (dataIter.hasNext()) {
+                ghidra.program.model.listing.Data data = dataIter.next();
+                if (data.hasStringValue()) {
+                    String str = data.getDefaultValueRepresentation();
+                    if (str != null && str.length() > 0) {
+                        strings.add(reva.util.AddressUtil.formatAddress(data.getAddress()) + ": " + str);
+                    }
+                }
+            }
+
+            try (java.io.FileWriter writer = new java.io.FileWriter(outputFile)) {
+                for (String str : strings) {
+                    writer.write(str + "\n");
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", program.getDomainFile().getPathname());
+            result.put("outputPath", outputFile.getAbsolutePath());
+            result.put("exportType", "strings");
+            result.put("stringCount", strings.size());
+            result.put("fileSize", outputFile.length());
+
+            return createJsonResult(result);
+        } catch (Exception e) {
+            return createErrorResult("Failed to export strings: " + e.getMessage());
+        }
     }
 
 }

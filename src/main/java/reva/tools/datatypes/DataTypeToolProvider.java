@@ -29,6 +29,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.plugin.RevaProgramManager;
 import reva.tools.AbstractToolProvider;
 import reva.util.DataTypeParserUtil;
@@ -66,7 +67,18 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         properties.put("start_index", Map.of("type", "integer", "description", "Starting index for pagination when action='list'", "default", 0));
         properties.put("max_count", Map.of("type", "integer", "description", "Maximum number of data types to return when action='list'", "default", 100));
         properties.put("data_type_string", Map.of("type", "string", "description", "String representation of the data type when action='by_string' or 'apply'"));
-        properties.put("address_or_symbol", Map.of("type", "string", "description", "Address or symbol name to apply the data type to when action='apply'"));
+        Map<String, Object> addressOrSymbolProperty = new HashMap<>();
+        addressOrSymbolProperty.put("type", "string");
+        addressOrSymbolProperty.put("description", "Address or symbol name to apply the data type to. Can be a single string or an array of strings for batch operations when action='apply'.");
+        Map<String, Object> addressOrSymbolArraySchema = new HashMap<>();
+        addressOrSymbolArraySchema.put("type", "array");
+        addressOrSymbolArraySchema.put("items", Map.of("type", "string"));
+        addressOrSymbolArraySchema.put("description", "Array of addresses or symbol names for batch operations");
+        addressOrSymbolProperty.put("oneOf", List.of(
+            Map.of("type", "string"),
+            addressOrSymbolArraySchema
+        ));
+        properties.put("address_or_symbol", addressOrSymbolProperty);
 
         List<String> required = List.of("programPath", "action");
 
@@ -251,11 +263,23 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         if (dataTypeString == null) {
             return createErrorResult("data_type_string is required for action='apply'");
         }
+        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", ""));
+
+        // Check if address_or_symbol is an array (batch mode)
+        Object addressOrSymbolValue = request.arguments().get("address_or_symbol");
+        if (addressOrSymbolValue == null) {
+            addressOrSymbolValue = request.arguments().get("addressOrSymbol");
+        }
+
+        if (addressOrSymbolValue instanceof List) {
+            return handleBatchApplyDataType(program, request, dataTypeString, archiveName, (List<?>) addressOrSymbolValue);
+        }
+
+        // Single address mode
         String addressOrSymbol = getOptionalString(request, "address_or_symbol", getOptionalString(request, "addressOrSymbol", null));
         if (addressOrSymbol == null) {
             return createErrorResult("address_or_symbol is required for action='apply'");
         }
-        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", ""));
 
         ghidra.program.model.address.Address address = reva.util.AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
         if (address == null) {
@@ -294,6 +318,92 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         } catch (Exception e) {
             return createErrorResult("Error applying data type: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle batch apply data type operations when address_or_symbol is an array
+     */
+    private McpSchema.CallToolResult handleBatchApplyDataType(Program program, CallToolRequest request,
+            String dataTypeString, String archiveName, List<?> addressList) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        // Parse data type once for all addresses
+        ghidra.program.model.data.DataType dataType;
+        try {
+            dataType = reva.util.DataTypeParserUtil.parseDataTypeObjectFromString(dataTypeString, archiveName);
+            if (dataType == null) {
+                return createErrorResult("Could not find data type: " + dataTypeString);
+            }
+        } catch (Exception e) {
+            return createErrorResult("Error parsing data type: " + e.getMessage());
+        }
+
+        int transactionID = program.startTransaction("Batch Apply Data Type");
+        boolean committed = false;
+
+        try {
+            ghidra.program.model.listing.Listing listing = program.getListing();
+
+            for (int i = 0; i < addressList.size(); i++) {
+                try {
+                    String addressOrSymbol = addressList.get(i).toString();
+                    ghidra.program.model.address.Address address = reva.util.AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
+
+                    if (address == null) {
+                        errors.add(Map.of("index", i, "address_or_symbol", addressOrSymbol, "error", "Could not resolve address or symbol"));
+                        continue;
+                    }
+
+                    // Clear existing data if present
+                    if (listing.getDataAt(address) != null) {
+                        listing.clearCodeUnits(address, address.add(dataType.getLength() - 1), false);
+                    }
+
+                    // Create data with the specified type
+                    ghidra.program.model.listing.Data createdData = listing.createData(address, dataType);
+                    if (createdData == null) {
+                        errors.add(Map.of("index", i, "address_or_symbol", addressOrSymbol, "error", "Failed to create data at address"));
+                        continue;
+                    }
+
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("index", i);
+                    result.put("address", reva.util.AddressUtil.formatAddress(address));
+                    result.put("dataType", dataType.getName());
+                    result.put("dataTypeDisplayName", dataType.getDisplayName());
+                    result.put("length", dataType.getLength());
+                    results.add(result);
+
+                } catch (Exception e) {
+                    errors.add(Map.of("index", i, "address_or_symbol", addressList.get(i).toString(), "error", e.getMessage()));
+                }
+            }
+
+            program.endTransaction(transactionID, true);
+            committed = true;
+            autoSaveProgram(program, "Batch apply data type");
+
+        } catch (Exception e) {
+            if (!committed) {
+                program.endTransaction(transactionID, false);
+            }
+            return createErrorResult("Error in batch apply data type: " + e.getMessage());
+        }
+
+        Map<String, Object> resultData = new HashMap<>();
+        resultData.put("success", true);
+        resultData.put("dataType", dataType.getName());
+        resultData.put("dataTypeDisplayName", dataType.getDisplayName());
+        resultData.put("total", addressList.size());
+        resultData.put("succeeded", results.size());
+        resultData.put("failed", errors.size());
+        resultData.put("results", results);
+        if (!errors.isEmpty()) {
+            resultData.put("errors", errors);
+        }
+
+        return createJsonResult(resultData);
     }
 
     /**

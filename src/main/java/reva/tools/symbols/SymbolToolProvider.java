@@ -36,23 +36,36 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.program.model.symbol.SymbolType;
+import ghidra.app.util.demangler.Demangler;
+import ghidra.app.util.demangler.DemanglerUtil;
+import ghidra.app.util.demangler.DemangledObject;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import reva.tools.AbstractToolProvider;
+import reva.tools.imports.ImportExportToolProvider;
 import reva.util.AddressUtil;
 import reva.util.SchemaUtil;
 import reva.util.SymbolUtil;
 
 /**
  * Tool provider for symbol-related operations.
+ *
+ * NOTE: For imports/exports collection, this provider delegates to ImportExportToolProvider
+ * methods to benefit from upstream updates to disabled tool handlers.
  */
 public class SymbolToolProvider extends AbstractToolProvider {
+    // Helper instance to access ImportExportToolProvider methods
+    // This allows us to reuse logic from disabled tools and benefit from upstream updates
+    private final ImportExportToolProvider importExportHelper;
+
     /**
      * Constructor
      * @param server The MCP server
      */
     public SymbolToolProvider(McpSyncServer server) {
         super(server);
+        // Create helper instance to access protected methods from disabled tool provider
+        this.importExportHelper = new ImportExportToolProvider(server);
     }
 
     @Override
@@ -62,15 +75,15 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
     private void registerManageSymbolsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("mode", Map.of(
             "type", "string",
-            "description", "Operation mode: 'classes', 'namespaces', 'imports', 'exports', 'create_label', 'symbols', 'count', 'rename_data'",
-            "enum", List.of("classes", "namespaces", "imports", "exports", "create_label", "symbols", "count", "rename_data")
+            "description", "Operation mode: 'classes', 'namespaces', 'imports', 'exports', 'create_label', 'symbols', 'count', 'rename_data', 'demangle'",
+            "enum", List.of("classes", "namespaces", "imports", "exports", "create_label", "symbols", "count", "rename_data", "demangle")
         ));
-        properties.put("address", SchemaUtil.stringProperty("Address where to create the label when mode='create_label' or address of data to rename when mode='rename_data'"));
-        properties.put("label_name", SchemaUtil.stringProperty("Name for the label when mode='create_label'"));
-        properties.put("new_name", SchemaUtil.stringProperty("New name for the data label when mode='rename_data'"));
+        properties.put("address", SchemaUtil.stringProperty("Address(es) where to create label(s) when mode='create_label' or address(es) of data to rename when mode='rename_data'. Can be a single address string or an array of address strings for batch operations."));
+        properties.put("label_name", SchemaUtil.stringProperty("Name(s) for the label(s) when mode='create_label'. Can be a single string or an array of strings matching the address array."));
+        properties.put("new_name", SchemaUtil.stringProperty("New name(s) for the data label(s) when mode='rename_data'. Can be a single string or an array of strings matching the address array."));
         properties.put("library_filter", SchemaUtil.stringProperty("Optional library name to filter by when mode='imports' (case-insensitive)"));
         properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of imports/exports to return when mode='imports' or 'exports'", 500));
         properties.put("start_index", SchemaUtil.integerPropertyWithDefault("Starting index for pagination (0-based)", 0));
@@ -80,8 +93,9 @@ public class SymbolToolProvider extends AbstractToolProvider {
         properties.put("include_external", SchemaUtil.booleanPropertyWithDefault("Whether to include external symbols when mode='symbols' or 'count'", false));
         properties.put("max_count", SchemaUtil.integerPropertyWithDefault("Maximum number of symbols to return when mode='symbols'", 200));
         properties.put("filter_default_names", SchemaUtil.booleanPropertyWithDefault("Whether to filter out default Ghidra generated names", true));
+        properties.put("demangle_all", SchemaUtil.booleanPropertyWithDefault("For demangle: Demangle all symbols in program (default: false, demangle single symbol)", false));
 
-        List<String> required = List.of("programPath", "mode");
+        List<String> required = List.of("mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("manage-symbols")
@@ -112,8 +126,10 @@ public class SymbolToolProvider extends AbstractToolProvider {
                         return handleCountMode(program, request);
                     case "rename_data":
                         return handleRenameDataMode(program, request);
+                    case "demangle":
+                        return handleDemangleMode(program, request);
                     default:
-                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: classes, namespaces, imports, exports, create_label, symbols, count, rename_data");
+                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: classes, namespaces, imports, exports, create_label, symbols, count, rename_data, demangle");
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
@@ -205,8 +221,9 @@ public class SymbolToolProvider extends AbstractToolProvider {
         if (maxResults > 10000) maxResults = 10000;
         if (startIndex < 0) startIndex = 0;
 
-        List<Map<String, Object>> allImports = collectImports(program, libraryFilter);
-        List<Map<String, Object>> paginated = paginate(allImports, startIndex, maxResults);
+        // Delegate to ImportExportToolProvider to benefit from upstream updates
+        List<Map<String, Object>> allImports = importExportHelper.collectImports(program, libraryFilter);
+        List<Map<String, Object>> paginated = importExportHelper.paginate(allImports, startIndex, maxResults);
 
         Map<String, Object> result = new HashMap<>();
         result.put("programPath", program.getDomainFile().getPathname());
@@ -215,7 +232,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
         result.put("returnedCount", paginated.size());
 
         if (groupByLibrary) {
-            Map<String, List<Map<String, Object>>> grouped = groupImportsByLibrary(paginated);
+            // Delegate to ImportExportToolProvider to benefit from upstream updates
+            List<Map<String, Object>> grouped = importExportHelper.groupImportsByLibrary(paginated);
             result.put("libraries", grouped);
             result.put("groupedByLibrary", grouped);
         } else {
@@ -233,8 +251,9 @@ public class SymbolToolProvider extends AbstractToolProvider {
         if (maxResults > 10000) maxResults = 10000;
         if (startIndex < 0) startIndex = 0;
 
-        List<Map<String, Object>> allExports = collectExports(program);
-        List<Map<String, Object>> paginated = paginate(allExports, startIndex, maxResults);
+        // Delegate to ImportExportToolProvider to benefit from upstream updates
+        List<Map<String, Object>> allExports = importExportHelper.collectExports(program);
+        List<Map<String, Object>> paginated = importExportHelper.paginate(allExports, startIndex, maxResults);
 
         Map<String, Object> result = new HashMap<>();
         result.put("programPath", program.getDomainFile().getPathname());
@@ -247,6 +266,13 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleCreateLabelMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Check if address is an array (batch mode)
+        Object addressValue = request.arguments().get("address");
+        if (addressValue instanceof List) {
+            return handleBatchCreateLabels(program, request, (List<?>) addressValue);
+        }
+
+        // Single label mode
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
             return createErrorResult("address is required for mode='create_label'");
@@ -257,7 +283,14 @@ public class SymbolToolProvider extends AbstractToolProvider {
             return createErrorResult("Could not resolve address or symbol: " + addressStr);
         }
 
+        boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
         String labelName = getOptionalString(request, "label_name", null);
+
+        // Auto-label if not provided (controlled by environment variable)
+        if ((labelName == null || labelName.trim().isEmpty()) && autoLabel) {
+            labelName = autoLabelSymbol(program, address);
+        }
+
         if (labelName == null || labelName.trim().isEmpty()) {
             return createErrorResult("label_name is required for mode='create_label'");
         }
@@ -288,6 +321,78 @@ public class SymbolToolProvider extends AbstractToolProvider {
             return createErrorResult("Error creating label: " + e.getMessage());
         } finally {
             program.endTransaction(transactionID, success);
+        }
+    }
+
+    private McpSchema.CallToolResult handleBatchCreateLabels(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, List<?> addressList) {
+        Object labelNameValue = request.arguments().get("label_name");
+        if (labelNameValue == null) {
+            labelNameValue = request.arguments().get("labelName");
+        }
+        List<?> labelNameList = (labelNameValue instanceof List) ? (List<?>) labelNameValue : null;
+
+        boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
+
+        int txId = program.startTransaction("Batch create labels");
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        try {
+            SymbolTable symbolTable = program.getSymbolTable();
+            for (int i = 0; i < addressList.size(); i++) {
+                try {
+                    String addressStr = addressList.get(i).toString();
+                    Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+                    if (address == null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Could not resolve address or symbol"));
+                        continue;
+                    }
+
+                    String labelName = null;
+                    if (labelNameList != null && i < labelNameList.size()) {
+                        labelName = labelNameList.get(i).toString();
+                    }
+
+                    // Auto-label if not provided (controlled by environment variable)
+                    if ((labelName == null || labelName.trim().isEmpty()) && autoLabel) {
+                        labelName = autoLabelSymbol(program, address);
+                    }
+
+                    if (labelName == null || labelName.trim().isEmpty()) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "No label name provided and auto-labeling failed"));
+                        continue;
+                    }
+
+                    Symbol symbol = symbolTable.createLabel(address, labelName,
+                        program.getGlobalNamespace(), ghidra.program.model.symbol.SourceType.USER_DEFINED);
+
+                    if (symbol == null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Failed to create label"));
+                        continue;
+                    }
+
+                    results.add(Map.of(
+                        "index", i,
+                        "address", AddressUtil.formatAddress(address),
+                        "labelName", labelName,
+                        "isPrimary", symbol.isPrimary(),
+                        "success", true
+                    ));
+                } catch (Exception e) {
+                    errors.add(Map.of("index", i, "address", addressList.get(i).toString(), "error", e.getMessage()));
+                }
+            }
+
+            autoSaveProgram(program, "Batch created " + results.size() + " labels");
+            return createJsonResult(Map.of(
+                "success", true,
+                "created", results.size(),
+                "failed", errors.size(),
+                "results", results,
+                "errors", errors.isEmpty() ? List.of() : errors
+            ));
+        } finally {
+            program.endTransaction(txId, true);
         }
     }
 
@@ -381,6 +486,13 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleRenameDataMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Check if address is an array (batch mode)
+        Object addressValue = request.arguments().get("address");
+        if (addressValue instanceof List) {
+            return handleBatchRenameData(program, request, (List<?>) addressValue);
+        }
+
+        // Single rename mode
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
             return createErrorResult("address is required for mode='rename_data'");
@@ -391,7 +503,14 @@ public class SymbolToolProvider extends AbstractToolProvider {
             return createErrorResult("Could not resolve address or symbol: " + addressStr);
         }
 
+        boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
         String newName = getOptionalString(request, "new_name", null);
+
+        // Auto-label if not provided (controlled by environment variable)
+        if ((newName == null || newName.trim().isEmpty()) && autoLabel) {
+            newName = autoLabelSymbol(program, address);
+        }
+
         if (newName == null || newName.trim().isEmpty()) {
             return createErrorResult("new_name is required for mode='rename_data'");
         }
@@ -435,110 +554,96 @@ public class SymbolToolProvider extends AbstractToolProvider {
         }
     }
 
-    private List<Map<String, Object>> collectImports(Program program, String libraryFilter) {
-        List<Map<String, Object>> imports = new ArrayList<>();
-        FunctionIterator externalFunctions = program.getFunctionManager().getExternalFunctions();
+    private McpSchema.CallToolResult handleBatchRenameData(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, List<?> addressList) {
+        Object newNameValue = request.arguments().get("new_name");
+        if (newNameValue == null) {
+            newNameValue = request.arguments().get("newName");
+        }
+        List<?> newNameList = (newNameValue instanceof List) ? (List<?>) newNameValue : null;
 
-        while (externalFunctions.hasNext()) {
-            Function func = externalFunctions.next();
-            ExternalLocation extLoc = func.getExternalLocation();
-            String library = extLoc != null ? extLoc.getLibraryName() : "<unknown>";
+        boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
 
-            if (libraryFilter != null && !libraryFilter.isEmpty() &&
-                !library.toLowerCase().contains(libraryFilter.toLowerCase())) {
-                continue;
-            }
+        int txId = program.startTransaction("Batch rename data");
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
 
-            Map<String, Object> info = new HashMap<>();
-            info.put("name", func.getName());
-            info.put("library", library);
+        try {
+            SymbolTable symbolTable = program.getSymbolTable();
+            for (int i = 0; i < addressList.size(); i++) {
+                try {
+                    String addressStr = addressList.get(i).toString();
+                    Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+                    if (address == null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Could not resolve address or symbol"));
+                        continue;
+                    }
 
-            Address entryPoint = func.getEntryPoint();
-            if (entryPoint != null) {
-                info.put("address", AddressUtil.formatAddress(entryPoint));
-            }
-
-            if (extLoc != null) {
-                String originalName = extLoc.getOriginalImportedName();
-                if (originalName != null && !originalName.equals(func.getName())) {
-                    info.put("originalName", originalName);
-                    if (originalName.startsWith("Ordinal_")) {
-                        try {
-                            info.put("ordinal", Integer.parseInt(originalName.substring(8)));
-                        } catch (NumberFormatException e) {
-                            // Not a valid ordinal format
+                    Symbol primarySymbol = symbolTable.getPrimarySymbol(address);
+                    if (primarySymbol == null) {
+                        Data data = program.getListing().getDataAt(address);
+                        if (data == null) {
+                            errors.add(Map.of("index", i, "address", addressStr, "error", "No symbol or data found"));
+                            continue;
+                        }
+                        primarySymbol = symbolTable.getPrimarySymbol(address);
+                        if (primarySymbol == null) {
+                            errors.add(Map.of("index", i, "address", addressStr, "error", "No symbol found"));
+                            continue;
                         }
                     }
+
+                    String newName = null;
+                    if (newNameList != null && i < newNameList.size()) {
+                        newName = newNameList.get(i).toString();
+                    }
+
+                    // Auto-label if not provided (controlled by environment variable)
+                    if ((newName == null || newName.trim().isEmpty()) && autoLabel) {
+                        newName = autoLabelSymbol(program, address);
+                    }
+
+                    if (newName == null || newName.trim().isEmpty()) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "No name provided and auto-labeling failed"));
+                        continue;
+                    }
+
+                    String oldName = primarySymbol.getName();
+                    primarySymbol.setName(newName, ghidra.program.model.symbol.SourceType.USER_DEFINED);
+
+                    results.add(Map.of(
+                        "index", i,
+                        "address", AddressUtil.formatAddress(address),
+                        "oldName", oldName,
+                        "newName", newName,
+                        "success", true
+                    ));
+                } catch (Exception e) {
+                    errors.add(Map.of("index", i, "address", addressList.get(i).toString(), "error", e.getMessage()));
                 }
             }
 
-            if (func.getSignature() != null) {
-                info.put("signature", func.getSignature().getPrototypeString());
-            }
-
-            imports.add(info);
+            autoSaveProgram(program, "Batch renamed " + results.size() + " symbols");
+            return createJsonResult(Map.of(
+                "success", true,
+                "renamed", results.size(),
+                "failed", errors.size(),
+                "results", results,
+                "errors", errors.isEmpty() ? List.of() : errors
+            ));
+        } finally {
+            program.endTransaction(txId, true);
         }
-
-        imports.sort((a, b) -> {
-            int cmp = ((String) a.get("library")).compareToIgnoreCase((String) b.get("library"));
-            return cmp != 0 ? cmp : ((String) a.get("name")).compareToIgnoreCase((String) b.get("name"));
-        });
-
-        return imports;
     }
 
-    private List<Map<String, Object>> collectExports(Program program) {
-        List<Map<String, Object>> exports = new ArrayList<>();
-        SymbolTable symbolTable = program.getSymbolTable();
-        FunctionManager funcManager = program.getFunctionManager();
+    // REMOVED: collectImports and collectExports methods
+    // These methods have been removed in favor of delegating to ImportExportToolProvider
+    // to benefit from upstream updates to disabled tool handlers.
+    // See importExportHelper.collectImports() and importExportHelper.collectExports()
 
-        AddressIterator entryPoints = symbolTable.getExternalEntryPointIterator();
-        while (entryPoints.hasNext()) {
-            Address addr = entryPoints.next();
-
-            Map<String, Object> info = new HashMap<>();
-            info.put("address", AddressUtil.formatAddress(addr));
-
-            Symbol symbol = symbolTable.getPrimarySymbol(addr);
-            if (symbol != null) {
-                info.put("name", symbol.getName());
-                info.put("symbolType", symbol.getSymbolType().toString());
-
-                Function function = funcManager.getFunctionAt(addr);
-                info.put("isFunction", function != null);
-                if (function != null && function.getSignature() != null) {
-                    info.put("signature", function.getSignature().getPrototypeString());
-                }
-            }
-
-            exports.add(info);
-        }
-
-        exports.sort((a, b) -> {
-            String nameA = (String) a.getOrDefault("name", "");
-            String nameB = (String) b.getOrDefault("name", "");
-            return nameA.compareToIgnoreCase(nameB);
-        });
-
-        return exports;
-    }
-
-    private List<Map<String, Object>> paginate(List<Map<String, Object>> list, int startIndex, int maxCount) {
-        int endIndex = Math.min(startIndex + maxCount, list.size());
-        if (startIndex >= list.size()) {
-            return new ArrayList<>();
-        }
-        return new ArrayList<>(list.subList(startIndex, endIndex));
-    }
-
-    private Map<String, List<Map<String, Object>>> groupImportsByLibrary(List<Map<String, Object>> imports) {
-        Map<String, List<Map<String, Object>>> grouped = new HashMap<>();
-        for (Map<String, Object> imp : imports) {
-            String library = (String) imp.getOrDefault("library", "<unknown>");
-            grouped.computeIfAbsent(library, k -> new ArrayList<>()).add(imp);
-        }
-        return grouped;
-    }
+    // REMOVED: paginate and groupImportsByLibrary methods
+    // These methods have been removed in favor of delegating to ImportExportToolProvider
+    // to benefit from upstream updates to disabled tool handlers.
+    // See importExportHelper.paginate() and importExportHelper.groupImportsByLibrary()
 
     /**
      * Create a map of symbol information
@@ -562,5 +667,142 @@ public class SymbolToolProvider extends AbstractToolProvider {
         }
 
         return symbolInfo;
+    }
+
+
+    private McpSchema.CallToolResult handleDemangleMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        boolean demangleAll = getOptionalBoolean(request, "demangle_all", false);
+        String addressStr = getOptionalString(request, "address", null);
+
+        if (!demangleAll && addressStr == null) {
+            return createErrorResult("address is required for mode='demangle' when demangle_all=false");
+        }
+
+        SymbolTable symbolTable = program.getSymbolTable();
+        List<Map<String, Object>> results = new ArrayList<>();
+
+        int txId = program.startTransaction("Demangle symbols");
+        try {
+            if (demangleAll) {
+                SymbolIterator symbols = symbolTable.getAllSymbols(false);
+                while (symbols.hasNext()) {
+                    Symbol symbol = symbols.next();
+                    if (symbol.getSource() == ghidra.program.model.symbol.SourceType.IMPORTED) {
+                        String mangled = symbol.getName();
+                        String demangled = demangleSymbol(program, mangled);
+                        if (demangled != null && !demangled.equals(mangled)) {
+                            symbol.setName(demangled, ghidra.program.model.symbol.SourceType.USER_DEFINED);
+                            results.add(Map.of(
+                                "address", AddressUtil.formatAddress(symbol.getAddress()),
+                                "mangled", mangled,
+                                "demangled", demangled
+                            ));
+                        }
+                    }
+                }
+            } else {
+                Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+                if (address == null) {
+                    return createErrorResult("Could not resolve address: " + addressStr);
+                }
+
+                Symbol symbol = symbolTable.getPrimarySymbol(address);
+                if (symbol == null) {
+                    return createErrorResult("No symbol found at address: " + AddressUtil.formatAddress(address));
+                }
+
+                String mangled = symbol.getName();
+                String demangled = demangleSymbol(program, mangled);
+                if (demangled != null && !demangled.equals(mangled)) {
+                    symbol.setName(demangled, ghidra.program.model.symbol.SourceType.USER_DEFINED);
+                    results.add(Map.of(
+                        "address", AddressUtil.formatAddress(address),
+                        "mangled", mangled,
+                        "demangled", demangled
+                    ));
+                } else {
+                    return createJsonResult(Map.of(
+                        "success", false,
+                        "message", "Symbol is not mangled or could not be demangled",
+                        "symbol", mangled
+                    ));
+                }
+            }
+
+            autoSaveProgram(program, "Demangled " + results.size() + " symbols");
+            return createJsonResult(Map.of(
+                "success", true,
+                "demangled", results.size(),
+                "results", results
+            ));
+        } catch (Exception e) {
+            return createErrorResult("Demangle failed: " + e.getMessage());
+        } finally {
+            program.endTransaction(txId, true);
+        }
+    }
+
+    /**
+     * Automatically label a symbol based on address context (controlled by REVA_AUTO_LABEL environment variable)
+     */
+    private String autoLabelSymbol(Program program, Address address) {
+        // Check if it's a function
+        Function function = program.getFunctionManager().getFunctionContaining(address);
+        if (function != null) {
+            List<Map<String, Object>> suggestions = reva.util.SmartSuggestionsUtil.suggestFunctionNames(program, function);
+            if (!suggestions.isEmpty()) {
+                return (String) suggestions.get(0).get("name");
+            }
+        }
+
+        // Check for data/string at address
+        Data data = program.getListing().getDataAt(address);
+        if (data != null && data.hasStringValue()) {
+            String str = data.getDefaultValueRepresentation();
+            if (str != null && str.length() > 0 && str.length() < 50) {
+                return "str_" + str.replaceAll("[^a-zA-Z0-9_]", "_").substring(0, Math.min(30, str.length()));
+            }
+        }
+
+        // Default: use address-based name
+        return "label_" + AddressUtil.formatAddress(address).replace("0x", "");
+    }
+
+
+    private Function resolveFunction(Program program, String identifier) {
+        Address address = AddressUtil.resolveAddressOrSymbol(program, identifier);
+        if (address != null) {
+            Function function = program.getFunctionManager().getFunctionContaining(address);
+            if (function != null) {
+                return function;
+            }
+        }
+
+        FunctionManager functionManager = program.getFunctionManager();
+        ghidra.program.model.listing.FunctionIterator functions = functionManager.getFunctions(true);
+        while (functions.hasNext()) {
+            Function f = functions.next();
+            if (f.getName().equals(identifier) || f.getName().equalsIgnoreCase(identifier)) {
+                return f;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Demangle a symbol name using Ghidra's demangler service
+     */
+    private String demangleSymbol(Program program, String mangledName) {
+        try {
+            // Use DemanglerUtil.demangle() static method
+            DemangledObject demangled = DemanglerUtil.demangle(program, mangledName);
+            if (demangled != null) {
+                return demangled.getSignature();
+            }
+        } catch (Exception e) {
+            // Demangling failed - symbol may not be mangled or unsupported format
+        }
+        return null;
     }
 }

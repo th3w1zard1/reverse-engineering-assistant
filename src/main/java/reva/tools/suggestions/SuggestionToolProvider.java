@@ -19,7 +19,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.FunctionTag;
 import ghidra.program.model.listing.Program;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -148,7 +151,10 @@ public class SuggestionToolProvider extends AbstractToolProvider {
             return createErrorResult("function is required for suggestion_type='function_name'");
         }
 
-        Function function = getFunctionFromArgs(request.arguments(), program, "function");
+        Function function = resolveFunction(program, functionStr);
+        if (function == null) {
+            return createErrorResult("Function not found: " + functionStr);
+        }
 
         List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionNames(program, function);
 
@@ -167,7 +173,10 @@ public class SuggestionToolProvider extends AbstractToolProvider {
             return createErrorResult("function is required for suggestion_type='function_tags'");
         }
 
-        Function function = getFunctionFromArgs(request.arguments(), program, "function");
+        Function function = resolveFunction(program, functionStr);
+        if (function == null) {
+            return createErrorResult("Function not found: " + functionStr);
+        }
 
         List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionTags(program, function);
 
@@ -192,7 +201,10 @@ public class SuggestionToolProvider extends AbstractToolProvider {
             return createErrorResult("data_type is required for suggestion_type='variable_name'");
         }
 
-        Function function = getFunctionFromArgs(request.arguments(), program, "function");
+        Function function = resolveFunction(program, functionStr);
+        if (function == null) {
+            return createErrorResult("Function not found: " + functionStr);
+        }
 
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestVariableName(program, function, dataType);
 
@@ -214,7 +226,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
             return createErrorResult("address or variable_address is required for suggestion_type='data_type'");
         }
 
-        ghidra.program.model.address.Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+        Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
         if (address == null) {
             return createErrorResult("Could not resolve address or symbol: " + addressStr);
         }
@@ -222,11 +234,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         Function function = null;
         String functionStr = getOptionalString(request, "function", null);
         if (functionStr != null) {
-            try {
-                function = getFunctionFromArgs(request.arguments(), program, "function");
-            } catch (Exception e) {
-                // Function optional for data type suggestions
-            }
+            function = resolveFunction(program, functionStr);
         }
 
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestDataType(program, function, address);
@@ -237,5 +245,31 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         result.put("suggestion", suggestion);
 
         return createJsonResult(result);
+    }
+
+    /**
+     * Resolve function from identifier (address or name)
+     */
+    private Function resolveFunction(Program program, String identifier) {
+        // Try as address or symbol first
+        Address address = AddressUtil.resolveAddressOrSymbol(program, identifier);
+        if (address != null) {
+            Function function = program.getFunctionManager().getFunctionContaining(address);
+            if (function != null) {
+                return function;
+            }
+        }
+
+        // Try as function name
+        FunctionManager functionManager = program.getFunctionManager();
+        FunctionIterator functions = functionManager.getFunctions(true);
+        while (functions.hasNext()) {
+            Function f = functions.next();
+            if (f.getName().equals(identifier) || f.getName().equalsIgnoreCase(identifier)) {
+                return f;
+            }
+        }
+
+        return null;
     }
 }

@@ -78,7 +78,7 @@ public class StringToolProvider extends AbstractToolProvider {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to the program"
+            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
         properties.put("mode", Map.of(
             "type", "string",
@@ -129,7 +129,7 @@ public class StringToolProvider extends AbstractToolProvider {
             "default", false
         ));
 
-        List<String> required = List.of("programPath");
+        List<String> required = new ArrayList<>();
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("manage-strings")

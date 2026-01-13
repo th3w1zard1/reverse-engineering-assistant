@@ -32,6 +32,7 @@ import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 import reva.util.AddressUtil;
+import reva.util.EnvConfigUtil;
 import reva.util.RevaToolLogger;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -352,6 +353,36 @@ public abstract class AbstractToolProvider implements ToolProvider {
     }
 
     /**
+     * Check if a parameter value is an array (List)
+     * @param value The value to check
+     * @return true if the value is a List
+     */
+    protected boolean isArray(Object value) {
+        return value instanceof List;
+    }
+
+    /**
+     * Get a parameter value as a List, converting single values to single-item lists
+     * @param args The arguments map
+     * @param key The parameter key
+     * @return List of values (may be empty if parameter not found)
+     */
+    @SuppressWarnings("unchecked")
+    protected List<Object> getParameterAsList(Map<String, Object> args, String key) {
+        Object value = getParameterValue(args, key);
+        if (value == null) {
+            return new ArrayList<>();
+        }
+        if (value instanceof List) {
+            return (List<Object>) value;
+        }
+        // Single value - wrap in list
+        List<Object> singleItem = new ArrayList<>();
+        singleItem.add(value);
+        return singleItem;
+    }
+
+    /**
      * Get a required string parameter from arguments
      * @param args The arguments map
      * @param key The parameter key
@@ -362,6 +393,14 @@ public abstract class AbstractToolProvider implements ToolProvider {
         Object value = getParameterValue(args, key);
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
+        }
+        // If it's an array, get the first item
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            if (list.isEmpty()) {
+                throw new IllegalArgumentException("Missing required parameter: " + key);
+            }
+            return list.get(0).toString();
         }
         // Convert non-string values to string for flexibility
         return value.toString();
@@ -388,7 +427,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
     protected String getOptionalString(Map<String, Object> args, String key, String defaultValue) {
         Object value = getParameterValue(args, key);
         if (value == null) {
-            return defaultValue;
+            // Check environment variable for default value
+            return EnvConfigUtil.getStringDefault(key, defaultValue);
         }
         // Convert non-string values to string for flexibility
         return value.toString();
@@ -452,7 +492,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
     protected int getOptionalInt(Map<String, Object> args, String key, int defaultValue) {
         Object value = getParameterValue(args, key);
         if (value == null) {
-            return defaultValue;
+            // Check environment variable for default value
+            return EnvConfigUtil.getIntDefault(key, defaultValue);
         }
         if (value instanceof Number) {
             return ((Number) value).intValue();
@@ -544,7 +585,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
     protected boolean getOptionalBoolean(Map<String, Object> args, String key, boolean defaultValue) {
         Object value = getParameterValue(args, key);
         if (value == null) {
-            return defaultValue;
+            // Check environment variable for default value
+            return EnvConfigUtil.getBooleanDefault(key, defaultValue);
         }
         if (value instanceof Boolean) {
             return (Boolean) value;
@@ -669,25 +711,27 @@ public abstract class AbstractToolProvider implements ToolProvider {
 
     /**
      * Get a validated program from MCP CallToolRequest. Handles parameter extraction and validation in one call.
+     * If programPath is not provided, attempts to use the current program from GUI (like GhidraMCP).
      * @param request The CallToolRequest from MCP tool call
      * @return A valid Program object
-     * @throws IllegalArgumentException if programPath parameter is missing or invalid
+     * @throws IllegalArgumentException if programPath parameter is missing and no current program is available
      * @throws ProgramValidationException if the program is not found, invalid, or in an invalid state
      */
     protected Program getProgramFromArgs(CallToolRequest request) throws IllegalArgumentException, ProgramValidationException {
-        String programPath = getString(request, "programPath");
-        return getValidatedProgram(programPath);
+        return getProgramFromArgs(request.arguments());
     }
 
     /**
      * Get a validated program from MCP arguments. Handles parameter extraction and validation in one call.
+     * If programPath is not provided, attempts to use the current program from GUI (like GhidraMCP).
      * @param args The arguments map from MCP tool call
      * @return A valid Program object
-     * @throws IllegalArgumentException if programPath parameter is missing or invalid
+     * @throws IllegalArgumentException if programPath parameter is missing and no current program is available
      * @throws ProgramValidationException if the program is not found, invalid, or in an invalid state
      */
     protected Program getProgramFromArgs(Map<String, Object> args) throws IllegalArgumentException, ProgramValidationException {
-        String programPath = getString(args, "programPath");
+        // Try to get programPath, but don't throw if it's missing - we'll try current program instead
+        String programPath = getOptionalString(args, "programPath", null);
         return getValidatedProgram(programPath);
     }
 

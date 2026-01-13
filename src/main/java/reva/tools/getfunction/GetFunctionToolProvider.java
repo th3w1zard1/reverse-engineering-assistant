@@ -45,6 +45,7 @@ import ghidra.util.task.TimeoutTaskMonitor;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 import reva.plugin.ConfigManager;
@@ -73,12 +74,20 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", Map.of(
             "type", "string",
-            "description", "Path in the Ghidra Project to the program"
+            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
-        properties.put("identifier", Map.of(
-            "type", "string",
-            "description", "Function name or address (e.g., 'main' or '0x401000')"
+        Map<String, Object> identifierProperty = new HashMap<>();
+        identifierProperty.put("type", "string");
+        identifierProperty.put("description", "Function name or address (e.g., 'main' or '0x401000'). Can be a single string or an array of strings for batch operations.");
+        Map<String, Object> identifierArraySchema = new HashMap<>();
+        identifierArraySchema.put("type", "array");
+        identifierArraySchema.put("items", Map.of("type", "string"));
+        identifierArraySchema.put("description", "Array of function names or addresses for batch operations");
+        identifierProperty.put("oneOf", List.of(
+            Map.of("type", "string"),
+            identifierArraySchema
         ));
+        properties.put("identifier", identifierProperty);
         properties.put("view", Map.of(
             "type", "string",
             "description", "View mode: 'decompile', 'disassemble', 'info', 'calls'",
@@ -121,18 +130,26 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             "default", true
         ));
 
-        List<String> required = List.of("programPath", "identifier");
+        List<String> required = List.of("identifier");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("get-function")
-            .title("Get Function")
-            .description("Get function details in various formats: decompiled code, assembly, function information, or internal calls")
+            .name("get-functions")
+            .title("Get Functions")
+            .description("Get function details in various formats: decompiled code, assembly, function information, or internal calls. Supports single function or batch operations when identifier is an array.")
             .inputSchema(createSchema(properties, required))
             .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
                 Program program = getProgramFromArgs(request);
+
+                // Check if identifier is an array (batch mode)
+                Object identifierValue = request.arguments().get("identifier");
+                if (identifierValue instanceof List) {
+                    return handleBatchGetFunction(program, request, (List<?>) identifierValue);
+                }
+
+                // Single function mode
                 String identifier = getString(request, "identifier");
                 String view = getOptionalString(request, "view", "decompile");
 
@@ -140,6 +157,11 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 if (function == null) {
                     return createErrorResult("Function not found: " + identifier);
                 }
+
+                // Intelligent bookmarking: check if function entry point should be bookmarked
+                int bookmarkThreshold = reva.util.EnvConfigUtil.getIntDefault("auto_bookmark_threshold",
+                    reva.util.IntelligentBookmarkUtil.getDefaultThreshold());
+                reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, function.getEntryPoint(), bookmarkThreshold);
 
                 switch (view) {
                     case "decompile":
@@ -552,5 +574,120 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         }
 
         return result.toString();
+    }
+
+    /**
+     * Handle batch get-functions operations when identifier is an array
+     */
+    private McpSchema.CallToolResult handleBatchGetFunction(Program program, CallToolRequest request, List<?> identifierList) {
+        String view = getOptionalString(request, "view", "decompile");
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        for (int i = 0; i < identifierList.size(); i++) {
+            try {
+                String identifier = identifierList.get(i).toString();
+                Function function = resolveFunction(program, identifier);
+                if (function == null) {
+                    errors.add(Map.of("index", i, "identifier", identifier, "error", "Function not found"));
+                    continue;
+                }
+
+                Map<String, Object> functionResult = new HashMap<>();
+                functionResult.put("index", i);
+                functionResult.put("identifier", identifier);
+                functionResult.put("name", function.getName());
+                functionResult.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
+
+                switch (view) {
+                    case "decompile":
+                        McpSchema.CallToolResult decompileResult = handleDecompileView(program, function, request);
+                        if (decompileResult.isError()) {
+                            String errorText = extractTextFromContent(decompileResult.content().get(0));
+                            errors.add(Map.of("index", i, "identifier", identifier, "error", errorText));
+                        } else {
+                            // Extract structured data from JSON result
+                            Map<String, Object> decompileData = extractJsonDataFromResult(decompileResult);
+                            functionResult.putAll(decompileData);
+                        }
+                        break;
+                    case "disassemble":
+                        McpSchema.CallToolResult disassembleResult = handleDisassembleView(program, function);
+                        if (disassembleResult.isError()) {
+                            String errorText = extractTextFromContent(disassembleResult.content().get(0));
+                            errors.add(Map.of("index", i, "identifier", identifier, "error", errorText));
+                        } else {
+                            Map<String, Object> disassembleData = extractJsonDataFromResult(disassembleResult);
+                            functionResult.putAll(disassembleData);
+                        }
+                        break;
+                    case "info":
+                        McpSchema.CallToolResult infoResult = handleInfoView(program, function);
+                        if (infoResult.isError()) {
+                            String errorText = extractTextFromContent(infoResult.content().get(0));
+                            errors.add(Map.of("index", i, "identifier", identifier, "error", errorText));
+                        } else {
+                            Map<String, Object> infoData = extractJsonDataFromResult(infoResult);
+                            functionResult.putAll(infoData);
+                        }
+                        break;
+                    case "calls":
+                        McpSchema.CallToolResult callsResult = handleCallsView(program, function);
+                        if (callsResult.isError()) {
+                            String errorText = extractTextFromContent(callsResult.content().get(0));
+                            errors.add(Map.of("index", i, "identifier", identifier, "error", errorText));
+                        } else {
+                            Map<String, Object> callsData = extractJsonDataFromResult(callsResult);
+                            functionResult.putAll(callsData);
+                        }
+                        break;
+                    default:
+                        errors.add(Map.of("index", i, "identifier", identifier, "error", "Invalid view: " + view));
+                        continue;
+                }
+
+                results.add(functionResult);
+            } catch (Exception e) {
+                errors.add(Map.of("index", i, "identifier", identifierList.get(i).toString(), "error", e.getMessage()));
+            }
+        }
+
+        Map<String, Object> resultData = new HashMap<>();
+        resultData.put("success", true);
+        resultData.put("view", view);
+        resultData.put("total", identifierList.size());
+        resultData.put("succeeded", results.size());
+        resultData.put("failed", errors.size());
+        resultData.put("results", results);
+        if (!errors.isEmpty()) {
+            resultData.put("errors", errors);
+        }
+
+        return createJsonResult(resultData);
+    }
+
+    /**
+     * Extract JSON data from a CallToolResult, returning the parsed map
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractJsonDataFromResult(McpSchema.CallToolResult result) {
+        try {
+            String jsonText = extractTextFromContent(result.content().get(0));
+            return JSON.readValue(jsonText, Map.class);
+        } catch (Exception e) {
+            // Fallback: return empty map if parsing fails
+            logError("Error extracting JSON data from result", e);
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Helper method to extract text from Content object
+     */
+    private String extractTextFromContent(McpSchema.Content content) {
+        if (content instanceof TextContent) {
+            return ((TextContent) content).text();
+        }
+        return content.toString();
     }
 }

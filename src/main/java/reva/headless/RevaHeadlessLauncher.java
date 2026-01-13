@@ -22,13 +22,13 @@ import ghidra.base.project.GhidraProject;
 import ghidra.framework.Application;
 import ghidra.framework.ApplicationConfiguration;
 import ghidra.framework.HeadlessGhidraApplicationConfiguration;
-import ghidra.framework.model.ProjectLocator;
 import utility.application.ApplicationLayout;
 import ghidra.util.Msg;
 import ghidra.GhidraApplicationLayout;
 
 import reva.plugin.ConfigManager;
 import reva.server.McpServerManager;
+import reva.util.ProjectUtil;
 
 /**
  * Headless launcher for ReVa MCP server.
@@ -181,8 +181,18 @@ public class RevaHeadlessLauncher {
         // Create/open persistent project if location and name specified
         if (projectLocation != null && projectName != null) {
             try {
-                ghidraProject = createOrOpenProject(projectLocation, projectName);
-                Msg.info(this, "Opened project: " + projectName);
+                ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
+                    projectLocation, projectName, true, this);
+                ghidraProject = result.getGhidraProject();
+                if (result.wasAlreadyOpen()) {
+                    Msg.info(this, "Project '" + projectName + "' is already open, using active project");
+                } else if (result.wasCreated()) {
+                    Msg.info(this, "Created new project: " + projectName);
+                } else {
+                    Msg.info(this, "Opened project: " + projectName);
+                }
+            } catch (IOException e) {
+                throw e;
             } catch (Exception e) {
                 throw new IOException("Failed to create/open project: " + projectName, e);
             }
@@ -195,37 +205,6 @@ public class RevaHeadlessLauncher {
         Msg.info(this, "ReVa MCP server started in headless mode");
     }
 
-    /**
-     * Create or open a persistent Ghidra project
-     * @param location The directory where projects are stored
-     * @param name The project name
-     * @return The opened GhidraProject
-     * @throws IOException if project creation/opening fails
-     */
-    private GhidraProject createOrOpenProject(File location, String name) throws IOException {
-        try {
-            // Ensure project directory exists
-            if (!location.exists()) {
-                if (!location.mkdirs()) {
-                    throw new IOException("Failed to create project directory: " + location.getAbsolutePath());
-                }
-            }
-
-            String projectLocationPath = location.getAbsolutePath();
-            ProjectLocator locator = new ProjectLocator(projectLocationPath, name);
-
-            // Check if project already exists
-            if (locator.getMarkerFile().exists() && locator.getProjectDir().exists()) {
-                Msg.info(this, "Opening existing project: " + name + " at " + projectLocationPath);
-                return GhidraProject.openProject(projectLocationPath, name, true);
-            } else {
-                Msg.info(this, "Creating new project: " + name + " at " + projectLocationPath);
-                return GhidraProject.createProject(projectLocationPath, name, false);
-            }
-        } catch (Exception e) {
-            throw new IOException("Failed to create/open project: " + name, e);
-        }
-    }
 
     /**
      * Stop the server and cleanup

@@ -45,6 +45,9 @@ import reva.util.DataTypeParserUtil;
  *
  * NOTE: The tools in this provider were removed/consolidated but are kept here as disabled
  * for compatibility with the upstream repository.
+ *
+ * Helper methods are kept accessible (protected) so they can be reused by other tools
+ * and benefit from upstream updates to the disabled tool handlers.
  */
 public class DataToolProvider extends AbstractToolProvider {
     /**
@@ -303,13 +306,16 @@ public class DataToolProvider extends AbstractToolProvider {
     */
 
     /**
-     * Helper method to get data at a specific address and format the result
+     * Helper method to get data at a specific address and format the result.
+     *
+     * NOTE: This method is kept for upstream compatibility and future use.
+     * When upstream updates the disabled get-data tool handler, update this method accordingly.
+     *
      * @param program The program to look up data in
      * @param address The address where to find data
      * @return Call tool result with data information
      */
-    /*
-    private CallToolResult getDataAtAddressResult(Program program, Address address) {
+    protected CallToolResult getDataAtAddressResult(Program program, Address address) {
         // Get data at or containing the address
         Data data = AddressUtil.getContainingData(program, address);
         if (data == null) {
@@ -363,5 +369,131 @@ public class DataToolProvider extends AbstractToolProvider {
             return createErrorResult("Error converting data to JSON: " + e.getMessage());
         }
     }
-    */
+
+    /**
+     * Helper method to apply a data type at a specific address.
+     *
+     * NOTE: This method is kept for upstream compatibility and future use.
+     * When upstream updates the disabled apply-data-type tool handler, update this method accordingly.
+     *
+     * @param program The program
+     * @param targetAddress The address to apply the data type to
+     * @param dataTypeString String representation of the data type
+     * @param archiveName Optional archive name to search in
+     * @return Call tool result with success status and data type information
+     */
+    protected McpSchema.CallToolResult applyDataTypeAtAddress(Program program, Address targetAddress, String dataTypeString, String archiveName) {
+        if (dataTypeString.trim().isEmpty()) {
+            return createErrorResult("Data type string cannot be empty");
+        }
+
+        try {
+            // Try to parse the data type from the string and get the actual DataType object
+            DataType dataType;
+            try {
+                dataType = DataTypeParserUtil.parseDataTypeObjectFromString(dataTypeString, archiveName);
+                if (dataType == null) {
+                    return createErrorResult("Could not find data type: " + dataTypeString +
+                        ". Try using the get-data-type-archives and get-data-types tools to find available data types.");
+                }
+            } catch (Exception e) {
+                return createErrorResult("Error parsing data type: " + e.getMessage() +
+                    ". Try using the get-data-type-archives and get-data-types tools to find available data types.");
+            }
+
+            // Start a transaction to apply the data type
+            int transactionID = program.startTransaction("Apply Data Type");
+            boolean success = false;
+
+            try {
+                // Get the listing and apply the data type at the symbol's address
+                Listing listing = program.getListing();
+
+                // Clear any existing data at the address
+                if (listing.getDataAt(targetAddress) != null) {
+                    listing.clearCodeUnits(targetAddress, targetAddress.add(dataType.getLength() - 1), false);
+                }
+
+                // Create the data at the address with the specified data type
+                Data createdData = listing.createData(targetAddress, dataType);
+
+                if (createdData == null) {
+                    throw new Exception("Failed to create data at address: " + targetAddress);
+                }
+
+                success = true;
+
+                // Create result data
+                Map<String, Object> resultData = new HashMap<>();
+                resultData.put("success", true);
+                resultData.put("address", AddressUtil.formatAddress(targetAddress));
+                resultData.put("dataType", dataType.getName());
+                resultData.put("dataTypeDisplayName", dataType.getDisplayName());
+                resultData.put("length", dataType.getLength());
+
+                return createJsonResult(resultData);
+            } finally {
+                // End transaction
+                program.endTransaction(transactionID, success);
+            }
+        } catch (Exception e) {
+            return createErrorResult("Error applying data type to symbol: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Helper method to create a label at a specific address.
+     *
+     * NOTE: This method is kept for upstream compatibility and future use.
+     * When upstream updates the disabled create-label tool handler, update this method accordingly.
+     *
+     * @param program The program
+     * @param address The address to create the label at
+     * @param labelName The name for the label
+     * @param setAsPrimary Whether to set the label as primary
+     * @return Call tool result with success status and label information
+     */
+    protected McpSchema.CallToolResult createLabelAtAddress(Program program, Address address, String labelName, boolean setAsPrimary) {
+        if (labelName.trim().isEmpty()) {
+            return createErrorResult("Label name cannot be empty");
+        }
+
+        // Start a transaction to create the label
+        int transactionID = program.startTransaction("Create Label");
+        boolean success = false;
+
+        try {
+            // Get the symbol table
+            SymbolTable symbolTable = program.getSymbolTable();
+
+            // Create the label
+            Symbol symbol = symbolTable.createLabel(address, labelName,
+                program.getGlobalNamespace(), ghidra.program.model.symbol.SourceType.USER_DEFINED);
+
+            if (symbol == null) {
+                throw new Exception("Failed to create label at address: " + address);
+            }
+
+            // Set the label as primary if requested
+            if (setAsPrimary && !symbol.isPrimary()) {
+                symbol.setPrimary();
+            }
+
+            success = true;
+
+            // Create result data
+            Map<String, Object> resultData = new HashMap<>();
+            resultData.put("success", true);
+            resultData.put("labelName", labelName);
+            resultData.put("address", AddressUtil.formatAddress(address));
+            resultData.put("isPrimary", symbol.isPrimary());
+
+            return createJsonResult(resultData);
+        } catch (Exception e) {
+            return createErrorResult("Error creating label: " + e.getMessage());
+        } finally {
+            // End transaction
+            program.endTransaction(transactionID, success);
+        }
+    }
 }

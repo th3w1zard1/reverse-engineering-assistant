@@ -34,6 +34,7 @@ import ghidra.util.data.DataTypeParser;
 import ghidra.util.data.DataTypeParser.AllowedDataTypes;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 import reva.util.DataTypeParserUtil;
@@ -87,7 +88,18 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("new_field_name", SchemaUtil.stringProperty("New name for the field when action='modify_field'"));
         properties.put("new_comment", SchemaUtil.stringProperty("New comment for the field when action='modify_field'"));
         properties.put("new_length", SchemaUtil.integerProperty("New length for the field when action='modify_field'"));
-        properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name to apply structure when action='apply'"));
+        Map<String, Object> addressOrSymbolProperty = new HashMap<>();
+        addressOrSymbolProperty.put("type", "string");
+        addressOrSymbolProperty.put("description", "Address or symbol name to apply structure to. Can be a single string or an array of strings for batch operations when action='apply'.");
+        Map<String, Object> addressOrSymbolArraySchema = new HashMap<>();
+        addressOrSymbolArraySchema.put("type", "array");
+        addressOrSymbolArraySchema.put("items", Map.of("type", "string"));
+        addressOrSymbolArraySchema.put("description", "Array of addresses or symbol names for batch operations");
+        addressOrSymbolProperty.put("oneOf", List.of(
+            Map.of("type", "string"),
+            addressOrSymbolArraySchema
+        ));
+        properties.put("address_or_symbol", addressOrSymbolProperty);
         properties.put("clear_existing", SchemaUtil.booleanPropertyWithDefault("Clear existing data when action='apply'", true));
         properties.put("force", SchemaUtil.booleanPropertyWithDefault("Force deletion even if structure is referenced when action='delete'", false));
         properties.put("name_filter", SchemaUtil.stringProperty("Filter by name (substring match) when action='list'"));
@@ -511,11 +523,23 @@ public class StructureToolProvider extends AbstractToolProvider {
         if (structureName == null) {
             return createErrorResult("structure_name is required for action='apply'");
         }
+        boolean clearExisting = getOptionalBoolean(request, "clear_existing", getOptionalBoolean(request, "clearExisting", true));
+
+        // Check if address_or_symbol is an array (batch mode)
+        Object addressOrSymbolValue = request.arguments().get("address_or_symbol");
+        if (addressOrSymbolValue == null) {
+            addressOrSymbolValue = request.arguments().get("addressOrSymbol");
+        }
+
+        if (addressOrSymbolValue instanceof List) {
+            return handleBatchApplyStructure(program, request, structureName, clearExisting, (List<?>) addressOrSymbolValue);
+        }
+
+        // Single address mode
         String addressOrSymbol = getOptionalString(request, "address_or_symbol", getOptionalString(request, "addressOrSymbol", null));
         if (addressOrSymbol == null) {
             return createErrorResult("address_or_symbol is required for action='apply'");
         }
-        boolean clearExisting = getOptionalBoolean(request, "clear_existing", getOptionalBoolean(request, "clearExisting", true));
 
         Address address = AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
         if (address == null) {
@@ -547,6 +571,81 @@ public class StructureToolProvider extends AbstractToolProvider {
             program.endTransaction(txId, false);
             return createErrorResult("Failed to apply structure: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle batch apply structure operations when address_or_symbol is an array
+     */
+    private McpSchema.CallToolResult handleBatchApplyStructure(Program program, CallToolRequest request,
+            String structureName, boolean clearExisting, List<?> addressList) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        // Find structure once for all addresses
+        DataTypeManager dtm = program.getDataTypeManager();
+        DataType dt = findDataTypeByName(dtm, structureName);
+        if (dt == null || !(dt instanceof Composite)) {
+            return createErrorResult("Structure not found: " + structureName);
+        }
+
+        int txId = program.startTransaction("Batch Apply Structure");
+        boolean committed = false;
+
+        try {
+            Listing listing = program.getListing();
+
+            for (int i = 0; i < addressList.size(); i++) {
+                try {
+                    String addressOrSymbol = addressList.get(i).toString();
+                    Address address = AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
+
+                    if (address == null) {
+                        errors.add(Map.of("index", i, "address_or_symbol", addressOrSymbol, "error", "Could not resolve address or symbol"));
+                        continue;
+                    }
+
+                    // Clear existing data if requested
+                    if (clearExisting) {
+                        listing.clearCodeUnits(address, address.add(dt.getLength() - 1), false);
+                    }
+
+                    // Create data with the structure type
+                    listing.createData(address, dt);
+
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("index", i);
+                    result.put("address", AddressUtil.formatAddress(address));
+                    result.put("structureName", structureName);
+                    results.add(result);
+
+                } catch (Exception e) {
+                    errors.add(Map.of("index", i, "address_or_symbol", addressList.get(i).toString(), "error", e.getMessage()));
+                }
+            }
+
+            program.endTransaction(txId, true);
+            committed = true;
+            autoSaveProgram(program, "Batch apply structure");
+
+        } catch (Exception e) {
+            if (!committed) {
+                program.endTransaction(txId, false);
+            }
+            return createErrorResult("Error in batch apply structure: " + e.getMessage());
+        }
+
+        Map<String, Object> resultData = new HashMap<>();
+        resultData.put("success", true);
+        resultData.put("structureName", structureName);
+        resultData.put("total", addressList.size());
+        resultData.put("succeeded", results.size());
+        resultData.put("failed", errors.size());
+        resultData.put("results", results);
+        if (!errors.isEmpty()) {
+            resultData.put("errors", errors);
+        }
+
+        return createJsonResult(resultData);
     }
 
     private McpSchema.CallToolResult handleDeleteAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {

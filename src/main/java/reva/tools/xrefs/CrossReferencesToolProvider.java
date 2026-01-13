@@ -50,20 +50,28 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
+import reva.tools.imports.ImportExportToolProvider;
 import reva.util.AddressUtil;
 import reva.util.DecompilationContextUtil;
 import reva.util.DecompilationReadTracker;
 import reva.util.RevaInternalServiceRegistry;
 
 /**
- * Tool provider for cross-reference operations.
- * Provides a unified tool to retrieve references to and from addresses or symbols
- * with optional decompilation context snippets.
+ * Tool provider for cross-reference operations. Provides a unified tool to
+ * retrieve references to and from addresses or symbols with optional
+ * decompilation context snippets.
+ *
+ * NOTE: For thunk chain resolution, this provider delegates to
+ * ImportExportToolProvider to benefit from upstream updates to disabled tool
+ * handlers.
  */
 public class CrossReferencesToolProvider extends AbstractToolProvider {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 60;
-    private static final int MAX_THUNK_CHAIN_DEPTH = 10;
+
+    // Helper instance to access ImportExportToolProvider methods
+    // This allows us to reuse logic from disabled tools and benefit from upstream updates
+    private final ImportExportToolProvider importExportHelper;
 
     /**
      * Constructor
@@ -71,6 +79,8 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
      */
     public CrossReferencesToolProvider(McpSyncServer server) {
         super(server);
+        // Create helper instance to access protected methods from disabled tool provider
+        this.importExportHelper = new ImportExportToolProvider(server);
     }
 
     /**
@@ -110,10 +120,24 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
-        properties.put("target", Map.of(
-            "type", "string",
-            "description", "Target address, symbol name, function name, or import name"
+        Map<String, Object> targetProperty = new HashMap<>();
+        targetProperty.put("type", "string");
+        targetProperty.put("description", "Target address, symbol name, function name, or import name. Can be a single string or an array of strings for batch operations.");
+        Map<String, Object> targetArraySchema = new HashMap<>();
+        targetArraySchema.put("type", "array");
+        targetArraySchema.put(
+            "items",
+            Map.of("type", "string")
+        );
+        targetArraySchema.put(
+            "description",
+            "Array of target addresses, symbols, function names, or import names for batch operations"
+        );
+        targetProperty.put("oneOf", List.of(
+            Map.of("type", "string"),
+            targetArraySchema
         ));
+        properties.put("target", targetProperty);
         properties.put("mode", Map.of(
             "type", "string",
             "description", "Reference mode: 'to', 'from', 'both', 'function', 'referencers_decomp', 'import', 'thunk'",
@@ -178,6 +202,14 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         registerTool(tool, (exchange, request) -> {
             try {
                 Program program = getProgramFromArgs(request);
+
+                // Check if target is an array (batch mode)
+                Object targetValue = request.arguments().get("target");
+                if (targetValue instanceof List) {
+                    return handleBatchGetReferences(program, request, (List<?>) targetValue);
+                }
+
+                // Single target mode
                 String target = getString(request, "target");
                 String mode = getOptionalString(request, "mode", "both");
 
@@ -572,7 +604,8 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             return createErrorResult("No function found at address: " + AddressUtil.formatAddress(address));
         }
 
-        List<Map<String, Object>> chain = buildThunkChain(function);
+        // Delegate to ImportExportToolProvider to benefit from upstream updates
+        List<Map<String, Object>> chain = importExportHelper.buildThunkChain(function);
         Map<String, Object> finalTarget = chain.get(chain.size() - 1);
         boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
 
@@ -586,49 +619,10 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         return createJsonResult(result);
     }
 
-    private List<Map<String, Object>> buildThunkChain(Function function) {
-        List<Map<String, Object>> chain = new ArrayList<>();
-        Function current = function;
-        int depth = 0;
-
-        while (current != null && depth < MAX_THUNK_CHAIN_DEPTH) {
-            Map<String, Object> info = new HashMap<>();
-            info.put("name", current.getName());
-            Address entryPoint = current.getEntryPoint();
-            if (entryPoint != null) {
-                info.put("address", AddressUtil.formatAddress(entryPoint));
-            }
-            info.put("isThunk", current.isThunk());
-            info.put("isExternal", current.isExternal());
-
-            if (current.isExternal()) {
-                ExternalLocation extLoc = current.getExternalLocation();
-                if (extLoc != null) {
-                    info.put("library", extLoc.getLibraryName());
-                    String origName = extLoc.getOriginalImportedName();
-                    if (origName != null) {
-                        info.put("originalName", origName);
-                    }
-                }
-            }
-
-            chain.add(info);
-
-            if (current.isThunk()) {
-                Function next = current.getThunkedFunction(false);
-                if (next != null && !next.equals(current)) {
-                    current = next;
-                    depth++;
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        return chain;
-    }
+    // REMOVED: buildThunkChain method
+    // This method has been removed in favor of delegating to ImportExportToolProvider
+    // to benefit from upstream updates to disabled tool handlers.
+    // See importExportHelper.buildThunkChain()
 
     /**
      * Create reference information map with optional decompilation context
@@ -944,5 +938,99 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         }
 
         return info;
+    }
+
+    /**
+     * Handle batch get-references operations when target is an array
+     */
+    private McpSchema.CallToolResult handleBatchGetReferences(Program program, CallToolRequest request, List<?> targetList) {
+        String mode = getOptionalString(request, "mode", "both");
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        for (int i = 0; i < targetList.size(); i++) {
+            try {
+                String target = targetList.get(i).toString();
+                Map<String, Object> targetResult = new HashMap<>();
+                targetResult.put("index", i);
+                targetResult.put("target", target);
+
+                McpSchema.CallToolResult singleResult;
+                switch (mode) {
+                    case "to":
+                        singleResult = handleReferencesToMode(program, target, request);
+                        break;
+                    case "from":
+                        singleResult = handleReferencesFromMode(program, target, request);
+                        break;
+                    case "both":
+                        singleResult = handleReferencesBothMode(program, target, request);
+                        break;
+                    case "function":
+                        singleResult = handleReferencesFunctionMode(program, target, request);
+                        break;
+                    case "referencers_decomp":
+                        singleResult = handleReferencersDecompiledMode(program, target, request);
+                        break;
+                    case "import":
+                        singleResult = handleImportReferencesMode(program, target, request);
+                        break;
+                    case "thunk":
+                        singleResult = handleThunkMode(program, target, request);
+                        break;
+                    default:
+                        errors.add(Map.of("index", i, "target", target, "error", "Invalid mode: " + mode));
+                        continue;
+                }
+
+                if (singleResult.isError()) {
+                    String errorText = extractTextFromContent(singleResult.content().get(0));
+                    errors.add(Map.of("index", i, "target", target, "error", errorText));
+                } else {
+                    Map<String, Object> resultData = extractJsonDataFromResult(singleResult);
+                    targetResult.putAll(resultData);
+                    results.add(targetResult);
+                }
+            } catch (Exception e) {
+                errors.add(Map.of("index", i, "target", targetList.get(i).toString(), "error", e.getMessage()));
+            }
+        }
+
+        Map<String, Object> resultData = new HashMap<>();
+        resultData.put("success", true);
+        resultData.put("mode", mode);
+        resultData.put("total", targetList.size());
+        resultData.put("succeeded", results.size());
+        resultData.put("failed", errors.size());
+        resultData.put("results", results);
+        if (!errors.isEmpty()) {
+            resultData.put("errors", errors);
+        }
+
+        return createJsonResult(resultData);
+    }
+
+    /**
+     * Extract JSON data from a CallToolResult, returning the parsed map
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractJsonDataFromResult(McpSchema.CallToolResult result) {
+        try {
+            String jsonText = extractTextFromContent(result.content().get(0));
+            return JSON.readValue(jsonText, Map.class);
+        } catch (Exception e) {
+            logError("Error extracting JSON data from result", e);
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Helper method to extract text from Content object
+     */
+    private String extractTextFromContent(McpSchema.Content content) {
+        if (content instanceof io.modelcontextprotocol.spec.McpSchema.TextContent) {
+            return ((io.modelcontextprotocol.spec.McpSchema.TextContent) content).text();
+        }
+        return content.toString();
     }
 }

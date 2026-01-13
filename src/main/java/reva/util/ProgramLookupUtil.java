@@ -19,10 +19,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import ghidra.app.services.ProgramManager;
 import ghidra.framework.main.AppInfo;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.model.Project;
+import ghidra.framework.model.ToolManager;
+import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 import reva.plugin.RevaProgramManager;
@@ -35,17 +38,54 @@ import reva.tools.ProgramValidationException;
 public class ProgramLookupUtil {
 
     /**
+     * Get the current program from the active Code Browser tool (GUI mode only).
+     * This matches GhidraMCP's behavior of getting the "current" program from the GUI.
+     *
+     * @return The current program from the active Code Browser, or null if not available
+     */
+    public static Program getCurrentProgramFromGUI() {
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            return null;
+        }
+
+        ToolManager toolManager = project.getToolManager();
+        if (toolManager == null) {
+            return null;
+        }
+
+        // Find a Code Browser tool with ProgramManager service
+        PluginTool[] runningTools = toolManager.getRunningTools();
+        for (PluginTool runningTool : runningTools) {
+            ProgramManager programManager = runningTool.getService(ProgramManager.class);
+            if (programManager != null) {
+                Program currentProgram = programManager.getCurrentProgram();
+                if (currentProgram != null && !currentProgram.isClosed()) {
+                    return currentProgram;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Get a validated program by its path with helpful error messages.
      * This method first attempts to find the program using RevaProgramManager,
      * and if that fails, provides a helpful error message with available programs.
-     * 
-     * @param programPath The path to the program (e.g., "/Hatchery.exe")
+     *
+     * @param programPath The path to the program (e.g., "/Hatchery.exe"), or null to use current program from GUI
      * @return A valid Program object
      * @throws ProgramValidationException if the program cannot be found or is invalid
      */
     public static Program getValidatedProgram(String programPath) throws ProgramValidationException {
+        // If programPath is null or empty, try to get current program from GUI (like GhidraMCP)
         if (programPath == null || programPath.trim().isEmpty()) {
-            throw new ProgramValidationException("Program path cannot be null or empty");
+            Program currentProgram = getCurrentProgramFromGUI();
+            if (currentProgram != null) {
+                return currentProgram;
+            }
+            throw new ProgramValidationException("Program path is required when no program is currently active in the Code Browser");
         }
 
         // First try the standard lookup
@@ -61,7 +101,7 @@ public class ProgramLookupUtil {
 
     /**
      * Build an error message with suggestions for available programs.
-     * 
+     *
      * @param requestedPath The path that was requested but not found
      * @return A helpful error message with suggestions
      */
@@ -71,11 +111,11 @@ public class ProgramLookupUtil {
 
         // Get list of available programs
         List<String> availablePrograms = getAvailableProgramPaths();
-        
+
         if (!availablePrograms.isEmpty()) {
             // Try to find similar programs
             List<String> suggestions = findSimilarPrograms(requestedPath, availablePrograms);
-            
+
             if (!suggestions.isEmpty()) {
                 message.append("\n\nDid you mean one of these?");
                 for (String suggestion : suggestions) {
@@ -98,7 +138,7 @@ public class ProgramLookupUtil {
     /**
      * Get a list of all available program paths.
      * This includes both open programs and programs in the project.
-     * 
+     *
      * @return List of available program paths
      */
     private static List<String> getAvailableProgramPaths() {
@@ -132,7 +172,7 @@ public class ProgramLookupUtil {
 
     /**
      * Recursively collect program paths from a domain folder.
-     * 
+     *
      * @param folder The folder to search
      * @param paths The list to add paths to
      */
@@ -152,27 +192,27 @@ public class ProgramLookupUtil {
 
     /**
      * Find programs with similar names to the requested path.
-     * 
+     *
      * @param requestedPath The path that was requested
      * @param availablePrograms List of available program paths
      * @return List of similar program paths (up to 3)
      */
     private static List<String> findSimilarPrograms(String requestedPath, List<String> availablePrograms) {
         List<String> suggestions = new ArrayList<>();
-        
+
         // Normalize the requested path for comparison
         String normalizedRequest = requestedPath.toLowerCase();
         // Remove leading slash if present
         if (normalizedRequest.startsWith("/")) {
             normalizedRequest = normalizedRequest.substring(1);
         }
-        
+
         // Look for programs that contain the requested name
         for (String available : availablePrograms) {
             String normalizedAvailable = available.toLowerCase();
-            
+
             // Check if the available program contains the requested name
-            if (normalizedAvailable.contains(normalizedRequest) || 
+            if (normalizedAvailable.contains(normalizedRequest) ||
                 normalizedRequest.contains(getFileName(normalizedAvailable))) {
                 suggestions.add(available);
                 if (suggestions.size() >= 3) {
@@ -186,7 +226,7 @@ public class ProgramLookupUtil {
             String requestedFileName = getFileName(normalizedRequest);
             for (String available : availablePrograms) {
                 String availableFileName = getFileName(available.toLowerCase());
-                if (availableFileName.contains(requestedFileName) || 
+                if (availableFileName.contains(requestedFileName) ||
                     requestedFileName.contains(availableFileName)) {
                     suggestions.add(available);
                     if (suggestions.size() >= 3) {
@@ -201,7 +241,7 @@ public class ProgramLookupUtil {
 
     /**
      * Extract the file name from a path.
-     * 
+     *
      * @param path The full path
      * @return The file name portion
      */

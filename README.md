@@ -51,6 +51,8 @@ You can ask questions like:
 
 - [Installation](#installation)
 - [Usage](#usage)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
 - [Assistant Mode](#assistant-mode)
   - [Claude Code (Assistant)](#claude-code-assistant)
   - [VSCode (Assistant)](#vscode-assistant)
@@ -78,6 +80,53 @@ After installing the extension you need to activate it in two places:
 
 1. In the Project view, open the File menu and select "Configure". Click the "Configure all plugins" button on the top right of the menu (it looks like a plug). Check the "ReVa Application Plugin"
 2. In the Code Browser tool (Click the Dragon icon or open a File), open the File menu and select "Configure". Click the "Configure all plugins" button on the top right of the menu (it looks like a plug). Check the "ReVa Plugin". Then Press File and select "Save Tool". This will enable ReVa by default.
+
+## Configuration
+
+### Environment Variables
+
+ReVa supports configuring default parameter values via environment variables. This allows you to set global defaults for tool parameters without specifying them in every tool call.
+
+Environment variables follow the pattern: `REVA_<PARAMETER_NAME>` where `PARAMETER_NAME` is the parameter name in `UPPER_SNAKE_CASE`.
+
+**Examples:**
+
+```bash
+# Enable auto-suggestions by default (default: true)
+export REVA_AUTO_SUGGEST=true
+
+# Set default max results for searches (default: varies by tool)
+export REVA_MAX_RESULTS=500
+
+# Set default analyze after import (default: true)
+export REVA_ANALYZE_AFTER_IMPORT=true
+
+# Set default recursive import (default: true)
+export REVA_RECURSIVE=true
+```
+
+**Common Parameters:**
+
+- `REVA_ANALYZE_AFTER_IMPORT` - Run auto-analysis after importing files (default: `true`)
+- `REVA_RECURSIVE` - Recursively import from containers/archives (default: `true`)
+- `REVA_MAX_DEPTH` - Maximum depth for recursive imports (default: `10`)
+- `REVA_ENABLE_VERSION_CONTROL` - Add imported files to version control (default: `true`)
+- `REVA_MAX_RESULTS` - Maximum number of results to return (default: varies by tool)
+- `REVA_FILTER_DEFAULT_NAMES` - Filter out default Ghidra-generated names (default: `true`)
+- `REVA_AUTO_BOOKMARK_THRESHOLD` - Minimum reference count for automatic bookmarking (default: `5`)
+
+**Note:** Environment variables only affect default values when parameters are not explicitly provided in tool calls. Explicit parameters always take precedence.
+
+### Intelligent Features
+
+ReVa includes several intelligent features that work automatically:
+
+- **Auto-Bookmarking**: Addresses referenced frequently (above threshold) are automatically bookmarked with appropriate types
+- **Auto-Tagging**: Function tags are automatically applied based on API calls, libraries, and string patterns
+- **Auto-Labeling**: Function and variable names are automatically assigned based on context, strings, and API usage
+- **Auto-Commenting**: Comment types and text are automatically set based on address context
+
+These features are enabled by default and controlled exclusively via environment variables (no tool parameters needed).
 
 ## Usage
 
@@ -183,7 +232,7 @@ to make using ReVa easier. These include skills and scripts to help ReVa work be
 You can install with:
 
 ```bash
-claude plugin marketplace add cyberkaida/reverse-engineering-assistant
+claude plugin marketplace add th3w1zard1/reverse-engineering-assistant
 ```
 
 This will add the [ReVa skills](/ReVa/skills/) to your Claude Code installation.
@@ -197,5 +246,4 @@ I will be adding more skills over time to help with reverse engineering tasks.
 
 ## Support
 
-Do you like my work? Want to support this project and others? Interested in how this project was designed and built?
-This project and many others are built live on my stream at <https://twitch.tv/cyberkaida> !
+Do you like my work? Want to support this project and others? Support me here: <https://github.com/sponsors/bolabaden> !

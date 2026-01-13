@@ -55,7 +55,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
 
     private void registerManageBookmarksTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("action", Map.of(
                 "type", "string",
                 "description", "Action to perform: 'set', 'get', 'search', 'remove', or 'categories'",
@@ -85,7 +85,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         properties.put("search_text", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (required for search)"));
         properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return when action='search'", 100));
 
-        List<String> required = List.of("programPath", "action");
+        List<String> required = List.of("action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
                 .name("manage-bookmarks")
