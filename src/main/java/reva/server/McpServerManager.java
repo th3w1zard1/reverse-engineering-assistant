@@ -30,11 +30,15 @@ import org.eclipse.jetty.servlet.ServletHolder;
 import java.util.EnumSet;
 import jakarta.servlet.DispatcherType;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import generic.concurrent.GThreadPool;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
+import io.modelcontextprotocol.json.jackson.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
@@ -228,6 +232,10 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
             servletContextHandler.addFilter(filterHolder, "/*", EnumSet.of(DispatcherType.REQUEST));
             Msg.info(this, "API key authentication enabled for MCP server");
         }
+
+        // Add request logging filter for debugging (only logs when debug mode is enabled)
+        FilterHolder loggingFilter = new FilterHolder(new RequestLoggingFilter(configManager));
+        servletContextHandler.addFilter(loggingFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
         ServletHolder servletHolder = new ServletHolder(currentTransportProvider);
         servletHolder.setAsyncSupported(true);
@@ -452,13 +460,19 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         String serverHost = configManager.getServerHost();
         String baseUrl = "http://" + serverHost + ":" + serverPort;
 
+        // Create ObjectMapper configured to ignore unknown properties
+        // This is a workaround for MCP SDK issue #724 where the SDK doesn't handle
+        // newer protocol fields (e.g., from VS Code MCP client using protocol 2025-11-25)
+        // See: https://github.com/modelcontextprotocol/java-sdk/issues/724
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(objectMapper);
+
         // Create new transport provider with updated configuration
-        // Note: As of MCP SDK v0.14.0, the builder uses McpJsonMapper.getDefault() automatically
-        // Use a longer keep-alive interval (5 minutes) to prevent session termination
-        // The keep-alive interval sends periodic messages to keep the connection alive
         currentTransportProvider = HttpServletStreamableServerTransportProvider.builder()
             .mcpEndpoint(MCP_MSG_ENDPOINT)
-            .keepAliveInterval(java.time.Duration.ofMinutes(5))
+            .jsonMapper(jsonMapper)
+            .keepAliveInterval(java.time.Duration.ofSeconds(30))
             .build();
     }
 
@@ -556,5 +570,32 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         serverReady = false;
 
         Msg.info(this, "MCP server shutdown complete");
+    }
+
+    /**
+     * Get the list of registered tool providers for debug/diagnostic purposes.
+     * @return List of tool providers, or empty list if none registered
+     */
+    public List<ToolProvider> getToolProviders() {
+        return new ArrayList<>(toolProviders);
+    }
+
+    /**
+     * Get the number of registered PluginTools for debug/diagnostic purposes.
+     * @return Number of registered tools
+     */
+    public int getRegisteredToolsCount() {
+        return registeredTools.size();
+    }
+
+    /**
+     * Get the server host binding for debug/diagnostic purposes.
+     * @return Server host string, or null if not configured
+     */
+    public String getServerHost() {
+        if (configManager != null) {
+            return configManager.getServerHost();
+        }
+        return null;
     }
 }
