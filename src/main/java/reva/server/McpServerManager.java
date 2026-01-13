@@ -46,6 +46,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import reva.plugin.ConfigManager;
 import reva.plugin.ConfigChangeListener;
 import reva.resources.ResourceProvider;
+import reva.resources.impl.ProgramDocumentationResource;
 import reva.resources.impl.ProgramListResource;
 import reva.services.RevaMcpService;
 import reva.tools.ToolProvider;
@@ -168,6 +169,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
      */
     private void initializeResourceProviders() {
         resourceProviders.add(new ProgramListResource(server));
+        resourceProviders.add(new ProgramDocumentationResource(server));
 
         // Register all resources with the server
         for (ResourceProvider provider : resourceProviders) {
