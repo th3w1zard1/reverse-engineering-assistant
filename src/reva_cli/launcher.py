@@ -17,6 +17,37 @@ if TYPE_CHECKING:
     )
 
 
+def _spawn_project_watchdog(
+    project_path: Path,
+    project_name: str,
+) -> int | None:
+    """
+    Spawn a detached watchdog process to monitor this process and clean up the project.
+
+    Args:
+        project_path: Path to the Ghidra project directory
+        project_name: Name of the Ghidra project
+
+    Returns:
+        Watchdog PID if spawned successfully, None otherwise
+    """
+    try:
+        from .watchdog import spawn_watchdog
+
+        parent_pid: int = os.getpid()
+        watchdog_pid: int | None = spawn_watchdog(parent_pid, project_path, project_name)
+        if watchdog_pid:
+            sys.stderr.write(
+                f"Spawned project watchdog (PID: {watchdog_pid}) to monitor cleanup\n"
+            )
+    except Exception as e:
+        # Don't fail if watchdog can't be spawned - just log and continue
+        sys.stderr.write(f"Warning: Failed to spawn project watchdog: {e}\n")
+        return None
+    else:
+        return watchdog_pid
+
+
 class ReVaLauncher:
     """Wraps ReVa headless launcher with Python-side project management.
 
@@ -34,6 +65,7 @@ class ReVaLauncher:
         Initialize ReVa launcher.
 
         Args:
+        ----
             config_file: Optional configuration file path
             use_random_port: Whether to use random available port (default: True)
         """
@@ -49,9 +81,11 @@ class ReVaLauncher:
         Start ReVa headless server.
 
         Returns:
+        -------
             Server port number
 
         Raises:
+        ------
             RuntimeError: If server fails to start
         """
         try:
@@ -101,8 +135,10 @@ class ReVaLauncher:
                 # Use the project directory
                 projects_dir = project_dir
 
-                print(f"Using project from REVA_PROJECT_PATH: {project_gpr}", file=sys.stderr)
-                print(f"Project location: {projects_dir}/{project_name}", file=sys.stderr)
+                sys.stderr.write(
+                    f"Using project from REVA_PROJECT_PATH: {project_gpr}\n"
+                )
+                sys.stderr.write(f"Project location: {projects_dir}/{project_name}\n")
             else:
                 # Stdio mode: ephemeral projects in temp directory (session-scoped, auto-cleanup)
                 # Keeps working directory clean - no .reva creation in cwd
@@ -113,14 +149,14 @@ class ReVaLauncher:
                 # Use temp directory for the project (not .reva/projects)
                 projects_dir = self.temp_project_dir
 
-                print(f"Project location: {projects_dir}/{project_name}", file=sys.stderr)
+                sys.stderr.write(f"Project location: {projects_dir}/{project_name}\n")
 
             # Convert to Java File objects
             java_project_location = File(str(projects_dir))
 
             # Create launcher with project parameters
             if self.config_file:
-                print(f"Using config file: {self.config_file}", file=sys.stderr)
+                sys.stderr.write(f"Using config file: {self.config_file}\n")
                 java_config_file = File(str(self.config_file))
                 self.java_launcher = RevaHeadlessLauncher(
                     java_config_file,
@@ -129,7 +165,7 @@ class ReVaLauncher:
                     project_name,
                 )
             else:
-                print("Using default configuration", file=sys.stderr)
+                sys.stderr.write("Using default configuration\n")
                 # Use constructor with project parameters
                 self.java_launcher = RevaHeadlessLauncher(
                     None,
@@ -140,19 +176,25 @@ class ReVaLauncher:
                 )
 
             # Start server
-            print("Starting ReVa MCP server...", file=sys.stderr)
+            sys.stderr.write("Starting ReVa MCP server...\n")
             self.java_launcher.start()  # pyright: ignore[reportOptionalMemberAccess]
 
             # Wait for server to be ready
             if self.java_launcher.waitForServer(30000):  # pyright: ignore[reportOptionalMemberAccess]
                 self.port = self.java_launcher.getPort()  # pyright: ignore[reportOptionalMemberAccess]
-                print(f"ReVa server ready on port {self.port}", file=sys.stderr)
+                sys.stderr.write(f"ReVa server ready on port {self.port}\n")
+
+                # Spawn watchdog process to ensure project cleanup on shutdown
+                # Only spawn for user-specified projects (not temp projects)
+                if self.user_project_path:
+                    _spawn_project_watchdog(projects_dir, project_name)
+
                 return self.port  # pyright: ignore[reportReturnType]
             else:
                 raise RuntimeError("Server failed to start within timeout")
 
         except Exception as e:
-            print(f"Error starting ReVa server: {e}", file=sys.stderr)
+            sys.stderr.write(f"Error starting ReVa server: {e}\n")
             import traceback
 
             traceback.print_exc(file=sys.stderr)
@@ -172,6 +214,7 @@ class ReVaLauncher:
         Check if server is running.
 
         Returns:
+        --------
             True if server is running
         """
         if self.java_launcher:
@@ -181,11 +224,11 @@ class ReVaLauncher:
     def stop(self):
         """Stop the ReVa server and cleanup."""
         if self.java_launcher:
-            print("Stopping ReVa server...", file=sys.stderr)
+            sys.stderr.write("Stopping ReVa server...\n")
             try:
                 self.java_launcher.stop()
             except Exception as e:
-                print(f"Error stopping server: {e}", file=sys.stderr)
+                sys.stderr.write(f"Error stopping server: {e}\n")
             finally:
                 self.java_launcher = None
                 self.port = None
@@ -196,11 +239,10 @@ class ReVaLauncher:
                 import shutil
 
                 shutil.rmtree(self.temp_project_dir)
-                print(
-                    f"Cleaned up temporary project directory: {self.temp_project_dir}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"Cleaned up temporary project directory: {self.temp_project_dir}\n"
                 )
             except Exception as e:
-                print(f"Error cleaning up temporary directory: {e}", file=sys.stderr)
+                sys.stderr.write(f"Error cleaning up temporary directory: {e}\n")
             finally:
                 self.temp_project_dir = None

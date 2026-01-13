@@ -158,10 +158,9 @@ class ReVaStdioBridge:
                 error_str = str(e).lower()
                 if "session terminated" in error_str:
                     if attempt < max_retries - 1:
-                        print(
+                        sys.stderr.write(
                             f"WARNING: {operation_name} failed with 'Session terminated', "
-                            f"retrying (attempt {attempt + 1}/{max_retries})...",
-                            file=sys.stderr,
+                            f"retrying (attempt {attempt + 1}/{max_retries})...\n"
                         )
                         # Wait a bit before retrying - sometimes the connection recovers
                         await asyncio.sleep(0.5)
@@ -175,9 +174,8 @@ class ReVaStdioBridge:
                         continue
                     else:
                         # After max retries, mark session as dead and raise
-                        print(
-                            f"ERROR: {operation_name} failed after {max_retries} attempts: {e}",
-                            file=sys.stderr,
+                        sys.stderr.write(
+                            f"ERROR: {operation_name} failed after {max_retries} attempts: {e}\n"
                         )
                         self.backend_session = None
                         raise RuntimeError(
@@ -190,13 +188,12 @@ class ReVaStdioBridge:
             except Exception as e:
                 # Check if it's a connection-related error
                 error_str = str(e).lower()
-                error_type = type(e).__name__
+                error_type = e.__class__.__name__
                 if "session" in error_str or "connection" in error_str or "ConnectionError" in error_type:
                     if attempt < max_retries - 1:
-                        print(
+                        sys.stderr.write(
                             f"WARNING: {operation_name} failed with connection error, "
-                            f"retrying (attempt {attempt + 1}/{max_retries})...",
-                            file=sys.stderr,
+                            f"retrying (attempt {attempt + 1}/{max_retries})...\n"
                         )
                         await asyncio.sleep(0.5)
                         if self.backend_session is None:
@@ -228,12 +225,11 @@ class ReVaStdioBridge:
                     return []
                 return result.tools
             except asyncio.TimeoutError:
-                print("ERROR: list_tools timed out", file=sys.stderr)
+                sys.stderr.write("ERROR: list_tools timed out\n")
                 return []
             except Exception as e:
-                print(
-                    f"ERROR: list_tools failed: {type(e).__name__}: {str(e)}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"ERROR: list_tools failed: {e.__class__.__name__}: {e}\n"
                 )
                 return []
 
@@ -266,11 +262,11 @@ class ReVaStdioBridge:
                 return result.content
             except asyncio.TimeoutError:
                 error_msg = f"Tool '{name}' timed out after 5 minutes"
-                print(f"ERROR: {error_msg}", file=sys.stderr)
+                sys.stderr.write(f"ERROR: {error_msg}\n")
                 return [TextContent(type="text", text=f"Error: {error_msg}")]
             except Exception as e:
-                error_msg = f"Tool '{name}' failed: {type(e).__name__}: {str(e)}"
-                print(f"ERROR: {error_msg}", file=sys.stderr)
+                error_msg = f"Tool '{name}' failed: {e.__class__.__name__}: {e}"
+                sys.stderr.write(f"ERROR: {error_msg}\n")
                 import traceback
 
                 traceback.print_exc(file=sys.stderr)
@@ -293,12 +289,11 @@ class ReVaStdioBridge:
                     return []
                 return result.resources
             except asyncio.TimeoutError:
-                print("ERROR: list_resources timed out", file=sys.stderr)
+                sys.stderr.write("ERROR: list_resources timed out\n")
                 return []
             except Exception as e:
-                print(
-                    f"ERROR: list_resources failed: {type(e).__name__}: {str(e)}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"ERROR: list_resources failed: {e.__class__.__name__}: {e}\n"
                 )
                 return []
 
@@ -328,12 +323,11 @@ class ReVaStdioBridge:
                         return content.blob  # pyright: ignore[reportAttributeAccessIssue]
                 return ""
             except asyncio.TimeoutError:
-                print(f"ERROR: read_resource timed out for URI: {uri}", file=sys.stderr)
+                sys.stderr.write(f"ERROR: read_resource timed out for URI: {uri}\n")
                 return ""
             except Exception as e:
-                print(
-                    f"ERROR: read_resource failed for URI {uri}: {type(e).__name__}: {str(e)}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"ERROR: read_resource failed for URI {uri}: {e.__class__.__name__}: {e}\n"
                 )
                 return ""
 
@@ -354,12 +348,11 @@ class ReVaStdioBridge:
                     return []
                 return result.prompts
             except asyncio.TimeoutError:
-                print("ERROR: list_prompts timed out", file=sys.stderr)
+                sys.stderr.write("ERROR: list_prompts timed out\n")
                 return []
             except Exception as e:
-                print(
-                    f"ERROR: list_prompts failed: {type(e).__name__}: {str(e)}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"ERROR: list_prompts failed: {e.__class__.__name__}: {e}\n"
                 )
                 return []
 
@@ -370,7 +363,7 @@ class ReVaStdioBridge:
         Connects to ReVa backend via StreamableHTTP, initializes the session,
         then exposes the MCP server via stdio transport.
         """
-        print(f"Connecting to ReVa backend at {self.url}...", file=sys.stderr)
+        sys.stderr.write(f"Connecting to ReVa backend at {self.url}...\n")
 
         # Increased timeout for long-running operations (Ghidra operations can take time)
         # Also increased read timeout to handle slow responses
@@ -403,35 +396,28 @@ class ReVaStdioBridge:
                             self.backend_session = session
 
                             # Initialize backend session with timeout
-                            print(
-                                "Initializing ReVa backend session...", file=sys.stderr
-                            )
+                            sys.stderr.write("Initializing ReVa backend session...\n")
                             try:
                                 init_result = await asyncio.wait_for(
                                     session.initialize(), timeout=read_timeout
                                 )
-                                print(
-                                    f"Connected to {init_result.serverInfo.name} v{init_result.serverInfo.version}",
-                                    file=sys.stderr,
+                                sys.stderr.write(
+                                    f"Connected to {init_result.serverInfo.name} v{init_result.serverInfo.version}\n"
                                 )
                             except asyncio.TimeoutError:
-                                print(
-                                    f"Timeout initializing backend session (>{read_timeout}s)",
-                                    file=sys.stderr,
+                                sys.stderr.write(
+                                    f"Timeout initializing backend session (>{read_timeout}s)\n"
                                 )
                                 if attempt < max_retries - 1:
-                                    print(
-                                        f"Retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})",
-                                        file=sys.stderr,
+                                    sys.stderr.write(
+                                        f"Retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})\n"
                                     )
                                     await asyncio.sleep(retry_delay)
                                     continue
                                 raise
 
                             # Run MCP server with stdio transport
-                            print(
-                                "Bridge ready - stdio transport active", file=sys.stderr
-                            )
+                            sys.stderr.write("Bridge ready - stdio transport active\n")
                             try:
                                 async with stdio_server() as (stdio_read, stdio_write):
                                     await self.server.run(
@@ -444,16 +430,14 @@ class ReVaStdioBridge:
                             except Exception as stdio_error:
                                 # If stdio server fails, check if backend connection is still alive
                                 # and attempt to reconnect if needed
-                                print(
-                                    f"Stdio server error: {type(stdio_error).__name__}: {stdio_error}",
-                                    file=sys.stderr,
+                                sys.stderr.write(
+                                    f"Stdio server error: {type(stdio_error).__name__}: {stdio_error}\n"
                                 )
                                 # Check if this is a connection error that warrants retry
                                 if isinstance(stdio_error, (ConnectionError, OSError)):
                                     if attempt < max_retries - 1:
-                                        print(
-                                            f"Connection error in stdio bridge, retrying... (attempt {attempt + 1}/{max_retries})",
-                                            file=sys.stderr,
+                                        sys.stderr.write(
+                                            f"Connection error in stdio bridge, retrying... (attempt {attempt + 1}/{max_retries})\n"
                                         )
                                         await asyncio.sleep(retry_delay)
                                         continue
@@ -461,28 +445,26 @@ class ReVaStdioBridge:
                                 raise
 
             except asyncio.TimeoutError as e:
-                print(
-                    f"Timeout error (attempt {attempt + 1}/{max_retries}): {e}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"Timeout error (attempt {attempt + 1}/{max_retries}): {e}\n"
                 )
                 if attempt < max_retries - 1:
-                    print(f"Retrying in {retry_delay} seconds...", file=sys.stderr)
+                    sys.stderr.write(f"Retrying in {retry_delay} seconds...\n")
                     await asyncio.sleep(retry_delay)
                     continue
                 raise
             except (ConnectionError, OSError) as e:
-                print(
-                    f"Connection error (attempt {attempt + 1}/{max_retries}): {e}",
-                    file=sys.stderr,
+                sys.stderr.write(
+                    f"Connection error (attempt {attempt + 1}/{max_retries}): {e}\n"
                 )
                 if attempt < max_retries - 1:
-                    print(f"Retrying in {retry_delay} seconds...", file=sys.stderr)
+                    sys.stderr.write(f"Retrying in {retry_delay} seconds...\n")
                     await asyncio.sleep(retry_delay)
                     continue
                 raise
             except Exception as e:
                 # For other exceptions, log and re-raise immediately
-                print(f"Bridge error: {type(e).__name__}: {e}", file=sys.stderr)
+                sys.stderr.write(f"Bridge error: {e.__class__.__name__}: {e}\n")
                 import traceback
 
                 traceback.print_exc(file=sys.stderr)
@@ -490,7 +472,7 @@ class ReVaStdioBridge:
             finally:
                 self.backend_session = None
                 if attempt == max_retries - 1:
-                    print("Bridge stopped", file=sys.stderr)
+                    sys.stderr.write("Bridge stopped\n")
 
     def stop(self):
         """Stop the bridge (handled by context managers)."""

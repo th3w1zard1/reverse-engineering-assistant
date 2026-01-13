@@ -29,6 +29,7 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.decompiler.component.DecompilerUtils;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.CodeUnitIterator;
 import ghidra.program.model.listing.CommentType;
@@ -39,6 +40,9 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.symbol.Reference;
+import ghidra.program.model.symbol.ReferenceIterator;
+import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.util.UndefinedFunction;
 import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TimeoutTaskMonitor;
@@ -72,13 +76,15 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
 
     private void registerGetFunctionTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
+        Map<String, Object> programPathProperty = new HashMap<>();
+        programPathProperty.put("oneOf", List.of(
+            Map.of("type", "string", "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."),
+            Map.of("type", "array", "items", Map.of("type", "string"), "description", "Array of program paths for multi-program analysis")
         ));
+        properties.put("programPath", programPathProperty);
         Map<String, Object> identifierProperty = new HashMap<>();
         identifierProperty.put("type", "string");
-        identifierProperty.put("description", "Function name or address (e.g., 'main' or '0x401000'). Can be a single string or an array of strings for batch operations.");
+        identifierProperty.put("description", "Function name or address (e.g., 'main' or '0x401000'). Can be a single string or an array of strings for batch operations. When omitted, returns all functions.");
         Map<String, Object> identifierArraySchema = new HashMap<>();
         identifierArraySchema.put("type", "array");
         identifierArraySchema.put("items", Map.of("type", "string"));
@@ -130,27 +136,45 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             "default", true
         ));
 
-        List<String> required = List.of("identifier");
+        List<String> required = new ArrayList<>();
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("get-functions")
             .title("Get Functions")
-            .description("Get function details in various formats: decompiled code, assembly, function information, or internal calls. Supports single function or batch operations when identifier is an array.")
+            .description("Get function details in various formats: decompiled code, assembly, function information, or internal calls. Supports single function, batch operations when identifier is an array, or all functions when identifier is omitted.")
             .inputSchema(createSchema(properties, required))
             .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
-                Program program = getProgramFromArgs(request);
+                Object identifierValue = request.arguments().get("identifier");
+                
+                // When identifier is omitted, return all functions
+                if (identifierValue == null) {
+                    return handleAllFunctions(request);
+                }
+
+                // Handle programPath as array or string
+                Object programPathValue = request.arguments().get("programPath");
+                Program program;
+                if (programPathValue instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<String> programPaths = (List<String>) programPathValue;
+                    if (programPaths.isEmpty()) {
+                        return createErrorResult("programPath array cannot be empty");
+                    }
+                    program = reva.util.ProgramLookupUtil.getValidatedProgram(programPaths.get(0));
+                } else {
+                    program = getProgramFromArgs(request);
+                }
 
                 // Check if identifier is an array (batch mode)
-                Object identifierValue = request.arguments().get("identifier");
                 if (identifierValue instanceof List) {
                     return handleBatchGetFunction(program, request, (List<?>) identifierValue);
                 }
 
                 // Single function mode
-                String identifier = getString(request, "identifier");
+                String identifier = identifierValue.toString();
                 String view = getOptionalString(request, "view", "decompile");
 
                 Function function = resolveFunction(program, identifier);
@@ -664,6 +688,275 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         }
 
         return createJsonResult(resultData);
+    }
+
+    /**
+     * Handle request when identifier is omitted - returns all functions
+     */
+    private McpSchema.CallToolResult handleAllFunctions(CallToolRequest request) {
+        try {
+            Object programPathValue = request.arguments().get("programPath");
+            List<Program> programs = new ArrayList<>();
+            
+            if (programPathValue instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<String> programPaths = (List<String>) programPathValue;
+                for (String path : programPaths) {
+                    try {
+                        Program p = reva.util.ProgramLookupUtil.getValidatedProgram(path);
+                        if (p != null && !p.isClosed()) {
+                            programs.add(p);
+                        }
+                    } catch (Exception e) {
+                        // Skip invalid programs
+                    }
+                }
+            } else {
+                Program program = getProgramFromArgs(request);
+                if (program != null) {
+                    programs.add(program);
+                }
+            }
+            
+            if (programs.isEmpty()) {
+                return createErrorResult("No valid programs found");
+            }
+            
+            boolean filterDefaultNames = reva.util.EnvConfigUtil.getBooleanDefault("filter_default_names", true);
+            List<Map<String, Object>> programResults = new ArrayList<>();
+            int totalFunctions = 0;
+            
+            for (Program program : programs) {
+                // Track initial function count for signature scanning
+                FunctionManager funcManager = program.getFunctionManager();
+                int initialFunctionCount = funcManager.getFunctionCount();
+                
+                // Run signature scanning to discover undefined functions
+                Map<String, Object> signatureScanResults = runSignatureScanning(program);
+                
+                // Get final function count
+                int finalFunctionCount = funcManager.getFunctionCount();
+                int functionsDiscovered = finalFunctionCount - initialFunctionCount;
+                
+                // Collect all functions
+                List<Map<String, Object>> functions = new ArrayList<>();
+                FunctionIterator funcIter = funcManager.getFunctions(true);
+                TaskMonitor monitor = TimeoutTaskMonitor.timeoutIn(300, TimeUnit.SECONDS);
+                
+                while (funcIter.hasNext() && !monitor.isCancelled()) {
+                    Function function = funcIter.next();
+                    
+                    if (filterDefaultNames && reva.util.SymbolUtil.isDefaultSymbolName(function.getName())) {
+                        continue;
+                    }
+                    
+                    Map<String, Object> funcInfo = buildFunctionInfo(program, function, monitor);
+                    functions.add(funcInfo);
+                }
+                
+                // Build procedural/actions object
+                Map<String, Object> actions = new HashMap<>();
+                actions.put("signatureScanning", signatureScanResults);
+                actions.put("functionsDiscovered", functionsDiscovered);
+                actions.put("initialFunctionCount", initialFunctionCount);
+                actions.put("finalFunctionCount", finalFunctionCount);
+                
+                Map<String, Object> programResult = new HashMap<>();
+                programResult.put("programPath", program.getDomainFile().getPathname());
+                programResult.put("totalFunctions", functions.size());
+                programResult.put("functions", functions);
+                programResult.put("actions", actions);
+                programResults.add(programResult);
+                totalFunctions += functions.size();
+            }
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            if (programResults.size() == 1) {
+                result.putAll(programResults.get(0));
+            } else {
+                result.put("programs", programResults);
+                result.put("totalPrograms", programResults.size());
+                result.put("totalFunctions", totalFunctions);
+            }
+            
+            return createJsonResult(result);
+        } catch (Exception e) {
+            logError("Error handling all functions", e);
+            return createErrorResult("Failed to retrieve all functions: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Build function info map (similar to handleInfoView but returns Map directly)
+     */
+    private Map<String, Object> buildFunctionInfo(Program program, Function function, TaskMonitor monitor) {
+        Map<String, Object> info = new HashMap<>();
+        info.put("name", function.getName());
+        info.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
+        info.put("returnType", function.getReturnType().toString());
+        info.put("signature", function.getSignature().toString());
+        info.put("callingConvention", function.getCallingConventionName());
+        info.put("isExternal", function.isExternal());
+        info.put("isThunk", function.isThunk());
+        
+        var body = function.getBody();
+        if (body != null && body.getMaxAddress() != null) {
+            info.put("endAddress", AddressUtil.formatAddress(body.getMaxAddress()));
+            info.put("sizeInBytes", body.getNumAddresses());
+        }
+        
+        // Parameters
+        List<Map<String, Object>> parameters = new ArrayList<>();
+        for (int i = 0; i < function.getParameterCount(); i++) {
+            Parameter param = function.getParameter(i);
+            Map<String, Object> paramInfo = new HashMap<>();
+            paramInfo.put("name", param.getName());
+            paramInfo.put("dataType", param.getDataType().toString());
+            paramInfo.put("ordinal", i);
+            parameters.add(paramInfo);
+        }
+        info.put("parameters", parameters);
+        
+        // Local variables
+        List<Map<String, Object>> locals = new ArrayList<>();
+        for (var local : function.getLocalVariables()) {
+            Map<String, Object> localInfo = new HashMap<>();
+            localInfo.put("name", local.getName());
+            localInfo.put("dataType", local.getDataType().toString());
+            locals.add(localInfo);
+        }
+        info.put("localVariables", locals);
+        
+        // Count callers and callees (with timeout)
+        int callerCount = -1;
+        int calleeCount = -1;
+        if (monitor != null && !monitor.isCancelled()) {
+            try {
+                Set<Address> callerAddresses = new HashSet<>();
+                var refManager = program.getReferenceManager();
+                var refsTo = refManager.getReferencesTo(function.getEntryPoint());
+                int refCount = 0;
+                while (refsTo.hasNext() && !monitor.isCancelled()) {
+                    if (++refCount % 1000 == 0 && monitor.isCancelled()) break;
+                    var ref = refsTo.next();
+                    if (ref.getReferenceType().isCall()) {
+                        Function caller = program.getFunctionManager().getFunctionContaining(ref.getFromAddress());
+                        if (caller != null) {
+                            callerAddresses.add(caller.getEntryPoint());
+                        }
+                    }
+                }
+                callerCount = monitor.isCancelled() ? -1 : callerAddresses.size();
+                
+                if (!monitor.isCancelled()) {
+                    Set<Address> calleeAddresses = new HashSet<>();
+                    for (Instruction instr : program.getListing().getInstructions(body, true)) {
+                        if (monitor.isCancelled()) break;
+                        Reference[] refsFrom = instr.getReferencesFrom();
+                        for (Reference ref : refsFrom) {
+                            if (ref.getReferenceType().isCall()) {
+                                Function callee = program.getFunctionManager().getFunctionAt(ref.getToAddress());
+                                if (callee == null) {
+                                    callee = program.getFunctionManager().getFunctionContaining(ref.getToAddress());
+                                }
+                                if (callee != null) {
+                                    calleeAddresses.add(callee.getEntryPoint());
+                                }
+                            }
+                        }
+                    }
+                    calleeCount = monitor.isCancelled() ? -1 : calleeAddresses.size();
+                }
+            } catch (Exception e) {
+                // Leave as -1 if counting fails
+            }
+        }
+        info.put("callerCount", callerCount);
+        info.put("calleeCount", calleeCount);
+        
+        return info;
+    }
+    
+    /**
+     * Run signature scanning to discover undefined functions
+     */
+    private Map<String, Object> runSignatureScanning(Program program) {
+        Map<String, Object> results = new HashMap<>();
+        int functionsCreated = 0;
+        List<Map<String, Object>> discoveredFunctions = new ArrayList<>();
+        
+        try {
+            FunctionManager funcManager = program.getFunctionManager();
+            ReferenceManager refManager = program.getReferenceManager();
+            Listing listing = program.getListing();
+            TaskMonitor monitor = TimeoutTaskMonitor.timeoutIn(60, TimeUnit.SECONDS);
+            
+            // Find undefined functions (addresses that are called but don't have functions)
+            Set<Address> calledAddresses = new HashSet<>();
+            FunctionIterator funcIter = funcManager.getFunctions(true);
+            
+            // Collect all call targets
+            while (funcIter.hasNext() && !monitor.isCancelled()) {
+                Function func = funcIter.next();
+                AddressSetView body = func.getBody();
+                if (body == null) continue;
+                
+                for (Instruction instr : listing.getInstructions(body, true)) {
+                    if (monitor.isCancelled()) break;
+                    Reference[] refs = instr.getReferencesFrom();
+                    for (Reference ref : refs) {
+                        if (ref.getReferenceType().isCall()) {
+                            Address targetAddr = ref.getToAddress();
+                            Function targetFunc = funcManager.getFunctionAt(targetAddr);
+                            if (targetFunc == null) {
+                                // Check if it's valid code
+                                CodeUnit cu = listing.getCodeUnitAt(targetAddr);
+                                if (cu != null && cu instanceof Instruction) {
+                                    calledAddresses.add(targetAddr);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Try to create functions at undefined call targets
+            int txId = program.startTransaction("Signature Scanning - Create Functions");
+            try {
+                for (Address addr : calledAddresses) {
+                    if (monitor.isCancelled()) break;
+                    if (funcManager.getFunctionAt(addr) == null) {
+                        try {
+                            Function newFunc = funcManager.createFunction(null, addr, null, ghidra.program.model.symbol.SourceType.ANALYSIS);
+                            if (newFunc != null) {
+                                functionsCreated++;
+                                discoveredFunctions.add(Map.of(
+                                    "address", AddressUtil.formatAddress(addr),
+                                    "name", newFunc.getName()
+                                ));
+                            }
+                        } catch (Exception e) {
+                            // Skip if function creation fails
+                        }
+                    }
+                }
+                program.endTransaction(txId, true);
+            } catch (Exception e) {
+                program.endTransaction(txId, false);
+                throw e;
+            }
+            
+            results.put("success", true);
+            results.put("functionsCreated", functionsCreated);
+            results.put("discoveredFunctions", discoveredFunctions);
+        } catch (Exception e) {
+            logError("Error running signature scanning", e);
+            results.put("success", false);
+            results.put("error", e.getMessage());
+        }
+        
+        return results;
     }
 
     /**
