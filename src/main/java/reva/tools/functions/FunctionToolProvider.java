@@ -1924,7 +1924,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         // Check for batch mode (functions array)
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> functionsArray = getOptionalFunctionsArray(request);
-        
+
         if (functionsArray != null && !functionsArray.isEmpty()) {
             return handleBatchRenameFunctions(program, request, functionsArray);
         }
@@ -2010,14 +2010,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionNames(program, function);
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("programPath", program.getDomainFile().getPathname());
         result.put("function", functionIdentifier);
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
         result.put("currentName", function.getName());
         result.put("suggestions", suggestions);
-        
+
         return createJsonResult(result);
     }
 
@@ -2143,7 +2143,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private McpSchema.CallToolResult handleSuggestFunctionTags(Program program, CallToolRequest request, Function function) {
         List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionTags(program, function);
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);
         result.put("programPath", program.getDomainFile().getPathname());
@@ -2151,7 +2151,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
         result.put("currentTags", function.getTags().stream().map(FunctionTag::getName).sorted().toList());
         result.put("suggestions", suggestions);
-        
+
         return createJsonResult(result);
     }
 

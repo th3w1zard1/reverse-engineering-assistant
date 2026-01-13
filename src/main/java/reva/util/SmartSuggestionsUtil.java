@@ -558,7 +558,7 @@ public class SmartSuggestionsUtil {
         if (function != null && function.getEntryPoint().equals(address)) {
             String funcName = function.getName();
             int paramCount = function.getParameterCount();
-            
+
             StringBuilder comment = new StringBuilder();
             comment.append("Function: ").append(funcName);
             if (paramCount > 0) {
@@ -566,7 +566,7 @@ public class SmartSuggestionsUtil {
                 if (paramCount > 1) comment.append("s");
                 comment.append(")");
             }
-            
+
             suggestion.put("comment", comment.toString());
             suggestion.put("confidence", 0.8);
             suggestion.put("reason", "Function entry point - suggests function header comment");
@@ -700,7 +700,7 @@ public class SmartSuggestionsUtil {
 
     private static List<String> generateTagReasons(Program program, Function function, String tag) {
         List<String> reasons = new ArrayList<>();
-        
+
         // Check API calls
         List<String> apiCalls = findAPICalls(program, function);
         for (String api : apiCalls) {

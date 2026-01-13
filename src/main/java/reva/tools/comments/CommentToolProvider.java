@@ -926,12 +926,12 @@ public class CommentToolProvider extends AbstractToolProvider {
 
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
         Map<String, Object> commentSuggestion = SmartSuggestionsUtil.suggestCommentText(program, address);
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("address", AddressUtil.formatAddress(address));
         result.put("suggestion", suggestion);
         result.put("recommended_comment", commentSuggestion);
-        
+
         return createJsonResult(result);
     }
 
