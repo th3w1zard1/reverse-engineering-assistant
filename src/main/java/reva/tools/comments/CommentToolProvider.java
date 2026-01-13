@@ -56,6 +56,7 @@ import reva.util.AddressUtil;
 import reva.util.DecompilationReadTracker;
 import reva.util.RevaInternalServiceRegistry;
 import reva.util.SchemaUtil;
+import reva.util.SmartSuggestionsUtil;
 
 /**
  * Tool provider for comment-related operations.
@@ -106,16 +107,32 @@ public class CommentToolProvider extends AbstractToolProvider {
         properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
         properties.put("action", Map.of(
             "type", "string",
-            "description", "Action to perform: 'set', 'get', 'remove', 'search', or 'search_decomp'",
-            "enum", List.of("set", "get", "remove", "search", "search_decomp")
+            "description", "Action to perform: 'set', 'get', 'remove', 'search', 'search_decomp', or 'suggest'",
+            "enum", List.of("set", "get", "remove", "search", "search_decomp", "suggest")
         ));
+        properties.put("suggest_comment_type", SchemaUtil.booleanPropertyWithDefault("When action='set', suggest comment type based on address context", false));
         properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the comment (required for set/remove when not using function/line_number)"));
         properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter)"));
         properties.put("function", SchemaUtil.stringProperty("Function name or address when setting decompilation line comment or searching decompilation"));
         properties.put("function_name_or_address", SchemaUtil.stringProperty("Function name or address (alternative parameter name)"));
         properties.put("line_number", SchemaUtil.integerProperty("Line number in the decompiled function when action='set' with decompilation (1-based)"));
-        properties.put("comment", SchemaUtil.stringProperty("The comment text to set (required for set)"));
+        properties.put("comment", SchemaUtil.stringProperty("The comment text to set (required for set when not using batch mode)"));
         properties.put("comment_type", SchemaUtil.stringPropertyWithDefault("Type of comment enum ('pre', 'eol', 'post', 'plate', 'repeatable')", "eol"));
+        // Batch comments array - array of objects
+        Map<String, Object> commentItemSchema = new HashMap<>();
+        commentItemSchema.put("type", "object");
+        Map<String, Object> commentItemProperties = new HashMap<>();
+        commentItemProperties.put("address", SchemaUtil.stringProperty("Address or symbol name where to set the comment"));
+        commentItemProperties.put("comment", SchemaUtil.stringProperty("The comment text to set"));
+        commentItemProperties.put("comment_type", SchemaUtil.stringPropertyWithDefault("Type of comment enum ('pre', 'eol', 'post', 'plate', 'repeatable')", "eol"));
+        commentItemSchema.put("properties", commentItemProperties);
+        commentItemSchema.put("required", List.of("address", "comment"));
+
+        Map<String, Object> commentsArraySchema = new HashMap<>();
+        commentsArraySchema.put("type", "array");
+        commentsArraySchema.put("description", "Array of comment objects for batch setting. Each object should have 'address' (required), 'comment' (required), and optional 'comment_type' (defaults to 'eol'). When provided, sets multiple comments in a single transaction.");
+        commentsArraySchema.put("items", commentItemSchema);
+        properties.put("comments", commentsArraySchema);
         properties.put("start", SchemaUtil.stringProperty("Start address of the range when action='get'"));
         properties.put("end", SchemaUtil.stringProperty("End address of the range when action='get'"));
         properties.put("comment_types", SchemaUtil.stringProperty("Types of comments to retrieve/search (comma-separated: pre,eol,post,plate,repeatable)"));
@@ -150,8 +167,10 @@ public class CommentToolProvider extends AbstractToolProvider {
                         return handleSearchComments(program, request);
                     case "search_decomp":
                         return handleSearchDecompilation(program, request, exchange);
+                    case "suggest":
+                        return handleSuggestComment(program, request);
                     default:
-                        return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, remove, search, search_decomp");
+                        return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, remove, search, search_decomp, suggest");
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
@@ -252,6 +271,14 @@ public class CommentToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleSetComment(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Check for batch mode (comments array)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> commentsArray = getOptionalCommentsArray(request);
+
+        if (commentsArray != null && !commentsArray.isEmpty()) {
+            return handleBatchSetComments(program, request, commentsArray);
+        }
+
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
             addressStr = getOptionalString(request, "address_or_symbol", null);
@@ -274,7 +301,7 @@ public class CommentToolProvider extends AbstractToolProvider {
 
         // Regular address-based comment
         if (addressStr == null) {
-            return createErrorResult("address is required for action='set' (or use function and line_number for decompilation line comments)");
+            return createErrorResult("address is required for action='set' (or use 'comments' array for batch mode, or use function and line_number for decompilation line comments)");
         }
 
         Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
@@ -284,8 +311,20 @@ public class CommentToolProvider extends AbstractToolProvider {
 
         String commentTypeStr = getOptionalString(request, "comment_type", null);
         if (commentTypeStr == null) {
-            commentTypeStr = getOptionalString(request, "commentType", "eol");
+            commentTypeStr = getOptionalString(request, "commentType", null);
         }
+
+        // Check if we should suggest comment type
+        boolean suggestCommentType = getOptionalBoolean(request, "suggest_comment_type", false);
+        if (suggestCommentType && commentTypeStr == null) {
+            Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
+            commentTypeStr = (String) suggestion.get("comment_type");
+        }
+
+        if (commentTypeStr == null) {
+            commentTypeStr = "eol"; // Default fallback
+        }
+
         String comment = getString(request, "comment");
 
         CommentType commentType = COMMENT_TYPES.get(commentTypeStr.toLowerCase());
@@ -317,6 +356,128 @@ public class CommentToolProvider extends AbstractToolProvider {
             logError("Error setting comment", e);
             return createErrorResult("Failed to set comment: " + e.getMessage());
         }
+    }
+
+    /**
+     * Get optional comments array from request for batch operations
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getOptionalCommentsArray(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Object value = request.arguments().get("comments");
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof List) {
+            return (List<Map<String, Object>>) value;
+        }
+        throw new IllegalArgumentException("Parameter 'comments' must be an array");
+    }
+
+    /**
+     * Handle batch setting of multiple comments in a single transaction
+     */
+    private McpSchema.CallToolResult handleBatchSetComments(Program program,
+            io.modelcontextprotocol.spec.McpSchema.CallToolRequest request,
+            List<Map<String, Object>> commentsArray) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+        Listing listing = program.getListing();
+
+        try {
+            int transactionId = program.startTransaction("Batch Set Comments");
+            try {
+                for (int i = 0; i < commentsArray.size(); i++) {
+                    Map<String, Object> commentObj = commentsArray.get(i);
+
+                    // Extract address
+                    Object addressObj = commentObj.get("address");
+                    if (addressObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'address' field in comment object"));
+                        continue;
+                    }
+                    String addressStr = addressObj.toString();
+
+                    // Extract comment text
+                    Object commentObjValue = commentObj.get("comment");
+                    if (commentObjValue == null) {
+                        errors.add(createErrorInfo(i, "Missing 'comment' field in comment object"));
+                        continue;
+                    }
+                    String comment = commentObjValue.toString();
+
+                    // Extract comment type (optional, defaults to "eol")
+                    String commentTypeStr = "eol";
+                    Object commentTypeObj = commentObj.get("comment_type");
+                    if (commentTypeObj != null) {
+                        commentTypeStr = commentTypeObj.toString();
+                    } else {
+                        // Also check camelCase variant
+                        commentTypeObj = commentObj.get("commentType");
+                        if (commentTypeObj != null) {
+                            commentTypeStr = commentTypeObj.toString();
+                        }
+                    }
+
+                    // Resolve address
+                    Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+                    if (address == null) {
+                        errors.add(createErrorInfo(i, "Could not resolve address or symbol: " + addressStr));
+                        continue;
+                    }
+
+                    // Validate comment type
+                    CommentType commentType = COMMENT_TYPES.get(commentTypeStr.toLowerCase());
+                    if (commentType == null) {
+                        errors.add(createErrorInfo(i, "Invalid comment type: " + commentTypeStr +
+                            ". Must be one of: pre, eol, post, plate, repeatable"));
+                        continue;
+                    }
+
+                    // Set the comment
+                    listing.setComment(address, commentType, comment);
+
+                    // Record success
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("index", i);
+                    result.put("address", AddressUtil.formatAddress(address));
+                    result.put("commentType", commentTypeStr);
+                    result.put("comment", comment);
+                    results.add(result);
+                }
+
+                program.endTransaction(transactionId, true);
+                autoSaveProgram(program, "Batch set comments");
+
+                // Build response
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("total", commentsArray.size());
+                response.put("succeeded", results.size());
+                response.put("failed", errors.size());
+                response.put("results", results);
+                if (!errors.isEmpty()) {
+                    response.put("errors", errors);
+                }
+
+                return createJsonResult(response);
+            } catch (Exception e) {
+                program.endTransaction(transactionId, false);
+                throw e;
+            }
+        } catch (Exception e) {
+            logError("Error in batch set comments", e);
+            return createErrorResult("Failed to batch set comments: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Create error info for batch operations
+     */
+    private Map<String, Object> createErrorInfo(int index, String message) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("index", index);
+        error.put("error", message);
+        return error;
     }
 
     private McpSchema.CallToolResult handleSetDecompilationLineComment(Program program,
@@ -746,6 +907,33 @@ public class CommentToolProvider extends AbstractToolProvider {
         }
     }
 
+    /**
+     * Handle suggest action - provide smart suggestions for comment types
+     */
+    private McpSchema.CallToolResult handleSuggestComment(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String addressStr = getOptionalString(request, "address", null);
+        if (addressStr == null) {
+            addressStr = getOptionalString(request, "address_or_symbol", null);
+        }
+        if (addressStr == null) {
+            return createErrorResult("address is required for action='suggest'");
+        }
+
+        Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+        if (address == null) {
+            return createErrorResult("Could not resolve address or symbol: " + addressStr);
+        }
+
+        Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
+        Map<String, Object> commentSuggestion = SmartSuggestionsUtil.suggestCommentText(program, address);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("address", AddressUtil.formatAddress(address));
+        result.put("suggestion", suggestion);
+        result.put("recommended_comment", commentSuggestion);
+        
+        return createJsonResult(result);
+    }
 
     /**
      * Get the string name for a comment type constant

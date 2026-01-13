@@ -68,6 +68,8 @@ import reva.util.SymbolUtil;
 import reva.util.DataTypeParserUtil;
 import reva.util.DecompilationDiffUtil;
 import reva.util.RevaInternalServiceRegistry;
+import reva.util.SmartSuggestionsUtil;
+import reva.util.SchemaUtil;
 import reva.plugin.ConfigManager;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
@@ -1084,6 +1086,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             "description", "Tag names (required for add; optional for set/remove). Empty/whitespace names are ignored.",
             "items", Map.of("type", "string")
         ));
+        properties.put("suggest_tags", SchemaUtil.booleanPropertyWithDefault("When mode='add' or 'set', suggest tags based on function characteristics (API calls, strings, libraries)", false));
 
         List<String> required = List.of("programPath", "mode");
 
@@ -1158,6 +1161,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 result.put("tags", tagNames);
 
                 return createJsonResult(result);
+            }
+
+            // Check if we should suggest tags
+            boolean suggestTags = getOptionalBoolean(request, "suggest_tags", false);
+            if (suggestTags && ("add".equals(mode) || "set".equals(mode))) {
+                return handleSuggestFunctionTags(program, request, function);
             }
 
             // For set/add/remove, tags parameter handling
@@ -1261,8 +1270,22 @@ public class FunctionToolProvider extends AbstractToolProvider {
         ));
         properties.put("name", Map.of(
             "type", "string",
-            "description", "New function name when action='rename_function' or optional name when action='create' (optional)"
+            "description", "New function name when action='rename_function' or optional name when action='create' (optional, not used in batch mode)"
         ));
+        // Batch functions array for renaming multiple functions
+        Map<String, Object> functionRenameItemSchema = new HashMap<>();
+        functionRenameItemSchema.put("type", "object");
+        Map<String, Object> functionRenameItemProperties = new HashMap<>();
+        functionRenameItemProperties.put("function_identifier", SchemaUtil.stringProperty("Function name or address to rename"));
+        functionRenameItemProperties.put("name", SchemaUtil.stringProperty("New function name"));
+        functionRenameItemSchema.put("properties", functionRenameItemProperties);
+        functionRenameItemSchema.put("required", List.of("function_identifier", "name"));
+
+        Map<String, Object> functionsArraySchema = new HashMap<>();
+        functionsArraySchema.put("type", "array");
+        functionsArraySchema.put("description", "Array of function rename objects for batch renaming. Each object should have 'function_identifier' (required) and 'name' (required). When provided with action='rename_function', renames multiple functions in a single transaction.");
+        functionsArraySchema.put("items", functionRenameItemSchema);
+        properties.put("functions", functionsArraySchema);
         properties.put("old_name", Map.of(
             "type", "string",
             "description", "Old variable name when action='rename_variable' (required for single variable rename)"
@@ -1301,6 +1324,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             "description", "Create function if it doesn't exist when action='set_prototype' (default: true)",
             "default", true
         ));
+        properties.put("suggest_name", SchemaUtil.booleanPropertyWithDefault("When action='rename_function', suggest function names based on context (strings, API calls, patterns)", false));
 
         List<String> required = List.of("programPath", "action");
 
@@ -1897,14 +1921,28 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle manage-function action='rename_function' - rename a function
      */
     private McpSchema.CallToolResult handleManageFunctionRenameFunction(Program program, CallToolRequest request) {
+        // Check for batch mode (functions array)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> functionsArray = getOptionalFunctionsArray(request);
+        
+        if (functionsArray != null && !functionsArray.isEmpty()) {
+            return handleBatchRenameFunctions(program, request, functionsArray);
+        }
+
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when action='rename_function'");
+            return createErrorResult("function_identifier is required when action='rename_function' (or use 'functions' array for batch mode)");
+        }
+
+        // Check if we should suggest names
+        boolean suggestName = getOptionalBoolean(request, "suggest_name", false);
+        if (suggestName) {
+            return handleSuggestFunctionName(program, request, functionIdentifier);
         }
 
         String newName = getOptionalString(request, "name", null);
         if (newName == null || newName.trim().isEmpty()) {
-            return createErrorResult("name is required when action='rename_function'");
+            return createErrorResult("name is required when action='rename_function' (or use suggest_name=true for suggestions)");
         }
 
         // Get function
@@ -1955,6 +1993,176 @@ public class FunctionToolProvider extends AbstractToolProvider {
         result.put("function", createFunctionInfo(function, null));
 
         return createJsonResult(result);
+    }
+
+    /**
+     * Handle suggest function name action
+     */
+    private McpSchema.CallToolResult handleSuggestFunctionName(Program program, CallToolRequest request, String functionIdentifier) {
+        // Get function
+        Function function;
+        try {
+            Map<String, Object> args = new HashMap<>(request.arguments());
+            args.put("functionNameOrAddress", functionIdentifier);
+            function = getFunctionFromArgs(args, program);
+        } catch (IllegalArgumentException e) {
+            return createErrorResult("Function not found: " + e.getMessage() + " in program " + program.getName());
+        }
+
+        List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionNames(program, function);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("function", functionIdentifier);
+        result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
+        result.put("currentName", function.getName());
+        result.put("suggestions", suggestions);
+        
+        return createJsonResult(result);
+    }
+
+    /**
+     * Get optional functions array from request for batch operations
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getOptionalFunctionsArray(CallToolRequest request) {
+        Object value = request.arguments().get("functions");
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof List) {
+            return (List<Map<String, Object>>) value;
+        }
+        throw new IllegalArgumentException("Parameter 'functions' must be an array");
+    }
+
+    /**
+     * Handle batch renaming of multiple functions in a single transaction
+     */
+    private McpSchema.CallToolResult handleBatchRenameFunctions(Program program,
+            CallToolRequest request,
+            List<Map<String, Object>> functionsArray) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        try {
+            int transactionId = program.startTransaction("Batch Rename Functions");
+            try {
+                for (int i = 0; i < functionsArray.size(); i++) {
+                    Map<String, Object> functionObj = functionsArray.get(i);
+
+                    // Extract function identifier
+                    Object funcIdObj = functionObj.get("function_identifier");
+                    if (funcIdObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'function_identifier' field in function object"));
+                        continue;
+                    }
+                    String functionIdentifier = funcIdObj.toString();
+
+                    // Extract new name
+                    Object nameObj = functionObj.get("name");
+                    if (nameObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'name' field in function object"));
+                        continue;
+                    }
+                    String newName = nameObj.toString().trim();
+
+                    if (newName.isEmpty()) {
+                        errors.add(createErrorInfo(i, "Function name cannot be empty"));
+                        continue;
+                    }
+
+                    // Get function
+                    Function function;
+                    try {
+                        Map<String, Object> args = new HashMap<>();
+                        args.put("functionNameOrAddress", functionIdentifier);
+                        function = getFunctionFromArgs(args, program);
+                    } catch (IllegalArgumentException e) {
+                        errors.add(createErrorInfo(i, "Function not found: " + functionIdentifier + " - " + e.getMessage()));
+                        continue;
+                    }
+
+                    String oldName = function.getName();
+                    if (oldName.equals(newName)) {
+                        errors.add(createErrorInfo(i, "Function already has name: " + newName));
+                        continue;
+                    }
+
+                    // Rename the function
+                    try {
+                        function.setName(newName, SourceType.USER_DEFINED);
+
+                        // Record success
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("index", i);
+                        result.put("oldName", oldName);
+                        result.put("newName", newName);
+                        result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
+                        results.add(result);
+                    } catch (DuplicateNameException e) {
+                        errors.add(createErrorInfo(i, "Function name '" + newName + "' already exists in program"));
+                    } catch (InvalidInputException e) {
+                        errors.add(createErrorInfo(i, "Invalid function name '" + newName + "': " + e.getMessage()));
+                    } catch (Exception e) {
+                        errors.add(createErrorInfo(i, "Failed to rename function: " + e.getMessage()));
+                    }
+                }
+
+                program.endTransaction(transactionId, true);
+                autoSaveProgram(program, "Batch rename functions");
+
+                // Invalidate function caches since names changed
+                invalidateFunctionCaches(program.getDomainFile().getPathname());
+
+                // Build response
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("programPath", program.getDomainFile().getPathname());
+                response.put("total", functionsArray.size());
+                response.put("succeeded", results.size());
+                response.put("failed", errors.size());
+                response.put("results", results);
+                if (!errors.isEmpty()) {
+                    response.put("errors", errors);
+                }
+
+                return createJsonResult(response);
+            } catch (Exception e) {
+                program.endTransaction(transactionId, false);
+                throw e;
+            }
+        } catch (Exception e) {
+            logError("Error in batch rename functions", e);
+            return createErrorResult("Failed to batch rename functions: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle suggest function tags action
+     */
+    private McpSchema.CallToolResult handleSuggestFunctionTags(Program program, CallToolRequest request, Function function) {
+        List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionTags(program, function);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", true);
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("function", function.getName());
+        result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
+        result.put("currentTags", function.getTags().stream().map(FunctionTag::getName).sorted().toList());
+        result.put("suggestions", suggestions);
+        
+        return createJsonResult(result);
+    }
+
+    /**
+     * Create error info for batch operations
+     */
+    private Map<String, Object> createErrorInfo(int index, String message) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("index", index);
+        error.put("error", message);
+        return error;
     }
 
     /**

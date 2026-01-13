@@ -34,13 +34,14 @@ import reva.util.AddressUtil;
 import reva.util.SchemaUtil;
 
 /**
- * Tool provider for bookmark-related operations.
- * Provides tools to set, get, remove, and search bookmarks in programs.
+ * Tool provider for bookmark-related operations. Provides tools to set, get,
+ * remove, and search bookmarks in programs.
  */
 public class BookmarkToolProvider extends AbstractToolProvider {
 
     /**
      * Constructor
+     *
      * @param server The MCP server
      */
     public BookmarkToolProvider(McpSyncServer server) {
@@ -56,26 +57,42 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
         properties.put("action", Map.of(
-            "type", "string",
-            "description", "Action to perform: 'set', 'get', 'search', 'remove', or 'categories'",
-            "enum", List.of("set", "get", "search", "remove", "categories")
+                "type", "string",
+                "description", "Action to perform: 'set', 'get', 'search', 'remove', or 'categories'",
+                "enum", List.of("set", "get", "search", "remove", "categories")
         ));
         properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the bookmark (required for set/remove, optional for get)"));
         properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter name)"));
         properties.put("type", SchemaUtil.stringProperty("Bookmark type enum ('Note', 'Warning', 'TODO', 'Bug', 'Analysis'; required for set/remove, optional for get/categories)"));
         properties.put("category", SchemaUtil.stringProperty("Bookmark category for organization (required for set, optional for remove; can be empty string)"));
-        properties.put("comment", SchemaUtil.stringProperty("Bookmark comment text (required for set)"));
+        properties.put("comment", SchemaUtil.stringProperty("Bookmark comment text (required for set when not using batch mode)"));
+        // Batch bookmarks array - array of objects
+        Map<String, Object> bookmarkItemSchema = new HashMap<>();
+        bookmarkItemSchema.put("type", "object");
+        Map<String, Object> bookmarkItemProperties = new HashMap<>();
+        bookmarkItemProperties.put("address", SchemaUtil.stringProperty("Address or symbol name where to set the bookmark"));
+        bookmarkItemProperties.put("type", SchemaUtil.stringProperty("Bookmark type enum ('Note', 'Warning', 'TODO', 'Bug', 'Analysis')"));
+        bookmarkItemProperties.put("category", SchemaUtil.stringProperty("Bookmark category for organization (can be empty string)"));
+        bookmarkItemProperties.put("comment", SchemaUtil.stringProperty("Bookmark comment text"));
+        bookmarkItemSchema.put("properties", bookmarkItemProperties);
+        bookmarkItemSchema.put("required", List.of("address", "type", "comment"));
+
+        Map<String, Object> bookmarksArraySchema = new HashMap<>();
+        bookmarksArraySchema.put("type", "array");
+        bookmarksArraySchema.put("description", "Array of bookmark objects for batch setting. Each object should have 'address' (required), 'type' (required), 'comment' (required), and optional 'category'. When provided, sets multiple bookmarks in a single transaction.");
+        bookmarksArraySchema.put("items", bookmarkItemSchema);
+        properties.put("bookmarks", bookmarksArraySchema);
         properties.put("search_text", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (required for search)"));
         properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return when action='search'", 100));
 
         List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage-bookmarks")
-            .title("Manage Bookmarks")
-            .description("Create, retrieve, search, remove bookmarks, or list bookmark categories.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("manage-bookmarks")
+                .title("Manage Bookmarks")
+                .description("Create, retrieve, search, remove bookmarks, or list bookmark categories.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
@@ -105,13 +122,28 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         });
     }
 
+    /**
+     * Handle setting a bookmark
+     *
+     * @param program The program
+     * @param request The request
+     * @return The result
+     */
     private McpSchema.CallToolResult handleSetBookmark(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Check for batch mode (bookmarks array)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bookmarksArray = getOptionalBookmarksArray(request);
+
+        if (bookmarksArray != null && !bookmarksArray.isEmpty()) {
+            return handleBatchSetBookmarks(program, request, bookmarksArray);
+        }
+
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
             addressStr = getOptionalString(request, "address_or_symbol", null);
         }
         if (addressStr == null) {
-            return createErrorResult("address is required for action='set'");
+            return createErrorResult("address is required for action='set' (or use 'bookmarks' array for batch mode)");
         }
         Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
         if (address == null) {
@@ -150,6 +182,147 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         }
     }
 
+    /**
+     * Get optional bookmarks array from request for batch operations
+     *
+     * @param request The request
+     * @return The bookmarks array
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getOptionalBookmarksArray(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        Object value = request.arguments().get("bookmarks");
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof List) {
+            return (List<Map<String, Object>>) value;
+        }
+        throw new IllegalArgumentException("Parameter 'bookmarks' must be an array");
+    }
+
+    /**
+     * Handle batch setting of multiple bookmarks in a single transaction
+     *
+     * @param program The program
+     * @param request The request
+     * @param bookmarksArray The bookmarks array
+     * @return The result
+     */
+    private McpSchema.CallToolResult handleBatchSetBookmarks(Program program,
+            io.modelcontextprotocol.spec.McpSchema.CallToolRequest request,
+            List<Map<String, Object>> bookmarksArray) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+        BookmarkManager bookmarkMgr = program.getBookmarkManager();
+
+        try {
+            int transactionId = program.startTransaction("Batch Set Bookmarks");
+            try {
+                for (int i = 0; i < bookmarksArray.size(); i++) {
+                    Map<String, Object> bookmarkObj = bookmarksArray.get(i);
+
+                    // Extract address
+                    Object addressObj = bookmarkObj.get("address");
+                    if (addressObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'address' field in bookmark object"));
+                        continue;
+                    }
+                    String addressStr = addressObj.toString();
+
+                    // Extract type
+                    Object typeObj = bookmarkObj.get("type");
+                    if (typeObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'type' field in bookmark object"));
+                        continue;
+                    }
+                    String type = typeObj.toString();
+
+                    // Extract comment
+                    Object commentObj = bookmarkObj.get("comment");
+                    if (commentObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'comment' field in bookmark object"));
+                        continue;
+                    }
+                    String comment = commentObj.toString();
+
+                    // Extract category (optional, defaults to empty string)
+                    String category = "";
+                    Object categoryObj = bookmarkObj.get("category");
+                    if (categoryObj != null) {
+                        category = categoryObj.toString();
+                    }
+
+                    // Resolve address
+                    Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+                    if (address == null) {
+                        errors.add(createErrorInfo(i, "Could not resolve address or symbol: " + addressStr));
+                        continue;
+                    }
+
+                    // Set the bookmark (remove existing if present)
+                    Bookmark existing = bookmarkMgr.getBookmark(address, type, category);
+                    if (existing != null) {
+                        bookmarkMgr.removeBookmark(existing);
+                    }
+                    Bookmark bookmark = bookmarkMgr.setBookmark(address, type, category, comment);
+
+                    // Record success
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("index", i);
+                    result.put("id", bookmark.getId());
+                    result.put("address", AddressUtil.formatAddress(address));
+                    result.put("type", type);
+                    result.put("category", category);
+                    result.put("comment", comment);
+                    results.add(result);
+                }
+
+                program.endTransaction(transactionId, true);
+                autoSaveProgram(program, "Batch set bookmarks");
+
+                // Build response
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("total", bookmarksArray.size());
+                response.put("succeeded", results.size());
+                response.put("failed", errors.size());
+                response.put("results", results);
+                if (!errors.isEmpty()) {
+                    response.put("errors", errors);
+                }
+
+                return createJsonResult(response);
+            } catch (Exception e) {
+                program.endTransaction(transactionId, false);
+                throw e;
+            }
+        } catch (Exception e) {
+            logError("Error in batch set bookmarks", e);
+            return createErrorResult("Failed to batch set bookmarks: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Create error info for batch operations
+     *
+     * @param index The index of the bookmark
+     * @param message The error message
+     * @return The error info
+     */
+    private Map<String, Object> createErrorInfo(int index, String message) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("index", index);
+        error.put("error", message);
+        return error;
+    }
+
+    /**
+     * Handle getting bookmarks
+     *
+     * @param program The program
+     * @param request The request
+     * @return The result
+     */
     private McpSchema.CallToolResult handleGetBookmarks(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
@@ -188,6 +361,13 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         return createJsonResult(result);
     }
 
+    /**
+     * Handle searching bookmarks
+     *
+     * @param program The program
+     * @param request The request
+     * @return The result
+     */
     private McpSchema.CallToolResult handleSearchBookmarks(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String searchText = getOptionalString(request, "search_text", null);
         if (searchText == null) {
@@ -223,6 +403,13 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         return createJsonResult(result);
     }
 
+    /**
+     * Handle removing a bookmark
+     *
+     * @param program The program
+     * @param request The request
+     * @return The result
+     */
     private McpSchema.CallToolResult handleRemoveBookmark(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
@@ -244,8 +431,8 @@ public class BookmarkToolProvider extends AbstractToolProvider {
                 BookmarkManager bookmarkMgr = program.getBookmarkManager();
                 Bookmark bookmark = bookmarkMgr.getBookmark(address, type, category);
                 if (bookmark == null) {
-                    return createErrorResult("No bookmark found at address " + AddressUtil.formatAddress(address) +
-                        " with type " + type + " and category " + category);
+                    return createErrorResult("No bookmark found at address " + AddressUtil.formatAddress(address)
+                            + " with type " + type + " and category " + category);
                 }
                 bookmarkMgr.removeBookmark(bookmark);
                 Map<String, Object> result = new HashMap<>();
@@ -265,7 +452,13 @@ public class BookmarkToolProvider extends AbstractToolProvider {
             return createErrorResult("Failed to remove bookmark: " + e.getMessage());
         }
     }
-
+    /**
+     * Handle listing bookmark categories
+     *
+     * @param program The program
+     * @param request The request
+     * @return The result
+     */
     private McpSchema.CallToolResult handleListCategories(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String type = getOptionalString(request, "type", null);
         BookmarkManager bookmarkMgr = program.getBookmarkManager();
@@ -294,6 +487,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
 
     /**
      * Check if a bookmark matches the given filters
+     *
      * @param bookmark The bookmark to check
      * @param typeFilter Type filter (null for any)
      * @param categoryFilter Category filter (null for any)
@@ -311,6 +505,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
 
     /**
      * Convert a bookmark to a map representation
+     *
      * @param bookmark The bookmark to convert
      * @return Map representation of the bookmark
      */

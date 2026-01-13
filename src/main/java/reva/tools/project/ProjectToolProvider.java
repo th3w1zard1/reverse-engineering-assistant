@@ -81,8 +81,13 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        // Available in all modes - opens project and loads programs into memory
-        registerOpenProjectTool();
+        // Available in all modes - opens project or program based on path
+        registerOpenTool();
+
+        // DISABLED: Legacy tools - kept for compatibility with upstream repo
+        // These tools were merged into 'open' but kept here as disabled
+        // registerOpenProjectTool();  // DISABLED - use 'open' with .gpr file instead
+        // registerOpenProgramTool();  // DISABLED - use 'open' with program file instead
 
         // GUI-only tools: require ToolManager which isn't available in headless mode
         if (!headlessMode) {
@@ -96,7 +101,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
         registerAnalyzeProgramTool();
         registerChangeProcessorTool();
         registerImportFileTool();
-        registerOpenProgramTool();
     }
 
     /**
@@ -946,8 +950,98 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to open a Ghidra project
+     * Register a unified tool to open either a Ghidra project or a program.
+     * Automatically detects the type based on the path (.gpr file = project, otherwise = program).
      */
+    private void registerOpenTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("path", SchemaUtil.stringProperty(
+            "Path to open: a Ghidra project file (.gpr) or a program file. " +
+            "If .gpr, opens the project. Otherwise, imports/opens the program in the active project."
+        ));
+        properties.put("openAllPrograms", SchemaUtil.booleanPropertyWithDefault(
+            "For projects: whether to automatically open all programs into memory (default: true). " +
+            "Ignored for program files.", true
+        ));
+        properties.put("destinationFolder", SchemaUtil.stringProperty(
+            "For programs: project folder for new imports (default: '/'). Ignored for projects or if program exists."
+        ));
+        properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
+            "For programs: run auto-analysis on new imports (default: true). Ignored for projects or if program exists.",
+            true
+        ));
+        properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
+            "For programs: add new imports to version control (default: true). Ignored for projects or if program exists.",
+            true
+        ));
+
+        List<String> required = List.of("path");
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+            .name("open")
+            .title("Open")
+            .description("Open a Ghidra project (.gpr file) or a program file. " +
+                "For projects: opens the project and optionally loads all programs into memory. " +
+                "For programs: imports if missing, opens if exists. Always saves to project. Caches for other tools.")
+            .inputSchema(createSchema(properties, required))
+            .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            // Start log collection to capture all messages during tool execution
+            ToolLogCollector logCollector = new ToolLogCollector();
+            logCollector.start();
+
+            try {
+                // Get the path from the request
+                String path;
+                try {
+                    path = getString(request, "path");
+                } catch (IllegalArgumentException e) {
+                    logCollector.stop();
+                    return createErrorResult(e.getMessage());
+                }
+
+                // Validate the file exists
+                File file = new File(path);
+                if (!file.exists()) {
+                    logCollector.stop();
+                    return createErrorResult("File does not exist: " + path);
+                }
+
+                // Detect if this is a project (.gpr) or program file
+                boolean isProject = path.toLowerCase().endsWith(".gpr");
+
+                if (isProject) {
+                    // Handle project opening
+                    return handleOpenProject(request, path, logCollector);
+                } else {
+                    // Handle program opening (stop log collector first as it's not used for programs)
+                    logCollector.stop();
+                    return handleOpenProgram(request, path);
+                }
+
+            } catch (IllegalArgumentException e) {
+                logCollector.stop();
+                return createErrorResult("Invalid path: " + e.getMessage());
+            } catch (Exception e) {
+                logCollector.stop();
+                return createErrorResult("Failed to open: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * DISABLED: Legacy tool - kept for compatibility with upstream repo.
+     * This tool was merged into 'open' but kept here as disabled.
+     * Use 'open' with a .gpr file path instead.
+     *
+     * Original tool: open-project
+     * Merged into: open (detects .gpr files automatically)
+     */
+    /*
     private void registerOpenProjectTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
@@ -989,16 +1083,103 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     return createErrorResult(e.getMessage());
                 }
 
-                // Validate the project file exists
-                File projectFile = new File(projectPath);
-                if (!projectFile.exists()) {
-                    return createErrorResult("Project file does not exist: " + projectPath);
+                // Use the shared handler method
+                Map<String, Object> modifiedRequest = new HashMap<>(request);
+                modifiedRequest.put("path", projectPath);
+                modifiedRequest.put("openAllPrograms", shouldOpenAllPrograms);
+                return handleOpenProject(modifiedRequest, projectPath, logCollector);
+
+            } catch (IllegalArgumentException e) {
+                logCollector.stop();
+                return createErrorResult("Invalid project path: " + e.getMessage());
+            } catch (Exception e) {
+                logCollector.stop();
+                return createErrorResult("Failed to open project: " + e.getMessage());
+            }
+        });
+    }
+    */
+
+    /**
+     * DISABLED: Legacy tool - kept for compatibility with upstream repo.
+     * This tool was merged into 'open' but kept here as disabled.
+     * Use 'open' with a program file path instead.
+     *
+     * Original tool: open-program
+     * Merged into: open (detects program files automatically)
+     */
+    /*
+    private void registerOpenProgramTool() {
+        // Define schema for the tool
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("path", SchemaUtil.stringProperty(
+            "File system path to program. Imports if not in project, opens if exists."
+        ));
+        properties.put("destinationFolder", SchemaUtil.stringProperty(
+            "Project folder for new imports (default: '/'). Ignored if program exists."
+        ));
+        properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
+            "Run auto-analysis on new imports (default: true). Ignored if program exists.",
+            true
+        ));
+        properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
+            "Add new imports to version control (default: true). Program always saved regardless.",
+            true
+        ));
+
+        List<String> required = List.of("path");
+
+        // Create the tool
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+            .name("open-program")
+            .title("Open Program")
+            .description("Open program in project. Imports if missing, opens if exists. Always saves to project. Caches for other tools.")
+            .inputSchema(createSchema(properties, required))
+            .build();
+
+        // Register the tool with a handler
+        registerTool(tool, (exchange, request) -> {
+            try {
+                // Get required parameter
+                String path = getString(request, "path");
+
+                // Validate file exists
+                File file = new File(path);
+                if (!file.exists()) {
+                    return createErrorResult("File does not exist: " + path);
                 }
 
-                // Check if it's a .gpr file
-                if (!projectPath.toLowerCase().endsWith(".gpr")) {
-                    return createErrorResult("Project file must have .gpr extension: " + projectPath);
-                }
+                // Use the shared handler method
+                return handleOpenProgram(request, path);
+
+            } catch (IllegalArgumentException e) {
+                return createErrorResult("Invalid parameter: " + e.getMessage());
+            } catch (Exception e) {
+                return createErrorResult("Failed to open program: " + e.getMessage());
+            }
+        });
+    }
+    */
+
+    /**
+     * Handle opening a Ghidra project
+     */
+    private Map<String, Object> handleOpenProject(Map<String, Object> request, String projectPath, ToolLogCollector logCollector) {
+        try {
+            boolean shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
+
+            // Validate the project file exists
+            File projectFile = new File(projectPath);
+            if (!projectFile.exists()) {
+                logCollector.stop();
+                return createErrorResult("Project file does not exist: " + projectPath);
+            }
+
+            // Check if it's a .gpr file
+            if (!projectPath.toLowerCase().endsWith(".gpr")) {
+                logCollector.stop();
+                return createErrorResult("Project file must have .gpr extension: " + projectPath);
+            }
 
                 // Extract project directory and name from the .gpr file path
                 // .gpr file is typically at: <projectDir>/<projectName>.gpr
@@ -1187,9 +1368,126 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 return createErrorResult("Invalid project path: " + e.getMessage());
             } catch (Exception e) {
                 logCollector.stop();
+                logCollector.stop();
                 return createErrorResult("Failed to open project: " + e.getMessage());
             }
-        });
+        } catch (IllegalArgumentException e) {
+            if (logCollector != null) {
+                logCollector.stop();
+            }
+            return createErrorResult("Invalid project path: " + e.getMessage());
+        } catch (Exception e) {
+            if (logCollector != null) {
+                logCollector.stop();
+            }
+            return createErrorResult("Failed to open project: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle opening a program
+     */
+    private Map<String, Object> handleOpenProgram(Map<String, Object> request, String path) {
+        try {
+            // Get optional parameters with defaults
+            String destinationFolder = getOptionalString(request, "destinationFolder", "/");
+            boolean analyzeAfterImport = getOptionalBoolean(request, "analyzeAfterImport", true);
+            boolean enableVersionControl = getOptionalBoolean(request, "enableVersionControl", true);
+
+            // Validate file exists
+            File file = new File(path);
+            if (!file.exists()) {
+                return createErrorResult("File does not exist: " + path);
+            }
+
+            // Get the active project
+            Project project = AppInfo.getActiveProject();
+            if (project == null) {
+                return createErrorResult("No active project found. Please open a project first using open with a .gpr file.");
+            }
+
+            // Check if program already exists in project by searching for it
+            String fileName = file.getName();
+            DomainFile existingProgram = null;
+            DomainFolder searchFolder = destinationFolder.equals("/")
+                ? project.getProjectData().getRootFolder()
+                : project.getProjectData().getFolder(destinationFolder);
+
+            if (searchFolder != null) {
+                // Search for existing program in the destination folder and subfolders
+                existingProgram = findProgramInFolder(searchFolder, fileName);
+            }
+
+            String programPath;
+            boolean wasImported = false;
+
+            if (existingProgram != null) {
+                // Program already exists - use it
+                programPath = existingProgram.getPathname();
+                logInfo("Program already exists in project: " + programPath);
+            } else {
+                // Program doesn't exist - import it
+                logInfo("Program not found in project, importing: " + path);
+
+                // Get destination folder
+                DomainFolder destFolder;
+                if (destinationFolder.equals("/")) {
+                    destFolder = project.getProjectData().getRootFolder();
+                } else {
+                    destFolder = project.getProjectData().getFolder(destinationFolder);
+                    if (destFolder == null) {
+                        return createErrorResult("Destination folder not found: " + destinationFolder);
+                    }
+                }
+
+                // Import the file using shared helper method
+                try {
+                    existingProgram = importSingleFile(file, destFolder, analyzeAfterImport, enableVersionControl,
+                        "Initial import via ReVa open");
+                    programPath = existingProgram.getPathname();
+                    wasImported = true;
+                } catch (Exception e) {
+                    return createErrorResult("Failed to import program: " + e.getMessage());
+                }
+
+                // Program is automatically saved when imported
+                // No explicit save needed - Ghidra handles this
+            }
+
+            // Open the program in memory using RevaProgramManager (this caches it)
+            Program program = RevaProgramManager.getProgramByPath(programPath);
+            if (program == null || program.isClosed()) {
+                return createErrorResult("Failed to open program: " + programPath);
+            }
+
+            // Program is automatically saved when opened
+            // Auto-save will handle any modifications made via tools
+
+            // Create result data
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("programName", program.getName());
+            result.put("wasImported", wasImported);
+            result.put("isOpen", !program.isClosed());
+            result.put("language", program.getLanguage().getLanguageID().getIdAsString());
+            result.put("compilerSpec", program.getCompilerSpec().getCompilerSpecID().getIdAsString());
+            result.put("sizeBytes", program.getMemory().getSize());
+            result.put("functionCount", program.getFunctionManager().getFunctionCount());
+            result.put("symbolCount", program.getSymbolTable().getNumSymbols());
+
+            String message = wasImported
+                ? "Program imported and opened successfully: " + programPath
+                : "Program opened successfully: " + programPath;
+            result.put("message", message);
+
+            return createJsonResult(result);
+
+        } catch (IllegalArgumentException e) {
+            return createErrorResult("Invalid parameter: " + e.getMessage());
+        } catch (Exception e) {
+            return createErrorResult("Failed to open program: " + e.getMessage());
+        }
     }
 
     /**
@@ -1566,214 +1864,97 @@ public class ProjectToolProvider extends AbstractToolProvider {
         }
     }
 
+
     /**
-     * Register a tool to open a program in the current project.
-     * If the program doesn't exist in the project, it will be imported first.
-     * The program will be opened in memory, saved to the project, and cached for future access.
+     * Import a single file into the project, optionally analyze it, and optionally add to version control.
+     * This is a shared helper method used by both 'open' (for programs) and 'import-file' tools.
+     *
+     * @param file The file to import
+     * @param destFolder The destination folder in the project
+     * @param analyzeAfterImport Whether to run auto-analysis after import
+     * @param enableVersionControl Whether to add to version control after import
+     * @param commitMessagePrefix Prefix for version control commit message (e.g., "Initial import via ReVa open")
+     * @return The imported DomainFile
+     * @throws Exception If import fails
      */
-    private void registerOpenProgramTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("path", SchemaUtil.stringProperty(
-            "File system path to program. Imports if not in project, opens if exists."
-        ));
-        properties.put("destinationFolder", SchemaUtil.stringProperty(
-            "Project folder for new imports (default: '/'). Ignored if program exists."
-        ));
-        properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
-            "Run auto-analysis on new imports (default: true). Ignored if program exists.",
-            true
-        ));
-        properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
-            "Add new imports to version control (default: true). Program always saved regardless.",
-            true
-        ));
+    private DomainFile importSingleFile(File file, DomainFolder destFolder, boolean analyzeAfterImport,
+                                       boolean enableVersionControl, String commitMessagePrefix) throws Exception {
+        // Import the file using batch import (non-recursive for single file)
+        BatchInfo batchInfo = new BatchInfo(1);
+        FSRL fsrl = FileSystemService.getInstance().getLocalFSRL(file);
+        boolean hasImportableFiles = batchInfo.addFile(fsrl, TaskMonitor.DUMMY);
 
-        List<String> required = List.of("path");
+        if (!hasImportableFiles || batchInfo.getTotalCount() == 0) {
+            throw new Exception("No importable program found in: " + file.getAbsolutePath());
+        }
 
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("open-program")
-            .title("Open Program")
-            .description("Open program in project. Imports if missing, opens if exists. Always saves to project. Caches for other tools.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+        // Get configuration for timeouts
+        ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
+        int importTimeoutSeconds = configManager != null ?
+            configManager.getDecompilerTimeoutSeconds() * 2 : 300;
+        int analysisTimeoutSeconds = configManager != null ?
+            configManager.getImportAnalysisTimeoutSeconds() : 600;
 
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
+        // Create timeout-protected monitor for import task
+        TaskMonitor importMonitor = TimeoutTaskMonitor.timeoutIn(importTimeoutSeconds, TimeUnit.SECONDS);
+
+        // Create and run the import task synchronously
+        ImportBatchTask importTask = new ImportBatchTask(batchInfo, destFolder, null, true, false, false);
+        importTask.run(importMonitor);
+
+        // Check for timeout or cancellation
+        if (importMonitor.isCancelled()) {
+            throw new Exception("Import timed out after " + importTimeoutSeconds + " seconds");
+        }
+
+        // Find the imported file
+        String fileName = file.getName();
+        DomainFile importedFile = findProgramInFolder(destFolder, fileName);
+        if (importedFile == null) {
+            throw new Exception("File was imported but could not be found in project");
+        }
+
+        // Analyze if requested
+        if (analyzeAfterImport && importedFile.getContentType().equals("Program")) {
             try {
-                // Get required parameter
-                String path = getString(request, "path");
-
-                // Get optional parameters with defaults
-                String destinationFolder = getOptionalString(request, "destinationFolder", "/");
-                boolean analyzeAfterImport = getOptionalBoolean(request, "analyzeAfterImport", true);
-                boolean enableVersionControl = getOptionalBoolean(request, "enableVersionControl", true);
-
-                // Validate file exists
-                File file = new File(path);
-                if (!file.exists()) {
-                    return createErrorResult("File does not exist: " + path);
-                }
-
-                // Get the active project
-                Project project = AppInfo.getActiveProject();
-                if (project == null) {
-                    return createErrorResult("No active project found. Please open a project first using open-project.");
-                }
-
-                // Check if program already exists in project by searching for it
-                String fileName = file.getName();
-                DomainFile existingProgram = null;
-                DomainFolder searchFolder = destinationFolder.equals("/")
-                    ? project.getProjectData().getRootFolder()
-                    : project.getProjectData().getFolder(destinationFolder);
-
-                if (searchFolder != null) {
-                    // Search for existing program in the destination folder and subfolders
-                    existingProgram = findProgramInFolder(searchFolder, fileName);
-                }
-
-                String programPath;
-                boolean wasImported = false;
-
-                if (existingProgram != null) {
-                    // Program already exists - use it
-                    programPath = existingProgram.getPathname();
-                    logInfo("Program already exists in project: " + programPath);
-                } else {
-                    // Program doesn't exist - import it
-                    logInfo("Program not found in project, importing: " + path);
-
-                    // Get destination folder
-                    DomainFolder destFolder;
-                    if (destinationFolder.equals("/")) {
-                        destFolder = project.getProjectData().getRootFolder();
-                    } else {
-                        destFolder = project.getProjectData().getFolder(destinationFolder);
-                        if (destFolder == null) {
-                            return createErrorResult("Destination folder not found: " + destinationFolder);
-                        }
-                    }
-
-                    // Import the file using batch import
-                    BatchInfo batchInfo = new BatchInfo(1); // Don't recurse for single file
-                    FSRL fsrl = FileSystemService.getInstance().getLocalFSRL(file);
-                    boolean hasImportableFiles = batchInfo.addFile(fsrl, TaskMonitor.DUMMY);
-
-                    if (!hasImportableFiles || batchInfo.getTotalCount() == 0) {
-                        return createErrorResult("No importable program found in: " + path);
-                    }
-
-                    // Get configuration for timeouts
-                    ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
-                    int importTimeoutSeconds = configManager != null ?
-                        configManager.getDecompilerTimeoutSeconds() * 2 : 300;
-
-                    // Create timeout-protected monitor for import task
-                    TaskMonitor importMonitor = TimeoutTaskMonitor.timeoutIn(importTimeoutSeconds, TimeUnit.SECONDS);
-
-                    // Create and run the import task synchronously
-                    ImportBatchTask importTask = new ImportBatchTask(batchInfo, destFolder, null, true, false, false);
-                    importTask.run(importMonitor);
-
-                    // Check for timeout or cancellation
-                    if (importMonitor.isCancelled()) {
-                        return createErrorResult("Import timed out after " + importTimeoutSeconds + " seconds");
-                    }
-
-                    // Find the imported program
-                    existingProgram = findProgramInFolder(destFolder, fileName);
-                    if (existingProgram == null) {
-                        return createErrorResult("Program was imported but could not be found in project");
-                    }
-
-                    programPath = existingProgram.getPathname();
-                    wasImported = true;
-
-                    // Analyze if requested
-                    if (analyzeAfterImport) {
-                        try {
-                            Object consumer = new Object();
-                            DomainObject domainObject = existingProgram.getDomainObject(consumer, false, false, TaskMonitor.DUMMY);
-                            if (domainObject instanceof Program) {
-                                Program program = (Program) domainObject;
-                                try {
-                                    AutoAnalysisManager analysisManager = AutoAnalysisManager.getAnalysisManager(program);
-                                    if (analysisManager != null) {
-                                        int analysisTimeoutSeconds = configManager != null ?
-                                            configManager.getImportAnalysisTimeoutSeconds() : 600;
-                                        TaskMonitor analysisMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
-                                        analysisManager.startAnalysis(analysisMonitor);
-                                        analysisManager.waitForAnalysis(null, analysisMonitor);
-                                        if (!analysisMonitor.isCancelled()) {
-                                            program.save("Auto-analysis complete", TaskMonitor.DUMMY);
-                                        }
-                                    }
-                                } finally {
-                                    program.release(consumer);
-                                }
+                Object consumer = new Object();
+                DomainObject domainObject = importedFile.getDomainObject(consumer, false, false, TaskMonitor.DUMMY);
+                if (domainObject instanceof Program) {
+                    Program program = (Program) domainObject;
+                    try {
+                        AutoAnalysisManager analysisManager = AutoAnalysisManager.getAnalysisManager(program);
+                        if (analysisManager != null) {
+                            TaskMonitor analysisMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
+                            analysisManager.startAnalysis(analysisMonitor);
+                            analysisManager.waitForAnalysis(null, analysisMonitor);
+                            if (!analysisMonitor.isCancelled()) {
+                                program.save("Auto-analysis complete", TaskMonitor.DUMMY);
                             }
-                        } catch (Exception e) {
-                            logError("Analysis failed for imported program: " + programPath, e);
-                            // Continue - program is still imported
                         }
+                    } finally {
+                        program.release(consumer);
                     }
-
-                    // Add to version control if requested
-                    // NOTE: Version control is separate from saving. The program is ALWAYS saved to the project
-                    // regardless of this setting. Version control only enables change tracking over time.
-                    if (enableVersionControl && existingProgram.canAddToRepository()) {
-                        try {
-                            String commitMessage = analyzeAfterImport
-                                ? "Initial import via ReVa open-program (analyzed)"
-                                : "Initial import via ReVa open-program";
-                            existingProgram.addToVersionControl(commitMessage, false, TaskMonitor.DUMMY);
-                        } catch (Exception e) {
-                            logError("Failed to add program to version control: " + programPath, e);
-                            // Continue - program is still imported and will be saved
-                        }
-                    }
-
-                    // Program is automatically saved when imported
-                    // No explicit save needed - Ghidra handles this
                 }
-
-                // Open the program in memory using RevaProgramManager (this caches it)
-                Program program = RevaProgramManager.getProgramByPath(programPath);
-                if (program == null || program.isClosed()) {
-                    return createErrorResult("Failed to open program: " + programPath);
-                }
-
-                // Program is automatically saved when opened
-                // Auto-save will handle any modifications made via tools
-
-                // Create result data
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", true);
-                result.put("programPath", programPath);
-                result.put("programName", program.getName());
-                result.put("wasImported", wasImported);
-                result.put("isOpen", !program.isClosed());
-                result.put("language", program.getLanguage().getLanguageID().getIdAsString());
-                result.put("compilerSpec", program.getCompilerSpec().getCompilerSpecID().getIdAsString());
-                result.put("sizeBytes", program.getMemory().getSize());
-                result.put("functionCount", program.getFunctionManager().getFunctionCount());
-                result.put("symbolCount", program.getSymbolTable().getNumSymbols());
-
-                String message = wasImported
-                    ? "Program imported and opened successfully: " + programPath
-                    : "Program opened successfully: " + programPath;
-                result.put("message", message);
-
-                return createJsonResult(result);
-
-            } catch (IllegalArgumentException e) {
-                return createErrorResult("Invalid parameter: " + e.getMessage());
             } catch (Exception e) {
-                return createErrorResult("Failed to open program: " + e.getMessage());
+                logError("Analysis failed for imported file: " + importedFile.getPathname(), e);
+                // Continue - file is still imported
             }
-        });
+        }
+
+        // Add to version control if requested
+        if (enableVersionControl && importedFile.canAddToRepository()) {
+            try {
+                String commitMessage = analyzeAfterImport
+                    ? commitMessagePrefix + " (analyzed)"
+                    : commitMessagePrefix;
+                importedFile.addToVersionControl(commitMessage, false, TaskMonitor.DUMMY);
+            } catch (Exception e) {
+                logError("Failed to add file to version control: " + importedFile.getPathname(), e);
+                // Continue - file is still imported
+            }
+        }
+
+        return importedFile;
     }
 
     /**

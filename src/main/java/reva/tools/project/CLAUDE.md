@@ -11,7 +11,7 @@ The `reva.tools.project` package provides MCP tools for Ghidra project managemen
 - `get-current-program` - Get the currently active program with metadata
 - `list-project-files` - List files and folders in the Ghidra project with optional recursion
 - `list-open-programs` - List all programs currently open in Ghidra across all tools
-- `open-project` - Open a Ghidra project from a .gpr file path (GUI mode only)
+- `open` - Open a Ghidra project (.gpr file) or a program file. Automatically detects type based on path extension
 - `open-program-in-code-browser` - Open a specific program in Code Browser (GUI mode only)
 - `open-all-programs-in-code-browser` - Open all programs matching extensions (exe/dll) in Code Browser (GUI mode only)
 - `checkin-program` - Check in (commit) a program to version control with commit message
@@ -354,9 +354,11 @@ for (PluginTool tool : runningTools) {
 }
 ```
 
-### Opening Projects
+### Opening Projects and Programs
 
-**Open a Ghidra project from a .gpr file path (GUI mode only)**:
+**The `open` tool automatically detects whether the path is a project (.gpr file) or a program file**:
+
+**For projects (.gpr files)**:
 ```java
 // Validate project file exists
 File projectFile = new File(projectPath);
@@ -389,12 +391,31 @@ Project project = ghidraProject.getProject();
 boolean isActive = (AppInfo.getActiveProject() == project);
 ```
 
-**Key points for opening projects**:
-- Use absolute paths for reliability
-- Project file must have .gpr extension
-- Project directory and marker file must exist
-- Opened project becomes the active project
-- Only available in GUI mode (not headless)
+**For programs (any other file)**:
+```java
+// Validate file exists
+File file = new File(path);
+if (!file.exists()) {
+    return createErrorResult("File does not exist: " + path);
+}
+
+// Get the active project (must be opened first)
+Project project = AppInfo.getActiveProject();
+if (project == null) {
+    return createErrorResult("No active project found. Please open a project first using open with a .gpr file.");
+}
+
+// Check if program already exists in project
+// If not, import it using BatchInfo and ImportBatchTask
+// Then open it using RevaProgramManager.getProgramByPath()
+```
+
+**Key points for the `open` tool**:
+- Automatically detects project vs program based on .gpr extension
+- For projects: Use absolute paths for reliability, project file must have .gpr extension
+- For programs: Requires an active project, imports if missing, opens if exists
+- Both operations cache programs for future access via RevaProgramManager
+- Available in all modes (GUI and headless)
 
 ## Testing Considerations
 

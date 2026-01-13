@@ -4,6 +4,10 @@
         "vscjava.vscode-gradle",
         "ms-python.vscode-pylance",
         "ms-python.python",
-        "vscjava.vscode-java-pack"
+        "vscjava.vscode-java-dependency",
+        "redhat.java",
+        "vscjava.vscode-maven",
+        "vscjava.vscode-java-pack",
+        "oracle.oracle-java"
     ]
 }

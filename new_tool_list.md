@@ -144,16 +144,27 @@ Returns:
     - When mode='data_items': List of defined data labels and their values
     - When mode='segments': List of all memory segments in the program
 
-### 7. `open-project`
+### 7. `open`
 
-Project management tool that opens a Ghidra project from a .gpr file path and optionally loads all programs into memory.
+Unified tool that opens either a Ghidra project (.gpr file) or a program file. Automatically detects the type based on the path extension.
+
+**For projects (.gpr files):**
+- Opens the project and optionally loads all programs into memory
+
+**For programs (any other file):**
+- Imports if missing, opens if exists
+- Always saves to project and caches for other tools
 
 Args:
-    projectPath: Path to the Ghidra project file (.gpr) to open. Use absolute path for reliability. (required)
-    openAllPrograms: Whether to automatically open all programs in the project into memory (default: true). Set to false for large projects where you want to open specific programs later.
+    path: Path to open: a Ghidra project file (.gpr) or a program file. If .gpr, opens the project. Otherwise, imports/opens the program in the active project. (required)
+    openAllPrograms: For projects: whether to automatically open all programs into memory (default: true). Ignored for program files.
+    destinationFolder: For programs: project folder for new imports (default: '/'). Ignored for projects or if program exists.
+    analyzeAfterImport: For programs: run auto-analysis on new imports (default: true). Ignored for projects or if program exists.
+    enableVersionControl: For programs: add new imports to version control (default: true). Ignored for projects or if program exists.
 
 Returns:
-    JSON with project information including project name, location, program count, and list of opened programs (if openAllPrograms=true)
+    For projects: JSON with project information including project name, location, program count, and list of opened programs (if openAllPrograms=true)
+    For programs: JSON with program information including programPath, wasImported status, and program metadata
 
 ### 8. `list-project-files`
 
@@ -215,7 +226,9 @@ Args:
 Returns:
     JSON with import results including files discovered, programs imported, files analyzed, and files added to version control
 
-### 13. `open-program`
+### 13. `open-program` (DEPRECATED - use `open` instead)
+
+**Note:** This tool has been merged into the `open` tool. Use `open` with a program file path instead.
 
 Open program in project. Imports if missing, opens if exists. Always saves to project. Caches for other tools.
 
@@ -498,7 +511,7 @@ The 24 tools above replace all 90 original tools while maintaining 100% feature 
 - **String Analysis**: `manage-strings`
 - **Function Analysis**: `list-functions`, `manage-function`, `manage-function-tags`, `get-function`
 - **Memory Inspection**: `inspect-memory`
-- **Project Management**: `open-project`, `list-project-files`, `checkin-program`, `analyze-program`, `change-processor`, `import-file`, `open-program`, `open-programs`
+- **Project Management**: `open`, `list-project-files`, `checkin-program`, `analyze-program`, `change-processor`, `import-file`, `open-programs`
 - **Cross-References**: `get-references`
 - **Type Management**: `manage-data-types`
 - **Structure Management**: `manage-structures`

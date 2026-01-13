@@ -86,7 +86,7 @@ class ReVaLauncher:
                         f"Project file specified in REVA_PROJECT_PATH does not exist: {project_gpr_path}"
                     )
 
-                # Extract project directory and name (same logic as open-project tool)
+                # Extract project directory and name (same logic as open tool for projects)
                 project_dir = project_gpr.parent
                 project_name = project_gpr.stem  # Gets filename without extension
 
