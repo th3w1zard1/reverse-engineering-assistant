@@ -48,12 +48,13 @@ import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TimeoutTaskMonitor;
+
 import java.util.concurrent.TimeUnit;
+
 import ghidra.app.util.importer.MessageLog;
 import ghidra.app.util.opinion.LoadResults;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.app.util.opinion.Loaded;
-import ghidra.app.util.opinion.Loader;
 import ghidra.formats.gfilesystem.FSRL;
 import ghidra.formats.gfilesystem.FSUtilities;
 import ghidra.formats.gfilesystem.FileSystemService;
@@ -64,8 +65,6 @@ import ghidra.plugins.importer.batch.BatchInfo;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.framework.store.local.LocalFileSystem;
 import io.modelcontextprotocol.server.McpSyncServer;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
-import io.modelcontextprotocol.spec.McpSchema;
 import reva.debug.DebugCaptureService;
 import reva.plugin.RevaProgramManager;
 import reva.plugin.ConfigManager;
@@ -75,9 +74,10 @@ import reva.util.RevaInternalServiceRegistry;
 import reva.util.ToolLogCollector;
 
 /**
- * Tool provider for project-related operations.
- * Provides tools to get the current program, list project files, and perform version control operations.
+ * Tool provider for project-related operations. Provides tools to get the
+ * current program, list project files, and perform version control operations.
  */
+
 public class ProjectToolProvider extends AbstractToolProvider {
 
     private final boolean headlessMode;
