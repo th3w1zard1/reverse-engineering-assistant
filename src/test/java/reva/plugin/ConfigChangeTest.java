@@ -119,7 +119,7 @@ public class ConfigChangeTest {
         configManager.setServerPort(8080);
 
         // Manually trigger optionsChanged with same values (simulating Ghidra's behavior)
-        // Note: Ghidra might still call optionsChanged even if values are the same
+        // NOTE: Ghidra might still call optionsChanged even if values are the same
         ToolOptionsBackend backend = (ToolOptionsBackend) configManager.getBackend();
         backend.optionsChanged(mockToolOptions, ConfigManager.SERVER_PORT, 8080, 8080);
 

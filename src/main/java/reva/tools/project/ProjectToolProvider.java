@@ -1519,16 +1519,26 @@ public class ProjectToolProvider extends AbstractToolProvider {
         properties.put("serverHost", SchemaUtil.stringProperty(
                 "For shared projects: Ghidra Server hostname or IP address. "
                 + "If not provided, will check REVA_SERVER_HOST environment variable. "
-                + "Note: Server address is typically stored in the project file. "
+                + "NOTE: Server address is typically stored in the project file. "
                 + "This parameter may be used if the server has moved or to override the stored address."
         ));
         properties.put("serverPort", Map.of(
                 "type", "integer",
                 "description", "For shared projects: Ghidra Server port (default: 13100). "
                 + "If not provided, will check REVA_SERVER_PORT environment variable. "
-                + "Note: Server port is typically stored in the project file. "
+                + "NOTE: Server port is typically stored in the project file. "
                 + "This parameter may be used if the server port has changed or to override the stored port.",
                 "default", 13100
+        ));
+        // Get default value from environment variable
+        String forceIgnoreLockEnv = System.getenv("REVA_FORCE_IGNORE_LOCK");
+        boolean forceIgnoreLockDefault = forceIgnoreLockEnv != null && 
+                (forceIgnoreLockEnv.equalsIgnoreCase("true") || forceIgnoreLockEnv.equalsIgnoreCase("1"));
+        properties.put("forceIgnoreLock", SchemaUtil.booleanPropertyWithDefault(
+                "For projects: whether to forcibly ignore lock files by deleting them before opening (default: false, or REVA_FORCE_IGNORE_LOCK env var). "
+                + "If true, deletes <projectName>.lock and <projectName>.lock~ files before attempting to open the project. "
+                + "Uses rename trick if file handle is in use by another process. Ignored for program files or bulk operations.",
+                forceIgnoreLockDefault
         ));
 
         // path is required for single file/project operations, optional for bulk operations (when extensions is provided)
@@ -1822,6 +1832,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
         try {
             boolean shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
 
+            // Get forceIgnoreLock from parameters or environment variable
+            String forceIgnoreLockEnv = System.getenv("REVA_FORCE_IGNORE_LOCK");
+            boolean forceIgnoreLockDefault = forceIgnoreLockEnv != null && 
+                    (forceIgnoreLockEnv.equalsIgnoreCase("true") || forceIgnoreLockEnv.equalsIgnoreCase("1"));
+            boolean forceIgnoreLock = getOptionalBoolean(request, "forceIgnoreLock", forceIgnoreLockDefault);
+
             // Get server credentials from parameters or environment variables
             String[] credentials = getServerCredentials(request);
             String serverUsername = credentials[0];
@@ -1886,7 +1902,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             boolean projectWasAlreadyOpen;
             try {
                 ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
-                    projectDirFile, projectName, true, this);
+                    projectDirFile, projectName, true, this, forceIgnoreLock);
                 project = result.getProject();
                 projectWasAlreadyOpen = result.wasAlreadyOpen();
 
@@ -1896,7 +1912,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 }
 
                 // Check if this is a shared project (connected to Ghidra Server)
-                // Note: getRepositoryAdapter() is not available in this Ghidra version
+                // NOTE: getRepositoryAdapter() is not available in this Ghidra version
                 // Shared project detection would require different API
                 boolean isShared = false; // TODO: Implement shared project detection if needed
                 if (isShared) {
@@ -2018,7 +2034,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             result.put("projectWasAlreadyOpen", projectWasAlreadyOpen);
 
             // Check if project is shared and connection status
-            // Note: getRepositoryAdapter() is not available in this Ghidra version
+            // NOTE: getRepositoryAdapter() is not available in this Ghidra version
             boolean isShared = false; // TODO: Implement shared project detection if needed
             result.put("isShared", isShared);
             if (isShared) {

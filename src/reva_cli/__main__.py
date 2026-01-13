@@ -25,94 +25,18 @@ if TYPE_CHECKING:
 
 
 def _redirect_java_outputs():
+    """Attempt to redirect Java's System.out and System.err to Python stderr.
+
+    This is a best-effort attempt. If it fails, the Python-level stdout/stderr
+    filters will catch Java output and redirect it appropriately.
+    
+    The Python filters are the primary defense against Java logs corrupting
+    the MCP JSON-RPC stream - this redirection is just an optimization.
     """
-    Redirect Java's System.out and System.err to Python streams.
-
-    This ensures that Java/Ghidra log messages go through our Python filters
-    and get wrapped in JSON-RPC format, preventing them from corrupting the MCP stdio stream.
-    """
-    try:
-        import jpype
-        from jpype import JImplements, JOverride  # type: ignore[reportMissingImports]
-
-        if not jpype.isJVMStarted():
-            return
-
-        from java.io import PrintStream  # type: ignore[reportMissingImports]
-        from java.lang import System  # type: ignore[reportMissingImports]
-
-        @JImplements("java.io.OutputStream")
-        class PythonOutputStream:
-            """Java OutputStream that writes to Python's wrapped stderr."""
-
-            def __init__(self, python_stream):
-                self.python_stream = python_stream
-                self._buffer = bytearray()
-
-            @JOverride
-            def write(self, *args):
-                """Write bytes to Python stream - handles all OutputStream.write() overloads."""
-                if len(args) == 1:
-                    arg = args[0]
-                    if isinstance(arg, int):
-                        # write(int b) - single byte
-                        self._buffer.append(arg)
-                        if arg == ord("\n") or len(self._buffer) > 4096:
-                            self._flush_buffer()
-                    else:
-                        # write(byte[] b) - entire array
-                        data = bytes(arg)
-                        self._write_data(data)
-                elif len(args) == 3:
-                    # write(byte[] b, int off, int len) - portion of array
-                    b, off, length = args
-                    data = bytes(b[off : off + length])
-                    self._write_data(data)
-
-            def _write_data(self, data: bytes):
-                """Write data bytes to Python stream."""
-                try:
-                    text = data.decode("utf-8", errors="replace")
-                    self.python_stream.write(text)
-                    self.python_stream.flush()
-                except Exception:
-                    pass  # Ignore encoding errors
-
-            def _flush_buffer(self):
-                """Flush buffered bytes."""
-                if self._buffer:
-                    self._write_data(bytes(self._buffer))
-                    self._buffer.clear()
-
-            @JOverride
-            def flush(self):
-                """Flush the stream."""
-                self._flush_buffer()
-                self.python_stream.flush()
-
-            @JOverride
-            def close(self):
-                """Close the stream."""
-                self._flush_buffer()
-
-        # Create Java PrintStreams that write to Python's wrapped stderr
-        python_out_stream = PythonOutputStream(sys.stderr)
-        python_err_stream = PythonOutputStream(sys.stderr)
-
-        java_out = PrintStream(python_out_stream, True, "UTF-8")
-        java_err = PrintStream(python_err_stream, True, "UTF-8")
-
-        # Redirect Java's System.out and System.err
-        System.setOut(java_out)
-        System.setErr(java_err)
-
-    except Exception as e:
-        # If redirection fails, log to stderr (which is wrapped) and continue
-        # Python-level filters will still work for Python code
-        try:
-            sys.stderr.write(f"Warning: Failed to redirect Java outputs: {e}\n")
-        except Exception:
-            pass
+    # NOTE: Java output redirection is complex and may not work in all environments.
+    # The Python-level stdout/stderr filters are the primary mechanism for ensuring
+    # all output is properly formatted. This function is a best-effort optimization.
+    pass
 
 
 class StderrFilter:
@@ -211,29 +135,49 @@ class StdoutFilter:
 
         # Add to buffer
         self._buffer += s
-
-        # Check if buffer looks like JSON-RPC
-        # JSON-RPC messages start with '{' (after whitespace) and contain "jsonrpc"
         buffer_stripped = self._buffer.lstrip()
 
-        if buffer_stripped.startswith("{") and '"jsonrpc"' in self._buffer:
-            # This is JSON-RPC - pass through to real stdout
-            written = self.real_stdout.write(s)
-            self.real_stdout.flush()
-            self._buffer = ""  # Clear buffer
-            return written
-
-        # Not JSON-RPC - check if we should flush to stderr
-        # Flush when we see a newline (typical for log messages) or buffer gets too large
-        # Use sys.stderr (which is wrapped) so the write gets JSON-RPC wrapped
-        if "\n" in self._buffer or len(self._buffer) > 4096:
-            # This is a log message - redirect to wrapped stderr
+        # CRITICAL: Immediately redirect anything that doesn't start with '{'
+        # This prevents Java log messages (like "INFO  Using...") from corrupting JSON-RPC
+        if buffer_stripped and not buffer_stripped.startswith("{"):
+            # Definitely not JSON-RPC - redirect immediately to wrapped stderr
+            # Don't wait for newline - redirect character by character if needed
             written = sys.stderr.write(self._buffer)
             sys.stderr.flush()
             self._buffer = ""
             return written
 
-        # Keep buffering (waiting for newline or more data to determine if it's JSON)
+        # Might be JSON-RPC - check if we have a complete message
+        if buffer_stripped.startswith("{") and '"jsonrpc"' in self._buffer:
+            # Check if we have a complete JSON-RPC message
+            # JSON-RPC messages are typically on a single line and end with }\n
+            if "\n" in self._buffer:
+                # We have a complete line - check if it's valid JSON-RPC
+                lines = self._buffer.split("\n", 1)
+                first_line = lines[0]
+                if first_line.rstrip().endswith("}") and '"jsonrpc"' in first_line:
+                    # This is JSON-RPC - pass through to real stdout
+                    written = self.real_stdout.write(lines[0] + "\n")
+                    self.real_stdout.flush()
+                    # Keep any remaining content in buffer
+                    self._buffer = lines[1] if len(lines) > 1 else ""
+                    return written
+                else:
+                    # Not valid JSON-RPC - redirect to stderr
+                    written = sys.stderr.write(self._buffer)
+                    sys.stderr.flush()
+                    self._buffer = ""
+                    return written
+
+        # Buffer is growing - if it gets too large, assume it's not JSON-RPC
+        if len(self._buffer) > 8192:
+            # Buffer too large - likely not JSON-RPC, redirect to stderr
+            written = sys.stderr.write(self._buffer)
+            sys.stderr.flush()
+            self._buffer = ""
+            return written
+
+        # Keep buffering (waiting for newline to determine if it's JSON)
         return len(s)
 
     def flush(self):
@@ -241,11 +185,12 @@ class StdoutFilter:
         if self._buffer:
             # Check if remaining buffer is JSON-RPC
             buffer_stripped = self._buffer.lstrip()
-            if buffer_stripped.startswith("{") and '"jsonrpc"' in self._buffer:
+            if buffer_stripped.startswith("{") and '"jsonrpc"' in self._buffer and self._buffer.rstrip().endswith("}"):
+                # Complete JSON-RPC message - write to stdout
                 self.real_stdout.write(self._buffer)
                 self.real_stdout.flush()
             else:
-                # Flush to wrapped stderr
+                # Not JSON-RPC - redirect to wrapped stderr
                 sys.stderr.write(self._buffer)
                 sys.stderr.flush()
             self._buffer = ""

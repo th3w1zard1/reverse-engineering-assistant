@@ -113,7 +113,7 @@ export REVA_RECURSIVE=true
 - `REVA_ENABLE_VERSION_CONTROL` - Add imported files to version control (default: `true`)
 - `REVA_MAX_RESULTS` - Maximum number of results to return (default: varies by tool)
 - `REVA_FILTER_DEFAULT_NAMES` - Filter out default Ghidra-generated names (default: `true`)
-- `REVA_AUTO_BOOKMARK_THRESHOLD` - Minimum reference count for automatic bookmarking (default: `5`)
+- `REVA_AUTO_BOOKMARK_PERCENTILE` - Percentile threshold for automatic bookmarking (default: `97.0` = top 3%, range: 95.0-99.0)
 
 **Note:** Environment variables only affect default values when parameters are not explicitly provided in tool calls. Explicit parameters always take precedence.
 
@@ -121,7 +121,7 @@ export REVA_RECURSIVE=true
 
 ReVa includes several intelligent features that work automatically:
 
-- **Auto-Bookmarking**: Addresses referenced frequently (above threshold) are automatically bookmarked with appropriate types
+- **Auto-Bookmarking**: Top 2-5% of addresses by reference count are automatically bookmarked with appropriate types
 - **Auto-Tagging**: Function tags are automatically applied based on API calls, libraries, and string patterns
 - **Auto-Labeling**: Function and variable names are automatically assigned based on context, strings, and API usage
 - **Auto-Commenting**: Comment types and text are automatically set based on address context

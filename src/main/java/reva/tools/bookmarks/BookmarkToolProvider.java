@@ -22,8 +22,6 @@ import java.util.List;
 import java.util.Map;
 
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressSet;
-import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.Bookmark;
 import ghidra.program.model.listing.BookmarkManager;
 import ghidra.program.model.listing.Program;
@@ -58,8 +56,8 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("action", Map.of(
                 "type", "string",
-                "description", "Action to perform: 'set', 'get', 'search', 'remove', or 'categories'",
-                "enum", List.of("set", "get", "search", "remove", "categories")
+                "description", "Action to perform: 'set', 'get', 'search', 'remove', 'remove_all', or 'categories'",
+                "enum", List.of("set", "get", "search", "remove", "remove_all", "categories")
         ));
         properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the bookmark (required for set/remove, optional for get)"));
         properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter name)"));
@@ -84,6 +82,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         properties.put("bookmarks", bookmarksArraySchema);
         properties.put("search_text", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (required for search)"));
         properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return when action='search'", 100));
+        properties.put("remove_all", SchemaUtil.booleanPropertyWithDefault("When true with action='remove', removes all bookmarks from the program. Can be combined with 'type' and 'category' filters to remove all bookmarks of a specific type/category.", false));
 
         List<String> required = List.of("action");
 
@@ -108,10 +107,12 @@ public class BookmarkToolProvider extends AbstractToolProvider {
                         return handleSearchBookmarks(program, request);
                     case "remove":
                         return handleRemoveBookmark(program, request);
+                    case "remove_all":
+                        return handleRemoveAllBookmarks(program, request);
                     case "categories":
                         return handleListCategories(program, request);
                     default:
-                        return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, search, remove, categories");
+                        return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, search, remove, remove_all, categories");
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
@@ -131,11 +132,10 @@ public class BookmarkToolProvider extends AbstractToolProvider {
      */
     private McpSchema.CallToolResult handleSetBookmark(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         // Check for batch mode (bookmarks array)
-        @SuppressWarnings("unchecked")
         List<Map<String, Object>> bookmarksArray = getOptionalBookmarksArray(request);
 
         if (bookmarksArray != null && !bookmarksArray.isEmpty()) {
-            return handleBatchSetBookmarks(program, request, bookmarksArray);
+            return handleBatchSetBookmarks(program, bookmarksArray);
         }
 
         String addressStr = getOptionalString(request, "address", null);
@@ -204,12 +204,10 @@ public class BookmarkToolProvider extends AbstractToolProvider {
      * Handle batch setting of multiple bookmarks in a single transaction
      *
      * @param program The program
-     * @param request The request
      * @param bookmarksArray The bookmarks array
      * @return The result
      */
     private McpSchema.CallToolResult handleBatchSetBookmarks(Program program,
-            io.modelcontextprotocol.spec.McpSchema.CallToolRequest request,
             List<Map<String, Object>> bookmarksArray) {
         List<Map<String, Object>> results = new ArrayList<>();
         List<Map<String, Object>> errors = new ArrayList<>();
@@ -404,19 +402,33 @@ public class BookmarkToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle removing a bookmark
+     * Handle removing a bookmark or batch of bookmarks
      *
      * @param program The program
      * @param request The request
      * @return The result
      */
     private McpSchema.CallToolResult handleRemoveBookmark(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Check for batch mode (bookmarks array)
+        List<Map<String, Object>> bookmarksArray = getOptionalBookmarksArray(request);
+        
+        if (bookmarksArray != null && !bookmarksArray.isEmpty()) {
+            return handleBatchRemoveBookmarks(program, bookmarksArray);
+        }
+        
+        // Check for remove_all flag
+        boolean removeAll = getOptionalBoolean(request, "remove_all", false);
+        if (removeAll) {
+            return handleRemoveAllBookmarks(program, request);
+        }
+
+        // Single bookmark removal
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
             addressStr = getOptionalString(request, "address_or_symbol", null);
         }
         if (addressStr == null) {
-            return createErrorResult("address is required for action='remove'");
+            return createErrorResult("address is required for action='remove' (or use 'bookmarks' array for batch mode, or 'remove_all=true' to remove all)");
         }
         Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
         if (address == null) {
@@ -450,6 +462,168 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         } catch (Exception e) {
             logError("Error removing bookmark", e);
             return createErrorResult("Failed to remove bookmark: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Handle batch removal of multiple bookmarks in a single transaction
+     *
+     * @param program The program
+     * @param bookmarksArray The bookmarks array to remove
+     * @return The result
+     */
+    private McpSchema.CallToolResult handleBatchRemoveBookmarks(Program program,
+            List<Map<String, Object>> bookmarksArray) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+        BookmarkManager bookmarkMgr = program.getBookmarkManager();
+
+        try {
+            int transactionId = program.startTransaction("Batch Remove Bookmarks");
+            try {
+                for (int i = 0; i < bookmarksArray.size(); i++) {
+                    Map<String, Object> bookmarkObj = bookmarksArray.get(i);
+
+                    // Extract address
+                    Object addressObj = bookmarkObj.get("address");
+                    if (addressObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'address' field in bookmark object"));
+                        continue;
+                    }
+                    String addressStr = addressObj.toString();
+
+                    // Extract type
+                    Object typeObj = bookmarkObj.get("type");
+                    if (typeObj == null) {
+                        errors.add(createErrorInfo(i, "Missing 'type' field in bookmark object"));
+                        continue;
+                    }
+                    String type = typeObj.toString();
+
+                    // Extract category (optional, defaults to empty string)
+                    String category = "";
+                    Object categoryObj = bookmarkObj.get("category");
+                    if (categoryObj != null) {
+                        category = categoryObj.toString();
+                    }
+
+                    // Resolve address
+                    Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
+                    if (address == null) {
+                        errors.add(createErrorInfo(i, "Could not resolve address or symbol: " + addressStr));
+                        continue;
+                    }
+
+                    // Remove the bookmark
+                    Bookmark bookmark = bookmarkMgr.getBookmark(address, type, category);
+                    if (bookmark == null) {
+                        errors.add(createErrorInfo(i, "No bookmark found at address " + AddressUtil.formatAddress(address)
+                                + " with type " + type + " and category " + category));
+                        continue;
+                    }
+                    bookmarkMgr.removeBookmark(bookmark);
+
+                    // Record success
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("index", i);
+                    result.put("address", AddressUtil.formatAddress(address));
+                    result.put("type", type);
+                    result.put("category", category);
+                    results.add(result);
+                }
+
+                program.endTransaction(transactionId, true);
+                autoSaveProgram(program, "Batch remove bookmarks");
+
+                // Build response
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("total", bookmarksArray.size());
+                response.put("removed", results.size());
+                response.put("failed", errors.size());
+                response.put("results", results);
+                if (!errors.isEmpty()) {
+                    response.put("errors", errors);
+                }
+
+                return createJsonResult(response);
+            } catch (Exception e) {
+                program.endTransaction(transactionId, false);
+                throw e;
+            }
+        } catch (Exception e) {
+            logError("Error in batch remove bookmarks", e);
+            return createErrorResult("Failed to batch remove bookmarks: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Handle removing all bookmarks from a program
+     *
+     * @param program The program
+     * @param request The request
+     * @return The result
+     */
+    private McpSchema.CallToolResult handleRemoveAllBookmarks(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        String typeFilter = getOptionalString(request, "type", null);
+        String categoryFilter = getOptionalString(request, "category", null);
+        
+        try {
+            int transactionId = program.startTransaction("Remove All Bookmarks");
+            try {
+                BookmarkManager bookmarkMgr = program.getBookmarkManager();
+                Iterator<Bookmark> iter = typeFilter != null 
+                    ? bookmarkMgr.getBookmarksIterator(typeFilter) 
+                    : bookmarkMgr.getBookmarksIterator();
+                
+                int removedCount = 0;
+                List<Map<String, Object>> removedBookmarks = new ArrayList<>();
+                
+                while (iter.hasNext()) {
+                    Bookmark bookmark = iter.next();
+                    
+                    // Apply filters
+                    if (typeFilter != null && !bookmark.getTypeString().equals(typeFilter)) {
+                        continue;
+                    }
+                    if (categoryFilter != null && !bookmark.getCategory().equals(categoryFilter)) {
+                        continue;
+                    }
+                    
+                    // Record bookmark info before removing
+                    Map<String, Object> bookmarkInfo = new HashMap<>();
+                    bookmarkInfo.put("address", AddressUtil.formatAddress(bookmark.getAddress()));
+                    bookmarkInfo.put("type", bookmark.getTypeString());
+                    bookmarkInfo.put("category", bookmark.getCategory());
+                    bookmarkInfo.put("comment", bookmark.getComment());
+                    removedBookmarks.add(bookmarkInfo);
+                    
+                    bookmarkMgr.removeBookmark(bookmark);
+                    removedCount++;
+                }
+                
+                program.endTransaction(transactionId, true);
+                autoSaveProgram(program, "Remove all bookmarks");
+                
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("removed", removedCount);
+                result.put("bookmarks", removedBookmarks);
+                if (typeFilter != null) {
+                    result.put("typeFilter", typeFilter);
+                }
+                if (categoryFilter != null) {
+                    result.put("categoryFilter", categoryFilter);
+                }
+                
+                return createJsonResult(result);
+            } catch (Exception e) {
+                program.endTransaction(transactionId, false);
+                throw e;
+            }
+        } catch (Exception e) {
+            logError("Error removing all bookmarks", e);
+            return createErrorResult("Failed to remove all bookmarks: " + e.getMessage());
         }
     }
     /**

@@ -240,7 +240,7 @@ public final class FunctionFingerprintUtil {
         if ((operandType & OperandType.IMMEDIATE) != 0) {
             return "imm";
         }
-        // Note: OperandType.MEMORY was removed in Ghidra 12.0
+        // NOTE: OperandType.MEMORY was removed in Ghidra 12.0
         // Memory operands are typically covered by ADDRESS or DATA types
         return "other";
     }

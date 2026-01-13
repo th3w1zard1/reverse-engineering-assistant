@@ -181,8 +181,19 @@ public class RevaHeadlessLauncher {
         // Create/open persistent project if location and name specified
         if (projectLocation != null && projectName != null) {
             try {
+                // Check environment variable for forceIgnoreLock
+                String forceIgnoreLockEnv = System.getenv("REVA_FORCE_IGNORE_LOCK");
+                boolean forceIgnoreLock = forceIgnoreLockEnv != null && 
+                        (forceIgnoreLockEnv.equalsIgnoreCase("true") || forceIgnoreLockEnv.equalsIgnoreCase("1"));
+                
+                // If forceIgnoreLock is enabled, delete lock files before attempting to open
+                // This handles the case where lock files exist from a previous crashed session
+                if (forceIgnoreLock) {
+                    ProjectUtil.deleteLockFiles(projectLocation, projectName, this);
+                }
+                
                 ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
-                    projectLocation, projectName, true, this);
+                    projectLocation, projectName, true, this, forceIgnoreLock);
                 ghidraProject = result.getGhidraProject();
                 if (result.wasAlreadyOpen()) {
                     Msg.info(this, "Project '" + projectName + "' is already open, using active project");
@@ -192,7 +203,40 @@ public class RevaHeadlessLauncher {
                     Msg.info(this, "Opened project: " + projectName);
                 }
             } catch (IOException e) {
-                throw e;
+                // Check if this is a lock-related error and forceIgnoreLock is enabled
+                String errorMsg = e.getMessage();
+                if (errorMsg != null && errorMsg.contains("locked") && errorMsg.contains("cannot be opened")) {
+                    String forceIgnoreLockEnv = System.getenv("REVA_FORCE_IGNORE_LOCK");
+                    boolean forceIgnoreLock = forceIgnoreLockEnv != null && 
+                            (forceIgnoreLockEnv.equalsIgnoreCase("true") || forceIgnoreLockEnv.equalsIgnoreCase("1"));
+                    
+                    if (forceIgnoreLock) {
+                        Msg.info(this, "Project is locked, attempting to delete lock files and retry...");
+                        ProjectUtil.deleteLockFiles(projectLocation, projectName, this);
+                        // Retry opening the project after deleting lock files
+                        try {
+                            ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
+                                projectLocation, projectName, true, this, true);
+                            ghidraProject = result.getGhidraProject();
+                            if (result.wasAlreadyOpen()) {
+                                Msg.info(this, "Project '" + projectName + "' is already open, using active project");
+                            } else {
+                                Msg.info(this, "Opened project after deleting lock files: " + projectName);
+                            }
+                        } catch (Exception retryException) {
+                            throw new IOException("Failed to open project after deleting lock files: " + projectName, retryException);
+                        }
+                    } else {
+                        // Re-throw the original exception with helpful message
+                        throw new IOException("Project '" + projectName + "' is locked and cannot be opened. " +
+                            "It may be open in another Ghidra instance. " +
+                            "Please close the project in Ghidra GUI or close the other process using it. " +
+                            "Alternatively, set REVA_FORCE_IGNORE_LOCK=true to forcibly ignore lock files.", e);
+                    }
+                } else {
+                    // Not a lock-related error, re-throw as-is
+                    throw e;
+                }
             } catch (Exception e) {
                 throw new IOException("Failed to create/open project: " + projectName, e);
             }

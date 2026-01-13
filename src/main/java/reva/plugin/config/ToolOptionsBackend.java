@@ -113,7 +113,7 @@ public class ToolOptionsBackend implements ConfigurationBackend, OptionsChangeLi
         Msg.debug(this, "ToolOptions changed: " + optionName + " from " + oldValue + " to " + newValue);
 
         // Notify our listeners
-        // Note: We pass empty string as category since ToolOptions doesn't provide it
+        // NOTE: We pass empty string as category since ToolOptions doesn't provide it
         for (ConfigurationBackendListener listener : listeners) {
             try {
                 listener.onConfigurationChanged("", optionName, oldValue, newValue);

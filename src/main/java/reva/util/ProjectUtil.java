@@ -17,6 +17,8 @@ package reva.util;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 import ghidra.base.project.GhidraProject;
 import ghidra.framework.main.AppInfo;
@@ -103,6 +105,33 @@ public class ProjectUtil {
             String projectName,
             boolean enableUpgrade,
             Object logContext) throws IOException {
+        return createOrOpenProject(projectDir, projectName, enableUpgrade, logContext, false);
+    }
+
+    /**
+     * Create or open a Ghidra project with unified handling.
+     * <p>
+     * This method provides consistent behavior for:
+     * - Creating new projects
+     * - Opening existing projects
+     * - Handling locked projects (using active project if it matches)
+     * - Force ignoring lock files if requested
+     * - Providing clear error messages
+     *
+     * @param projectDir The directory where the project is stored
+     * @param projectName The name of the project
+     * @param enableUpgrade Whether to enable automatic project upgrades (default: true)
+     * @param logContext Object for logging context (can be null)
+     * @param forceIgnoreLock Whether to forcibly delete lock files before opening (default: false)
+     * @return ProjectOpenResult containing the project and status information
+     * @throws IOException if project creation/opening fails and cannot be recovered
+     */
+    public static ProjectOpenResult createOrOpenProject(
+            File projectDir,
+            String projectName,
+            boolean enableUpgrade,
+            Object logContext,
+            boolean forceIgnoreLock) throws IOException {
 
         // Ensure project directory exists
         if (!projectDir.exists()) {
@@ -113,6 +142,11 @@ public class ProjectUtil {
 
         String projectLocationPath = projectDir.getAbsolutePath();
         ProjectLocator locator = new ProjectLocator(projectLocationPath, projectName);
+
+        // If forceIgnoreLock is true, delete lock files before attempting to open
+        if (forceIgnoreLock) {
+            deleteLockFiles(projectDir, projectName, logContext);
+        }
 
         // Check if project already exists
         boolean projectExists = locator.getMarkerFile().exists() && locator.getProjectDir().exists();
@@ -237,6 +271,64 @@ public class ProjectUtil {
             }
         }
         return null;
+    }
+
+    /**
+     * Delete lock files for a project, using rename trick if file handle is in use.
+     * <p>
+     * Deletes both &lt;projectName&gt;.lock and &lt;projectName&gt;.lock~ files.
+     * If direct deletion fails (file handle in use), attempts to rename the file
+     * first, then delete it.
+     *
+     * @param projectDir The directory where the project is stored
+     * @param projectName The name of the project
+     * @param logContext Object for logging context (can be null)
+     */
+    public static void deleteLockFiles(File projectDir, String projectName, Object logContext) {
+        File lockFile = new File(projectDir, projectName + ".lock");
+        File lockFileBackup = new File(projectDir, projectName + ".lock~");
+
+        // Delete main lock file
+        if (lockFile.exists()) {
+            try {
+                if (!lockFile.delete()) {
+                    // Try rename trick if direct delete fails (file handle in use)
+                    File tempFile = new File(projectDir, projectName + ".lock.tmp." + System.currentTimeMillis());
+                    try {
+                        Files.move(lockFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                        tempFile.delete();
+                        logInfo(logContext, "Deleted lock file using rename trick: " + lockFile.getName());
+                    } catch (IOException e) {
+                        logInfo(logContext, "Warning: Could not delete lock file (may be in use): " + lockFile.getName() + " - " + e.getMessage());
+                    }
+                } else {
+                    logInfo(logContext, "Deleted lock file: " + lockFile.getName());
+                }
+            } catch (Exception e) {
+                logInfo(logContext, "Warning: Error deleting lock file: " + lockFile.getName() + " - " + e.getMessage());
+            }
+        }
+
+        // Delete backup lock file
+        if (lockFileBackup.exists()) {
+            try {
+                if (!lockFileBackup.delete()) {
+                    // Try rename trick if direct delete fails
+                    File tempFile = new File(projectDir, projectName + ".lock~.tmp." + System.currentTimeMillis());
+                    try {
+                        Files.move(lockFileBackup.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                        tempFile.delete();
+                        logInfo(logContext, "Deleted backup lock file using rename trick: " + lockFileBackup.getName());
+                    } catch (IOException e) {
+                        logInfo(logContext, "Warning: Could not delete backup lock file (may be in use): " + lockFileBackup.getName() + " - " + e.getMessage());
+                    }
+                } else {
+                    logInfo(logContext, "Deleted backup lock file: " + lockFileBackup.getName());
+                }
+            } catch (Exception e) {
+                logInfo(logContext, "Warning: Error deleting backup lock file: " + lockFileBackup.getName() + " - " + e.getMessage());
+            }
+        }
     }
 
     /**

@@ -12,8 +12,8 @@ When addresses are accessed frequently (referenced multiple times), ReVa automat
 
 ### How It Works
 
-- **Reference Counting**: Tracks how many times each address is referenced (via calls, data references, reads, writes)
-- **Threshold-Based**: Bookmarks addresses that exceed a configurable threshold (default: 5 references)
+- **Reference Counting**: Collects reference counts for all functions, data, and other referenced addresses in the program
+- **Percentile-Based**: Bookmarks only the top 2-5% of addresses by reference count (default: 97th percentile = top 3%)
 - **Smart Type Selection**: Chooses appropriate bookmark types based on context:
   - Function entry points → `Analysis` bookmarks
   - Called code locations → `Analysis` bookmarks
@@ -24,8 +24,9 @@ When addresses are accessed frequently (referenced multiple times), ReVa automat
 ### Configuration
 
 ```bash
-# Set custom threshold (default: 5)
-export REVA_AUTO_BOOKMARK_THRESHOLD=10
+# Set custom percentile (default: 97.0 = top 3%)
+# Range: 95.0-99.0 (bookmarks top 1-5%)
+export REVA_AUTO_BOOKMARK_PERCENTILE=98.0
 ```
 
 ### When It Triggers
@@ -42,7 +43,7 @@ Auto-bookmarking is triggered automatically when:
 // Accessing a function that's called 8 times
 {"identifier": "important_function"}
 
-// Automatically creates bookmark:
+// Automatically creates bookmark (if in top 3% by reference count):
 // Type: Analysis
 // Category: Auto-Important
 // Comment: "Auto-bookmarked: 8 references (threshold: 5)"
@@ -159,8 +160,8 @@ export REVA_AUTO_LABEL=true
 # Enable/disable auto-tagging (default: true)
 export REVA_AUTO_TAG=true
 
-# Auto-bookmark threshold (default: 5)
-export REVA_AUTO_BOOKMARK_THRESHOLD=10
+# Auto-bookmark percentile (default: 97.0 = top 3%, range: 95.0-99.0)
+export REVA_AUTO_BOOKMARK_PERCENTILE=98.0
 ```
 
 **Note**: These features have no tool parameters - they are controlled entirely via environment variables to simplify the API and avoid confusing AI agents.

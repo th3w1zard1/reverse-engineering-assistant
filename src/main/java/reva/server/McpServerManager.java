@@ -202,7 +202,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         toolProviders.add(new GetFunctionToolProvider(server));
 
         // Register all tools with the server
-        // Note: As of MCP SDK v0.14.0, tool registration is idempotent and replaces duplicates
+        // NOTE: As of MCP SDK v0.14.0, tool registration is idempotent and replaces duplicates
         for (ToolProvider provider : toolProviders) {
             provider.registerTools();
         }
@@ -265,7 +265,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         // The idle timeout is the maximum time a connection can be idle before being closed
         connector.setIdleTimeout(86400000L); // 24 hours in milliseconds
 
-        // Note: Connection timeout (for establishing connections) is handled by Jetty's
+        // NOTE: Connection timeout (for establishing connections) is handled by Jetty's
         // default settings and doesn't need to be configured separately on ServerConnector
 
         httpServer.addConnector(connector);

@@ -159,7 +159,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
                 Program program = getProgramFromArgs(request);
 
                 // Check if function_identifier is an array (batch mode)
-                // Note: common_callers mode already accepts multiple functions via function_addresses parameter
+                // NOTE: common_callers mode already accepts multiple functions via function_addresses parameter
                 Object functionIdentifierValue = request.arguments().get("function_identifier");
                 String mode = getOptionalString(request, "mode", "graph");
 

@@ -44,7 +44,7 @@ import reva.plugin.ConfigManager;
  * - REQUEST: {"timestamp":"...", "type":"REQUEST", "tool":"...", "requestId":"...", "params":{...}}
  * - RESPONSE: {"timestamp":"...", "type":"RESPONSE", "tool":"...", "requestId":"...", "durationMs":..., "isError":..., "content":{...}}
  *
- * Note: Content is decoded JSON (not escaped string) for easy parsing/grepping.
+ * NOTE: Content is decoded JSON (not escaped string) for easy parsing/grepping.
  */
 public class RevaToolLogger {
 

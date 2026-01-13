@@ -78,7 +78,7 @@ public abstract class RevaIntegrationTestBase extends AbstractGhidraHeadedIntegr
      * Set up shared test environment once for all tests in the class.
      * This significantly speeds up test execution by reusing the Ghidra instance.
      *
-     * Note: TestEnv, MCP server, and plugin initialization must be done lazily in @Before
+     * NOTE: TestEnv, MCP server, and plugin initialization must be done lazily in @Before
      * method due to Ghidra system initialization requirements, but we can prepare
      * non-Ghidra dependent shared resources here to reduce per-test overhead.
      */
@@ -320,7 +320,7 @@ public abstract class RevaIntegrationTestBase extends AbstractGhidraHeadedIntegr
         program = createDefaultProgram(getName(), "x86:LE:32:default", this);
 
         // Add a memory block to the program for tests that expect it
-        // Note: Memory blocks created with createInitializedBlock are not executable by default
+        // NOTE: Memory blocks created with createInitializedBlock are not executable by default
         // Tests that need executable memory should create their own executable blocks
         if (program.getMemory().getBlocks().length == 0) {
             int txId = program.startTransaction("Add test memory");
@@ -356,7 +356,7 @@ public abstract class RevaIntegrationTestBase extends AbstractGhidraHeadedIntegr
             program = null;
         }
 
-        // Note: We don't shutdown the server or clear the registry here
+        // NOTE: We don't shutdown the server or clear the registry here
         // since they're shared across all tests in the class
     }
 

@@ -88,6 +88,29 @@ public class EnvConfigUtil {
     }
 
     /**
+     * Get a double default value from environment variable.
+     * Checks REVA_<PARAMETER_NAME> environment variable.
+     *
+     * @param parameterName The parameter name (snake_case or camelCase)
+     * @param defaultValue The default value if environment variable is not set
+     * @return The value from environment variable, or defaultValue if not set or invalid
+     */
+    public static double getDoubleDefault(String parameterName, double defaultValue) {
+        String envVarName = toEnvVarName(parameterName);
+        String envValue = System.getenv(envVarName);
+        if (envValue == null || envValue.trim().isEmpty()) {
+            return defaultValue;
+        }
+
+        try {
+            return Double.parseDouble(envValue.trim());
+        } catch (NumberFormatException e) {
+            // Invalid format, return default
+            return defaultValue;
+        }
+    }
+
+    /**
      * Convert a parameter name to environment variable name.
      * Converts snake_case or camelCase to REVA_UPPER_SNAKE_CASE.
      *

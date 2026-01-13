@@ -470,7 +470,7 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
      * Provide helpful descriptions for well-known constants.
      * Returns null if no known description applies.
      *
-     * Note: Specific descriptions (like "1 KB") are checked before generic
+     * NOTE: Specific descriptions (like "1 KB") are checked before generic
      * ones (like "power of 2") to provide the most useful information.
      */
     private String describeConstant(long value) {

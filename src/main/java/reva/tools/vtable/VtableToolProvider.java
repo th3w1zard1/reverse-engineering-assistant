@@ -822,7 +822,7 @@ public class VtableToolProvider extends AbstractToolProvider {
 
     /**
      * Convert a raw pointer value to an Address.
-     * Note: Always uses the default address space. For programs with multiple
+     * NOTE: Always uses the default address space. For programs with multiple
      * address spaces (overlays, segments), this may resolve to the wrong space.
      * This is acceptable for typical vtable analysis on standard executables.
      */

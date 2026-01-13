@@ -51,7 +51,7 @@ def _spawn_project_watchdog(
 class ReVaLauncher:
     """Wraps ReVa headless launcher with Python-side project management.
 
-    Note: Stdio mode uses ephemeral projects in temp directories by default.
+    NOTE: Stdio mode uses ephemeral projects in temp directories by default.
     Projects are created per-session and cleaned up on exit.
     If REVA_PROJECT_PATH environment variable is set, uses that project instead.
     """
@@ -153,6 +153,22 @@ class ReVaLauncher:
 
             # Convert to Java File objects
             java_project_location = File(str(projects_dir))
+
+            # Ensure environment variables are available to Java
+            # Java reads environment variables via System.getenv(), so we need to ensure
+            # they're set in the Python process before Java code runs.
+            # Package relevant environment variables as a dictionary for reference/documentation.
+            # These are automatically available to Java since they're in the process environment.
+            _env_vars = {  # Prefixed with _ to indicate it's for reference only
+                "REVA_FORCE_IGNORE_LOCK": os.getenv("REVA_FORCE_IGNORE_LOCK", ""),
+                "REVA_PROJECT_PATH": os.getenv("REVA_PROJECT_PATH", ""),
+                "REVA_SERVER_USERNAME": os.getenv("REVA_SERVER_USERNAME", ""),
+                "REVA_SERVER_PASSWORD": os.getenv("REVA_SERVER_PASSWORD", ""),
+                "REVA_SERVER_HOST": os.getenv("REVA_SERVER_HOST", ""),
+                "REVA_SERVER_PORT": os.getenv("REVA_SERVER_PORT", ""),
+            }
+            # Environment variables are automatically available to Java via System.getenv()
+            # since they're set in the Python process environment before Java code runs
 
             # Create launcher with project parameters
             if self.config_file:

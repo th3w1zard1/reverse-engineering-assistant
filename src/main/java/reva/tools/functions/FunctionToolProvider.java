@@ -1949,10 +1949,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
             "description", "Action to perform: 'create' (create function), 'rename_function' (rename function), 'rename_variable' (rename variables), 'set_prototype' (set function prototype), 'set_variable_type' (set single variable type), 'change_datatypes' (change multiple variable data types)",
             "enum", List.of("create", "rename_function", "rename_variable", "set_prototype", "set_variable_type", "change_datatypes")
         ));
-        properties.put("address", Map.of(
-            "type", "string",
-            "description", "Address where the function should be created when action='create' (e.g., '0x401000', required for create)"
+        Map<String, Object> addressProperty = new HashMap<>();
+        addressProperty.put("description", "Address(es) where the function(s) should be created when action='create'. Can be a single address string or an array of address strings for batch operations (e.g., '0x401000' or ['0x401000', '0x402000']).");
+        Map<String, Object> addressArraySchema = new HashMap<>();
+        addressArraySchema.put("type", "array");
+        addressArraySchema.put("items", Map.of("type", "string"));
+        addressArraySchema.put("description", "Array of addresses for batch function creation");
+        addressProperty.put("oneOf", List.of(
+            Map.of("type", "string"),
+            addressArraySchema
         ));
+        properties.put("address", addressProperty);
         properties.put("function_identifier", Map.of(
             "type", "string",
             "description", "Function name(s) or address(es) for rename/modify operations. Can be a single string or an array of strings for batch operations (required for rename_function, rename_variable, set_prototype, set_variable_type, change_datatypes)"
@@ -1987,10 +1994,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
             "type", "string",
             "description", "Mapping of old to new variable names when action='rename_variable' (format: 'oldName1:newName1,oldName2:newName2', required for multiple variables)"
         ));
-        properties.put("prototype", Map.of(
-            "type", "string",
-            "description", "Function prototype/signature string when action='set_prototype' (required for set_prototype)"
+        Map<String, Object> prototypeProperty = new HashMap<>();
+        prototypeProperty.put("description", "Function prototype/signature string(s) when action='set_prototype'. Can be a single string or an array of strings for batch operations (required for set_prototype). When function_identifier is an array, prototype must be an array of matching length.");
+        Map<String, Object> prototypeArraySchema = new HashMap<>();
+        prototypeArraySchema.put("type", "array");
+        prototypeArraySchema.put("items", Map.of("type", "string"));
+        prototypeArraySchema.put("description", "Array of function prototypes for batch operations");
+        prototypeProperty.put("oneOf", List.of(
+            Map.of("type", "string"),
+            prototypeArraySchema
         ));
+        properties.put("prototype", prototypeProperty);
         properties.put("variable_name", Map.of(
             "type", "string",
             "description", "Variable name when action='set_variable_type' (required for set_variable_type)"
@@ -2050,8 +2064,18 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 switch (action) {
                     case "create":
+                        // Check if address is an array (batch mode)
+                        Object addressValue = request.arguments().get("address");
+                        if (addressValue instanceof List) {
+                            return handleBatchManageFunctionCreate(program, request, (List<?>) addressValue);
+                        }
                         return handleManageFunctionCreate(program, request);
                     case "set_prototype":
+                        // Check if function_identifier is an array (batch mode)
+                        Object functionIdentifierValue = request.arguments().get("function_identifier");
+                        if (functionIdentifierValue instanceof List) {
+                            return handleBatchManageFunctionSetPrototype(program, request, (List<?>) functionIdentifierValue);
+                        }
                         return handleManageFunctionSetPrototype(program, request);
                     case "rename_variable":
                         return handleManageFunctionRenameVariable(program, request);
@@ -2158,6 +2182,123 @@ public class FunctionToolProvider extends AbstractToolProvider {
         } catch (Exception e) {
             program.endTransaction(txId, false);
             return createErrorResult("Error creating function: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle batch creation of multiple functions in a single transaction
+     */
+    private McpSchema.CallToolResult handleBatchManageFunctionCreate(Program program, CallToolRequest request, List<?> addressList) {
+        Object nameValue = request.arguments().get("name");
+        List<?> nameList = (nameValue instanceof List) ? (List<?>) nameValue : null;
+        
+        String programPath = program.getDomainFile().getPathname();
+        int txId = program.startTransaction("Batch Create Functions");
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+        FunctionManager funcMgr = program.getFunctionManager();
+        
+        try {
+            for (int i = 0; i < addressList.size(); i++) {
+                try {
+                    String addressStr = addressList.get(i).toString();
+                    Address address;
+                    try {
+                        address = AddressUtil.parseAddress(program, addressStr);
+                    } catch (Exception e) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Invalid address: " + e.getMessage()));
+                        continue;
+                    }
+                    
+                    // Validate address is in executable memory
+                    MemoryBlock block = program.getMemory().getBlock(address);
+                    if (block == null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Address not in any memory block"));
+                        continue;
+                    }
+                    if (!block.isExecute()) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Address not in executable memory"));
+                        continue;
+                    }
+                    
+                    // Check if function already exists
+                    Function existingFunc = funcMgr.getFunctionAt(address);
+                    if (existingFunc != null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Function already exists: " + existingFunc.getName()));
+                        continue;
+                    }
+                    
+                    // Check if there's an instruction at the address
+                    Instruction instr = program.getListing().getInstructionAt(address);
+                    if (instr == null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "No instruction at address (may need disassembly)"));
+                        continue;
+                    }
+                    
+                    // Create the function
+                    CreateFunctionCmd cmd = new CreateFunctionCmd(address);
+                    boolean success = cmd.applyTo(program);
+                    
+                    if (!success) {
+                        String statusMsg = cmd.getStatusMsg();
+                        errors.add(Map.of("index", i, "address", addressStr, "error", 
+                            "Failed to create function" + (statusMsg != null ? ": " + statusMsg : "")));
+                        continue;
+                    }
+                    
+                    // Get the created function
+                    Function createdFunc = funcMgr.getFunctionAt(address);
+                    if (createdFunc == null) {
+                        errors.add(Map.of("index", i, "address", addressStr, "error", "Function creation reported success but function not found"));
+                        continue;
+                    }
+                    
+                    // Set custom name if provided
+                    String name = null;
+                    if (nameList != null && i < nameList.size()) {
+                        name = nameList.get(i).toString();
+                    }
+                    
+                    if (name != null && !name.isEmpty()) {
+                        try {
+                            createdFunc.setName(name, SourceType.USER_DEFINED);
+                        } catch (DuplicateNameException | InvalidInputException e) {
+                            // Name setting failed, but function was created successfully
+                            logInfo("manage-function (batch create): Could not set name '" + name + "' for function at " + addressStr + ": " + e.getMessage());
+                        }
+                    }
+                    
+                    // Record success
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("index", i);
+                    result.put("address", AddressUtil.formatAddress(address));
+                    result.put("function", createFunctionInfo(createdFunc, null));
+                    result.put("nameWasProvided", name != null && !name.isEmpty());
+                    results.add(result);
+                } catch (Exception e) {
+                    errors.add(Map.of("index", i, "address", addressList.get(i).toString(), "error", "Exception: " + e.getMessage()));
+                }
+            }
+            
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Batch create functions");
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("programPath", programPath);
+            response.put("total", addressList.size());
+            response.put("created", results.size());
+            response.put("failed", errors.size());
+            response.put("results", results);
+            if (!errors.isEmpty()) {
+                response.put("errors", errors);
+            }
+            
+            return createJsonResult(response);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            logError("Error in batch create functions", e);
+            return createErrorResult("Failed to batch create functions: " + e.getMessage());
         }
     }
 
@@ -2321,6 +2462,143 @@ public class FunctionToolProvider extends AbstractToolProvider {
             program.endTransaction(txId, false);
             return createErrorResult("Failed to set function prototype: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle batch setting of function prototypes when function_identifier is an array
+     */
+    private McpSchema.CallToolResult handleBatchManageFunctionSetPrototype(Program program, CallToolRequest request, List<?> functionIdentifierList) {
+        Object prototypeValue = request.arguments().get("prototype");
+        if (!(prototypeValue instanceof List)) {
+            return createErrorResult("When function_identifier is an array, prototype must also be an array of the same length");
+        }
+        @SuppressWarnings("unchecked")
+        List<?> prototypeList = (List<?>) prototypeValue;
+        
+        if (functionIdentifierList.size() != prototypeList.size()) {
+            return createErrorResult("function_identifier array and prototype array must have the same length. Got " + 
+                functionIdentifierList.size() + " identifiers and " + prototypeList.size() + " prototypes");
+        }
+        
+        boolean createIfNotExists = getOptionalBoolean(request, "createIfNotExists", true);
+        String programPath = program.getDomainFile().getPathname();
+        int txId = program.startTransaction("Batch Set Function Prototypes");
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+        
+        try {
+            for (int i = 0; i < functionIdentifierList.size(); i++) {
+                try {
+                    String functionIdentifier = functionIdentifierList.get(i).toString();
+                    String prototypeStr = prototypeList.get(i).toString();
+                    
+                    // Temporarily modify request arguments for single function call
+                    Map<String, Object> originalArgs = request.arguments();
+                    Object originalFunctionId = originalArgs.get("function_identifier");
+                    Object originalPrototype = originalArgs.get("prototype");
+                    Object originalPropagate = originalArgs.get("propagate");
+                    
+                    try {
+                        // Set single function arguments
+                        originalArgs.put("function_identifier", functionIdentifier);
+                        originalArgs.put("prototype", prototypeStr);
+                        originalArgs.put("createIfNotExists", createIfNotExists);
+                        originalArgs.put("propagate", false); // Disable propagation in batch mode
+                        
+                        // Call the single function handler
+                        McpSchema.CallToolResult singleResult = handleManageFunctionSetPrototype(program, request);
+                        
+                        if (singleResult.isError()) {
+                            String errorMsg = extractTextFromContent(singleResult.content().get(0));
+                            errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", errorMsg));
+                            continue;
+                        }
+                        
+                        // Extract result data
+                        Map<String, Object> resultData = extractJsonDataFromResult(singleResult);
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("index", i);
+                        result.put("function_identifier", functionIdentifier);
+                        if (resultData != null && !resultData.isEmpty()) {
+                            if (resultData.containsKey("function")) {
+                                result.put("function", resultData.get("function"));
+                            }
+                            if (resultData.containsKey("address")) {
+                                result.put("address", resultData.get("address"));
+                            }
+                            if (resultData.containsKey("created")) {
+                                result.put("created", resultData.get("created"));
+                            }
+                        }
+                        results.add(result);
+                    } finally {
+                        // Restore original arguments
+                        if (originalFunctionId != null) {
+                            originalArgs.put("function_identifier", originalFunctionId);
+                        } else {
+                            originalArgs.remove("function_identifier");
+                        }
+                        if (originalPrototype != null) {
+                            originalArgs.put("prototype", originalPrototype);
+                        } else {
+                            originalArgs.remove("prototype");
+                        }
+                        if (originalPropagate != null) {
+                            originalArgs.put("propagate", originalPropagate);
+                        } else {
+                            originalArgs.remove("propagate");
+                        }
+                    }
+                } catch (Exception e) {
+                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), 
+                        "error", "Exception: " + e.getMessage()));
+                }
+            }
+            
+            program.endTransaction(txId, true);
+            autoSaveProgram(program, "Batch set function prototypes");
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("programPath", programPath);
+            response.put("total", functionIdentifierList.size());
+            response.put("succeeded", results.size());
+            response.put("failed", errors.size());
+            response.put("results", results);
+            if (!errors.isEmpty()) {
+                response.put("errors", errors);
+            }
+            
+            return createJsonResult(response);
+        } catch (Exception e) {
+            program.endTransaction(txId, false);
+            logError("Error in batch set function prototypes", e);
+            return createErrorResult("Failed to batch set function prototypes: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Extract JSON data from a CallToolResult, returning the parsed map
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractJsonDataFromResult(McpSchema.CallToolResult result) {
+        try {
+            String jsonText = extractTextFromContent(result.content().get(0));
+            return JSON.readValue(jsonText, Map.class);
+        } catch (Exception e) {
+            logError("Error extracting JSON data from result", e);
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Helper method to extract text from Content object
+     */
+    private String extractTextFromContent(McpSchema.Content content) {
+        if (content instanceof io.modelcontextprotocol.spec.McpSchema.TextContent) {
+            return ((io.modelcontextprotocol.spec.McpSchema.TextContent) content).text();
+        }
+        return content.toString();
     }
 
     private Map<String, Object> propagatePrototypeAcrossOpenPrograms(Program sourceProgram, Function sourceFunction,

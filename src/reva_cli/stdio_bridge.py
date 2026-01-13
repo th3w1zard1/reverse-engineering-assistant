@@ -138,7 +138,7 @@ class ReVaStdioBridge:
         """
         Call a backend operation with automatic retry on "Session terminated" errors.
 
-        Note: Full reconnection requires the outer run() loop to handle it, but we
+        NOTE: Full reconnection requires the outer run() loop to handle it, but we
         can retry the operation in case it was a transient error.
 
         Args:
@@ -377,7 +377,7 @@ class ReVaStdioBridge:
         for attempt in range(max_retries):
             try:
                 # Connect to ReVa backend with increased timeout
-                # Note: streamablehttp_client doesn't expose read_timeout directly,
+                # NOTE: streamablehttp_client doesn't expose read_timeout directly,
                 # but we can configure httpx client with custom timeout
                 # The timeout parameter controls both connect and read timeouts
                 # Using a very long timeout prevents "Session terminated" errors

@@ -15,6 +15,7 @@ import io.modelcontextprotocol.sdk.java.server.McpSyncServer;
 import reva.plugin.RevaProgramManager;
 import reva.resources.AbstractResourceProvider;
 import reva.util.RevaInternalServiceRegistry;
+import generic.concurrent.GThreadPool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,9 +35,11 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
 
     // Cache documentation per program to avoid regenerating on every request
     private final Map<Program, String> programDocumentationCache = new ConcurrentHashMap<>();
+    // Track programs currently being generated to avoid duplicate work
+    private final Map<Program, Boolean> generationInProgress = new ConcurrentHashMap<>();
     private volatile String cachedFullDocumentation = null;
     private volatile long cacheTimestamp = 0;
-    private static final long CACHE_VALIDITY_MS = 5000; // Cache for 5 seconds
+    private static final long CACHE_VALIDITY_MS = 30000; // Cache for 30 seconds (longer since we pre-generate)
 
     public ProgramDocumentationResource(McpSyncServer server) {
         super(server);
@@ -103,26 +106,33 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
                     documentation.append("This document provides comprehensive information about all currently open programs.\n\n");
 
                     boolean cacheInvalidated = false;
+                    boolean hasMissingDocs = false;
                     for (Program program : openPrograms) {
                         String cachedDoc = programDocumentationCache.get(program);
                         if (cachedDoc == null) {
-                            // Generate and cache documentation for this program
-                            try {
-                                cachedDoc = generateProgramDocumentation(program);
-                                programDocumentationCache.put(program, cachedDoc);
-                            } catch (Exception e) {
-                                cachedDoc = "## Error generating documentation for program\n\nError: " + e.getMessage() + "\n\n";
+                            // If not cached, trigger background generation and show placeholder
+                            hasMissingDocs = true;
+                            cachedDoc = "## " + program.getName() + "\n\n*Documentation is being generated in the background...*\n\n";
+                            // Trigger background generation if not already in progress
+                            if (!generationInProgress.containsKey(program)) {
+                                generateDocumentationInBackground(program);
                             }
-                            cacheInvalidated = true;
                         }
                         documentation.append(cachedDoc);
                         documentation.append("\n\n---\n\n");
                     }
 
-                    // Update full cache if any program docs were regenerated
-                    if (cacheInvalidated) {
+                    // If we have all cached docs, update full cache
+                    if (!hasMissingDocs) {
                         cachedFullDocumentation = documentation.toString();
                         cacheTimestamp = now;
+                    } else {
+                        // If some docs are missing, trigger background generation for all missing
+                        for (Program program : openPrograms) {
+                            if (!programDocumentationCache.containsKey(program) && !generationInProgress.containsKey(program)) {
+                                generateDocumentationInBackground(program);
+                            }
+                        }
                     }
 
                     ResourceContents content = new ResourceContents(
@@ -231,17 +241,72 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
         }
     }
 
+    /**
+     * Generate documentation for a program in the background using Ghidra's thread pool.
+     */
+    private void generateDocumentationInBackground(Program program) {
+        // Mark as in progress to avoid duplicate work
+        if (generationInProgress.putIfAbsent(program, true) != null) {
+            return; // Already generating
+        }
+
+        // Get thread pool from service registry
+        GThreadPool threadPool = RevaInternalServiceRegistry.getInstance()
+            .getService(GThreadPool.class);
+
+        if (threadPool == null) {
+            // Fallback: generate synchronously if no thread pool available
+            generationInProgress.remove(program);
+            try {
+                String doc = generateProgramDocumentation(program);
+                programDocumentationCache.put(program, doc);
+                invalidateFullCache();
+            } catch (Exception e) {
+                programDocumentationCache.put(program, 
+                    "## Error generating documentation for program\n\nError: " + e.getMessage() + "\n\n");
+            }
+            return;
+        }
+
+        // Generate in background thread
+        threadPool.submit(() -> {
+            try {
+                String doc = generateProgramDocumentation(program);
+                programDocumentationCache.put(program, doc);
+                invalidateFullCache(); // Invalidate full cache so it gets regenerated with new program doc
+            } catch (Exception e) {
+                programDocumentationCache.put(program, 
+                    "## Error generating documentation for program\n\nError: " + e.getMessage() + "\n\n");
+                invalidateFullCache();
+            } finally {
+                generationInProgress.remove(program);
+            }
+        });
+    }
+
+    /**
+     * Invalidate the full documentation cache so it gets regenerated.
+     */
+    private void invalidateFullCache() {
+        cachedFullDocumentation = null;
+    }
+
     @Override
     public void programOpened(Program program) {
-        // Invalidate cache for this program - will regenerate on next request
+        // Remove old cache entry and trigger background generation
         programDocumentationCache.remove(program);
-        cachedFullDocumentation = null; // Invalidate full cache
+        generationInProgress.remove(program);
+        invalidateFullCache();
+        
+        // Generate documentation in background immediately
+        generateDocumentationInBackground(program);
     }
 
     @Override
     public void programClosed(Program program) {
         // Remove from cache when program closes
         programDocumentationCache.remove(program);
-        cachedFullDocumentation = null; // Invalidate full cache
+        generationInProgress.remove(program);
+        invalidateFullCache();
     }
 }

@@ -66,7 +66,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             }
 
             // Create a memory block for this test
-            // Note: createInitializedBlock doesn't support setting execute permission directly
+            // NOTE: createInitializedBlock doesn't support setting execute permission directly
             // The manage-function tool requires executable memory, but we'll work around this
             // by using functionManager.createFunction() directly for test setup, which doesn't require executable memory
             ghidra.program.model.mem.MemoryBlock testBlock = memory.createInitializedBlock("executable_test",

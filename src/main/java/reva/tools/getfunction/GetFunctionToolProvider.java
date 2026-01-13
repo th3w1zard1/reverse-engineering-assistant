@@ -183,9 +183,9 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 }
 
                 // Intelligent bookmarking: check if function entry point should be bookmarked
-                int bookmarkThreshold = reva.util.EnvConfigUtil.getIntDefault("auto_bookmark_threshold",
-                    reva.util.IntelligentBookmarkUtil.getDefaultThreshold());
-                reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, function.getEntryPoint(), bookmarkThreshold);
+                double bookmarkPercentile = reva.util.EnvConfigUtil.getDoubleDefault("auto_bookmark_percentile",
+                    reva.util.IntelligentBookmarkUtil.getDefaultPercentile());
+                reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, function.getEntryPoint(), bookmarkPercentile);
 
                 switch (view) {
                     case "decompile":

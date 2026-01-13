@@ -88,7 +88,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
         // Create a wrapper properties map that includes additionalProperties: true
         // This allows unknown parameters to be ignored rather than causing validation errors
         Map<String, Object> schemaProperties = new java.util.HashMap<>(properties);
-        // Note: additionalProperties is a schema-level property in JSON Schema
+        // NOTE: additionalProperties is a schema-level property in JSON Schema
         // The MCP SDK JsonSchema constructor may handle this differently, but we'll
         // try setting it in the properties map as well for compatibility
         return new JsonSchema("object", schemaProperties, required, true, null, null);
