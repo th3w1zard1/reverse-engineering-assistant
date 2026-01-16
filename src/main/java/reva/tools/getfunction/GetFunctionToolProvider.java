@@ -149,10 +149,9 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             try {
                 // Use getParameterAsList to support both camelCase and snake_case parameter names
                 List<Object> identifierList = getParameterAsList(request.arguments(), "identifier");
-                Object identifierValue = identifierList.isEmpty() ? null : identifierList.get(0);
                 
                 // When identifier is omitted, return all functions
-                if (identifierValue == null) {
+                if (identifierList.isEmpty()) {
                     return handleAllFunctions(request);
                 }
 
@@ -174,9 +173,13 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                     program = getProgramFromArgs(request);
                 }
 
-                // Check if identifier is an array (batch mode)
-                if (identifierValue instanceof List) {
-                    return handleBatchGetFunction(program, request, (List<?>) identifierValue);
+                // Check if identifier is an array (batch mode) - if list has more than 1 element, it's batch mode
+                // Also check if the first element is itself a list (nested case)
+                Object identifierValue = identifierList.get(0);
+                if (identifierList.size() > 1 || (identifierValue instanceof List)) {
+                    // Batch mode: use the list directly, or unwrap if nested
+                    List<?> batchList = identifierList.size() > 1 ? identifierList : (List<?>) identifierValue;
+                    return handleBatchGetFunction(program, request, batchList);
                 }
 
                 // Single function mode

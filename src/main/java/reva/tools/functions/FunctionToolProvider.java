@@ -534,10 +534,45 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * @param function The existing function (may be null)
      * @return true if custom storage is needed
      */
-    private boolean needsCustomStorageForSignature(Function function) {
+    private boolean needsCustomStorageForSignature(Function function, FunctionDefinitionDataType newSignature) {
         // If function already has custom storage, keep it
-        // Otherwise, use default storage (Ghidra will handle it)
-        return function != null && function.hasCustomVariableStorage();
+        if (function != null && function.hasCustomVariableStorage()) {
+            return true;
+        }
+        
+        // Check if we're modifying auto-parameters (like 'this' in __thiscall)
+        if (function == null || newSignature == null) {
+            return false;
+        }
+        
+        Parameter[] existingParams = function.getParameters();
+        ParameterDefinition[] newParamDefs = newSignature.getArguments();
+        
+        // Check if any existing auto-parameter is being modified
+        for (int i = 0; i < existingParams.length && i < newParamDefs.length; i++) {
+            Parameter existingParam = existingParams[i];
+            ParameterDefinition newParamDef = newParamDefs[i];
+            
+            // If existing parameter is auto-parameter and its type is changing
+            if (existingParam.isAutoParameter()) {
+                if (!existingParam.getDataType().isEquivalent(newParamDef.getDataType())) {
+                    return true; // Auto-parameter type is being changed, need custom storage
+                }
+            }
+        }
+        
+        // Check if we're adding/removing auto-parameters
+        // If new signature has different number of parameters and any are auto-parameters
+        if (existingParams.length != newParamDefs.length) {
+            // Check if any existing auto-parameters are being removed
+            for (Parameter existingParam : existingParams) {
+                if (existingParam.isAutoParameter()) {
+                    return true; // Removing auto-parameter requires custom storage
+                }
+            }
+        }
+        
+        return false;
     }
 
     @Override
@@ -2539,7 +2574,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             }
 
             // Check if we need to enable custom storage to modify auto-parameters
-            boolean needsCustomStorage = needsCustomStorageForSignature(function);
+            boolean needsCustomStorage = needsCustomStorageForSignature(function, functionDef);
             boolean wasUsingCustomStorage = function.hasCustomVariableStorage();
 
             if (needsCustomStorage && !wasUsingCustomStorage) {
@@ -2886,7 +2921,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         try {
             Function function = existingFunction;
 
-            boolean needsCustomStorage = needsCustomStorageForSignature(function);
+            boolean needsCustomStorage = needsCustomStorageForSignature(function, functionDef);
             boolean wasUsingCustomStorage = function.hasCustomVariableStorage();
             if (needsCustomStorage && !wasUsingCustomStorage) {
                 function.setCustomVariableStorage(true);
