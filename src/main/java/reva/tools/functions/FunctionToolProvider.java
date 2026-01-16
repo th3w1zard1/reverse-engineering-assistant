@@ -1176,7 +1176,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         }
                         Object identifiersValue = identifiersList.size() == 1 ? identifiersList.get(0) : identifiersList;
                         verbose = getOptionalBoolean(request, "verbose", false);
-                        // Check if identifiers is an array (batch mode)
+                        // Check if identifiers is an array
                         if (identifiersValue instanceof List) {
                             return handleListFunctionsByIdentifiers(program, (List<?>) identifiersValue, verbose);
                         }
@@ -1790,7 +1790,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Use getParameterAsList to support both camelCase and snake_case parameter names
             List<Object> functionList = getParameterAsList(request.arguments(), "function");
 
-            // Check if function is an array (batch mode)
+            // Check if function is an array
             if (functionList.size() > 1 || (!functionList.isEmpty() && functionList.get(0) instanceof List)) {
                 List<?> batchList = functionList.size() > 1 ? functionList : (List<?>) functionList.get(0);
                 return handleBatchFunctionTags(program, request, mode, batchList);
@@ -2241,7 +2241,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 switch (action) {
                     case "create" -> {
-                        // Check if address is an array (batch mode) - supports both camelCase and snake_case
+                        // Check if address is an array - supports both camelCase and snake_case
                         List<Object> addressList = getParameterAsList(request.arguments(), "address");
                         if (addressList.size() > 1 || (!addressList.isEmpty() && addressList.get(0) instanceof List)) {
                             List<?> batchList = addressList.size() > 1 ? addressList : (List<?>) addressList.get(0);
@@ -2250,7 +2250,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         return handleManageFunctionCreate(program, request);
                     }
                     case "set_prototype" -> {
-                        // Check if functionIdentifier is an array (batch mode) - supports both camelCase and snake_case
+                        // Check if functionIdentifier is an array - supports both camelCase and snake_case
                         List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
                         if (functionIdentifierList.size() > 1 || (!functionIdentifierList.isEmpty() && functionIdentifierList.get(0) instanceof List)) {
                             List<?> batchList = functionIdentifierList.size() > 1 ? functionIdentifierList : (List<?>) functionIdentifierList.get(0);
@@ -3306,7 +3306,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle manage-function action='rename_function' - rename a function
      */
     private McpSchema.CallToolResult handleManageFunctionRenameFunction(Program program, CallToolRequest request) {
-        // Check if functionIdentifier is an array (batch mode) - supports both camelCase and snake_case
+        // Check if functionIdentifier is an array - supports both camelCase and snake_case
         List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
         if (functionIdentifierList.isEmpty()) {
             functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");

@@ -173,7 +173,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                     program = getProgramFromArgs(request);
                 }
 
-                // Check if identifier is an array (batch mode) - if list has more than 1 element, it's batch mode
+                // Check if identifier is an array
                 // Also check if the first element is itself a list (nested case)
                 Object identifierValue = identifierList.get(0);
                 if (identifierList.size() > 1 || (identifierValue instanceof List)) {
