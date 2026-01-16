@@ -39,12 +39,12 @@ import reva.RevaIntegrationTestBase;
  * Integration tests for StructureToolProvider
  */
 public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBase {
-    private String programPath;
+    private String program_path;
 
     @Before
     public void setUpStructureTests() throws Exception {
         // Get program path for use in tests - this is how RevaProgramManager identifies programs
-        programPath = program.getDomainFile().getPathname();
+        program_path = program.getDomainFile().getPathname();
 
         // Open the program in the tool's ProgramManager so it can be found by RevaProgramManager
         env.open(program);
@@ -90,7 +90,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("action", "parse");
             arguments.put("c_definition", "struct TestStruct { int field1; char field2[32]; };");
 
@@ -124,7 +124,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Test valid structure
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("action", "validate");
             arguments.put("c_definition", "struct ValidStruct { int x; int y; };");
 
@@ -137,7 +137,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
 
             assertTrue("Should be valid", json.get("valid").asBoolean());
-            assertEquals("ValidStruct", json.get("parsedType").asText());
+            assertEquals("ValidStruct", json.get("parsed_type").asText());
 
             // Test invalid structure
             arguments.put("c_definition", "struct InvalidStruct { unknown_type field; };");
@@ -160,7 +160,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("action", "create");
             arguments.put("name", "EmptyStruct");
             arguments.put("size", 0);
@@ -175,7 +175,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
 
             assertEquals("EmptyStruct", json.get("name").asText());
-            assertFalse("Should not be a union", json.get("isUnion").asBoolean());
+            assertFalse("Should not be a union", json.get("is_union").asBoolean());
 
             // Verify structure exists
             DataType dt = findDataTypeByName(program.getDataTypeManager(), "EmptyStruct");
@@ -190,7 +190,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // First create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "create");
             createArgs.put("name", "TestFieldStruct");
 
@@ -199,7 +199,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Add a field
             Map<String, Object> addArgs = new HashMap<>();
-            addArgs.put("programPath", programPath);
+            addArgs.put("program_path", program_path);
             addArgs.put("action", "add_field");
             addArgs.put("structure_name", "TestFieldStruct");
             addArgs.put("field_name", "myField");
@@ -231,7 +231,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure with fields
             Map<String, Object> args = new HashMap<>();
-            args.put("programPath", programPath);
+            args.put("program_path", program_path);
             args.put("action", "parse");
             args.put("c_definition", "struct InfoStruct { int id; char name[20]; void* next; };");
 
@@ -240,7 +240,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Get structure info
             Map<String, Object> infoArgs = new HashMap<>();
-            infoArgs.put("programPath", programPath);
+            infoArgs.put("program_path", program_path);
             infoArgs.put("action", "info");
             infoArgs.put("structure_name", "InfoStruct");
 
@@ -253,7 +253,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
 
             assertEquals("InfoStruct", json.get("name").asText());
-            assertEquals(3, json.get("numComponents").asInt());
+            assertEquals(3, json.get("num_components").asInt());
 
             JsonNode fields = json.get("fields");
             assertNotNull("Should have fields", fields);
@@ -280,7 +280,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             for (String def : structDefs) {
                 Map<String, Object> args = new HashMap<>();
-                args.put("programPath", programPath);
+                args.put("program_path", program_path);
                 args.put("action", "parse");
                 args.put("c_definition", def);
                 CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", args));
@@ -289,7 +289,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // List structures
             Map<String, Object> listArgs = new HashMap<>();
-            listArgs.put("programPath", programPath);
+            listArgs.put("program_path", program_path);
             listArgs.put("action", "list");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", listArgs));
@@ -327,7 +327,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "create");
             createArgs.put("name", "ToBeDeleted");
 
@@ -340,7 +340,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Delete it
             Map<String, Object> deleteArgs = new HashMap<>();
-            deleteArgs.put("programPath", programPath);
+            deleteArgs.put("program_path", program_path);
             deleteArgs.put("action", "delete");
             deleteArgs.put("structure_name", "ToBeDeleted");
 
@@ -370,7 +370,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
                 "struct Rectangle { int width; int height; };";
 
             Map<String, Object> args = new HashMap<>();
-            args.put("programPath", programPath);
+            args.put("program_path", program_path);
             args.put("action", "parse_header");
             args.put("header_content", headerContent);
 
@@ -382,7 +382,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
 
-            JsonNode createdTypes = json.get("createdTypes");
+            JsonNode createdTypes = json.get("created_types");
 
             assertTrue("Should create at least one type", createdTypes.size() >= 1);
 
@@ -413,7 +413,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
                 "};";
 
             Map<String, Object> args = new HashMap<>();
-            args.put("programPath", programPath);
+            args.put("program_path", program_path);
             args.put("action", "parse");
             args.put("c_definition", complexDef);
 
@@ -424,7 +424,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Get detailed info
             Map<String, Object> infoArgs = new HashMap<>();
-            infoArgs.put("programPath", programPath);
+            infoArgs.put("program_path", program_path);
             infoArgs.put("action", "info");
             infoArgs.put("structure_name", "Node");
 
@@ -433,7 +433,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
 
-            assertNotNull("Should have C representation", json.get("cRepresentation"));
+            assertNotNull("Should have C representation", json.get("c_representation"));
             assertEquals("Should have 4 components", 4, json.get("numComponents").asInt());
         });
     }
@@ -445,7 +445,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure with a specific size that will have many undefined bytes
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "create");
             createArgs.put("name", "LargeStruct");
             createArgs.put("size", 100); // 100 bytes
@@ -455,7 +455,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Add just a few defined fields, leaving many undefined bytes
             Map<String, Object> addArgs1 = new HashMap<>();
-            addArgs1.put("programPath", programPath);
+            addArgs1.put("program_path", program_path);
             addArgs1.put("action", "add_field");
             addArgs1.put("structure_name", "LargeStruct");
             addArgs1.put("field_name", "firstField");
@@ -465,7 +465,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             client.callTool(new CallToolRequest("manage-structures", addArgs1));
 
             Map<String, Object> addArgs2 = new HashMap<>();
-            addArgs2.put("programPath", programPath);
+            addArgs2.put("program_path", program_path);
             addArgs2.put("action", "add_field");
             addArgs2.put("structure_name", "LargeStruct");
             addArgs2.put("field_name", "lastField");
@@ -476,7 +476,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Get structure info
             Map<String, Object> infoArgs = new HashMap<>();
-            infoArgs.put("programPath", programPath);
+            infoArgs.put("program_path", program_path);
             infoArgs.put("action", "info");
             infoArgs.put("structure_name", "LargeStruct");
 
@@ -542,7 +542,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // First create a structure with a field
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest1 { void *field1; int field2; };");
 
@@ -564,7 +564,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Modify field1 to be int *
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("programPath", programPath);
+            modifyArgs.put("program_path", program_path);
             modifyArgs.put("action", "modify_field");
             modifyArgs.put("structure_name", "ModifyTest1");
             modifyArgs.put("field_name", "field1");
@@ -598,7 +598,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest2 { int oldName; };");
 
@@ -607,7 +607,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Rename the field
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("programPath", programPath);
+            modifyArgs.put("program_path", program_path);
             modifyArgs.put("action", "modify_field");
             modifyArgs.put("structure_name", "ModifyTest2");
             modifyArgs.put("field_name", "oldName");
@@ -632,7 +632,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest3 { int field1; char field2; };");
 
@@ -647,7 +647,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Modify field2 by offset instead of name
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("programPath", programPath);
+            modifyArgs.put("program_path", program_path);
             modifyArgs.put("action", "modify_field");
             modifyArgs.put("structure_name", "ModifyTest3");
             modifyArgs.put("field_name", "field2");
@@ -674,7 +674,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create initial structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct ModifyTest4 { int field1; char field2; };");
 
@@ -689,7 +689,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Modify structure using C definition
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("programPath", programPath);
+            modifyArgs.put("program_path", program_path);
             modifyArgs.put("action", "modify_from_c");
             modifyArgs.put("c_definition", "struct ModifyTest4 { int field1; short field2; long field3; };");
 
@@ -700,7 +700,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
             String message = json.get("message").asText();
             assertTrue("Should indicate successful modification", message.contains("Successfully modified structure from C definition"));
-            assertEquals(3, json.get("numComponents").asInt());
+            assertEquals(3, json.get("num_components").asInt());
 
             // Verify the structure was modified in the program
             dt = findDataTypeByName(dtm, "ModifyTest4");
@@ -728,7 +728,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("programPath", programPath);
+            createArgs.put("program_path", program_path);
             createArgs.put("action", "parse");
             createArgs.put("c_definition", "struct DeleteTestForce { int field1; };");
 
@@ -742,7 +742,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Delete structure (no references, so should succeed even without force)
             Map<String, Object> deleteArgs = new HashMap<>();
-            deleteArgs.put("programPath", programPath);
+            deleteArgs.put("program_path", program_path);
             deleteArgs.put("action", "delete");
             deleteArgs.put("structure_name", "DeleteTestForce");
 

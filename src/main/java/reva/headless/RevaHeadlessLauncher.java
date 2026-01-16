@@ -229,9 +229,13 @@ public class RevaHeadlessLauncher {
                     } else {
                         // Re-throw the original exception with helpful message
                         throw new IOException("Project '" + projectName + "' is locked and cannot be opened. " +
-                            "It may be open in another Ghidra instance. " +
-                            "Please close the project in Ghidra GUI or close the other process using it. " +
-                            "Alternatively, set REVA_FORCE_IGNORE_LOCK=true to forcibly ignore lock files.", e);
+                            "Ghidra projects can only be opened by one process at a time to prevent data corruption. " +
+                            "The project may be open in another Ghidra instance or ReVa CLI process. " +
+                            "\n\nOptions:\n" +
+                            "1. Close the project in the other process (Ghidra GUI or another ReVa CLI instance)\n" +
+                            "2. For shared projects: Use Ghidra Server for true simultaneous access (recommended)\n" +
+                            "3. Workaround: Set REVA_FORCE_IGNORE_LOCK=true (RISKY - can cause data corruption if multiple processes write simultaneously)\n" +
+                            "\nNote: ReVa does not create locks - this is Ghidra's built-in protection mechanism.", e);
                     }
                 } else {
                     // Not a lock-related error, re-throw as-is

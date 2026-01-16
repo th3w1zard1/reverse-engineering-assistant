@@ -488,10 +488,10 @@ public class RevaProgramManager {
         try {
             // Open the program using getDomainObject - this handles upgrades automatically
             // Parameters: consumer, readOnly, okToUpgrade, monitor
-            // Create a consumer object to track who has the domain object open
+            // Use the class itself as the consumer to ensure a stable, non-null reference
             // false for readOnly means open for update
             // false for okToUpgrade means don't show upgrade dialogs (upgrades happen automatically)
-            Object consumer = new Object();
+            Object consumer = RevaProgramManager.class;
             DomainObject domainObject = domainFile.getDomainObject(consumer, false, false, TaskMonitor.DUMMY);
 
             if (domainObject instanceof Program) {

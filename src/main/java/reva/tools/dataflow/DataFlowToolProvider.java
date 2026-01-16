@@ -62,7 +62,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
 
     private void registerAnalyzeDataFlowTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
@@ -84,7 +84,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
             "enum", List.of("backward", "forward", "variable_accesses")
         ));
 
-        List<String> required = List.of("programPath", "function_address", "direction");
+        List<String> required = List.of("program_path", "function_address", "direction");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("analyze-data-flow")
@@ -180,12 +180,12 @@ public class DataFlowToolProvider extends AbstractToolProvider {
             List<Map<String, Object>> terminators = findTerminators(sliceOps, direction);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("programPath", program.getDomainFile().getPathname());
+            result.put("program_path", program.getDomainFile().getPathname());
             result.put("function", function.getName());
-            result.put("functionAddress", AddressUtil.formatAddress(function.getEntryPoint()));
-            result.put("startAddress", AddressUtil.formatAddress(targetAddress));
+            result.put("function_address", AddressUtil.formatAddress(function.getEntryPoint()));
+            result.put("start_address", AddressUtil.formatAddress(targetAddress));
             result.put("direction", direction.toString().toLowerCase());
-            result.put("operationCount", operations.size());
+            result.put("operation_count", operations.size());
             result.put("operations", operations);
             result.put("terminators", terminators);
 
@@ -228,15 +228,15 @@ public class DataFlowToolProvider extends AbstractToolProvider {
 
             // Build response
             Map<String, Object> result = new HashMap<>();
-            result.put("programPath", program.getDomainFile().getPathname());
+            result.put("program_path", program.getDomainFile().getPathname());
             result.put("function", function.getName());
-            result.put("functionAddress", AddressUtil.formatAddress(function.getEntryPoint()));
-            result.put("variableName", variableName);
-            result.put("variableType", getVariableType(targetVar));
+            result.put("function_address", AddressUtil.formatAddress(function.getEntryPoint()));
+            result.put("variable_name", variableName);
+            result.put("variable_type", getVariableType(targetVar));
             if (targetVar.getDataType() != null) {
-                result.put("dataType", targetVar.getDataType().getDisplayName());
+                result.put("data_type", targetVar.getDataType().getDisplayName());
             }
-            result.put("accessCount", accesses.size());
+            result.put("access_count", accesses.size());
             result.put("accesses", accesses);
 
             return createJsonResult(result);
@@ -481,7 +481,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
         // Add high variable name if available
         HighVariable high = vn.getHigh();
         if (high != null && high.getName() != null) {
-            info.put("variableName", high.getName());
+                info.put("variable_name", high.getName());
         }
 
         return info;

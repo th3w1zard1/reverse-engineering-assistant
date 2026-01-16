@@ -84,7 +84,7 @@ public class SymbolToolProviderTest {
     public void testValidateManageSymbolsParameters() {
         // Test parameter validation for the manage-symbols tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("programPath", "/test/program");
+        validArgs.put("program_path", "/test/program");
         validArgs.put("mode", "symbols");
 
         // Valid parameters should not throw
@@ -481,7 +481,7 @@ public class SymbolToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handler
     private void validateManageSymbolsArgs(Map<String, Object> args) {
-        if (args.get("programPath") == null) {
+        if (args.get("program_path") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("mode") == null) {

@@ -221,22 +221,22 @@ public class ProgramListResource extends AbstractResourceProvider {
      */
     private static class ProgramInfo {
         @SuppressWarnings("unused")
-        public String programPath;
+        public String program_path;
 
         @SuppressWarnings("unused")
         public String language;
 
         @SuppressWarnings("unused")
-        public String compilerSpec;
+        public String compiler_spec;
 
         @SuppressWarnings("unused")
-        public long sizeBytes;
+        public long size_bytes;
 
         public ProgramInfo(String programPath, String language, String compilerSpec, long sizeBytes) {
-            this.programPath = programPath;
+            this.program_path = programPath;
             this.language = language;
-            this.compilerSpec = compilerSpec;
-            this.sizeBytes = sizeBytes;
+            this.compiler_spec = compilerSpec;
+            this.size_bytes = sizeBytes;
         }
     }
 }

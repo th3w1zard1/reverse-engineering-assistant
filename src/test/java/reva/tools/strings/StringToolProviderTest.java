@@ -104,10 +104,10 @@ public class StringToolProviderTest {
         assertEquals("Address should match", "0x00401000", result.get("address"));
         assertEquals("Content should match", testString, result.get("content"));
         assertEquals("Length should match", testString.length(), result.get("length"));
-        assertEquals("Data type should match", "string", result.get("dataType"));
+        assertEquals("Data type should match", "string", result.get("data_type"));
         assertEquals("Representation should match", "\"Hello, World!\"", result.get("representation"));
-        assertNotNull("Hex bytes should be present", result.get("hexBytes"));
-        assertEquals("Byte length should match", testBytes.length, result.get("byteLength"));
+        assertNotNull("Hex bytes should be present", result.get("hex_bytes"));
+        assertEquals("Byte length should match", testBytes.length, result.get("byte_length"));
     }
 
     @Test
@@ -143,7 +143,7 @@ public class StringToolProviderTest {
     public void testValidateManageStringsParameters() {
         // Test parameter validation for the manage-strings tool
         Map<String, Object> validArgs = new java.util.HashMap<>();
-        validArgs.put("programPath", "/test/program");
+        validArgs.put("program_path", "/test/program");
         validArgs.put("mode", "list");
 
         // Valid parameters should not throw
@@ -155,7 +155,7 @@ public class StringToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new java.util.HashMap<>(validArgs);
-        missingProgram.remove("programPath");
+        missingProgram.remove("program_path");
         try {
             validateManageStringsArgs(missingProgram);
             fail("Should throw exception for missing programPath");

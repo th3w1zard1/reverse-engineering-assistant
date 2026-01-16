@@ -75,7 +75,7 @@ public class DataToolProvider extends AbstractToolProvider {
     private void registerGetDataTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program containing the data"
         ));
@@ -113,7 +113,7 @@ public class DataToolProvider extends AbstractToolProvider {
     private void registerApplyDataTypeTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
@@ -217,7 +217,7 @@ public class DataToolProvider extends AbstractToolProvider {
     private void registerCreateLabelTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program containing the address"
         ));

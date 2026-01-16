@@ -87,7 +87,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      */
     private void registerGetCallGraphTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
@@ -158,9 +158,10 @@ public class CallGraphToolProvider extends AbstractToolProvider {
             try {
                 Program program = getProgramFromArgs(request);
 
-                // Check if function_identifier is an array (batch mode)
+                // Check if function_identifier is an array (batch mode) - supports both camelCase and snake_case
                 // NOTE: common_callers mode already accepts multiple functions via function_addresses parameter
-                Object functionIdentifierValue = request.arguments().get("function_identifier");
+                List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "function_identifier");
+                Object functionIdentifierValue = functionIdentifierList.isEmpty() ? null : (functionIdentifierList.size() == 1 ? functionIdentifierList.get(0) : functionIdentifierList);
                 String mode = getOptionalString(request, "mode", "graph");
 
                 // Only enable batch mode for modes that use function_identifier (not common_callers)
@@ -226,14 +227,14 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("centerFunction", Map.of(
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("center_function", Map.of(
             "name", centerFunction.getName(),
             "address", AddressUtil.formatAddress(centerFunction.getEntryPoint())
         ));
         result.put("depth", depth);
-        result.put("callerCount", callerNodeCount[0]);
-        result.put("calleeCount", calleeNodeCount[0]);
+        result.put("caller_count", callerNodeCount[0]);
+        result.put("callee_count", calleeNodeCount[0]);
         result.put("callers", callers);
         result.put("callees", callees);
 
@@ -256,10 +257,10 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("program_path", program.getDomainFile().getPathname());
         result.put("direction", traverseCallers ? "callers" : "callees");
-        result.put("maxDepth", maxDepth);
-        result.put("totalNodes", nodeCount[0]);
+        result.put("max_depth", maxDepth);
+        result.put("total_nodes", nodeCount[0]);
         result.put("tree", tree);
 
         return createJsonResult(result);
@@ -312,15 +313,15 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         });
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("targetFunctions", targetFunctions.stream()
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("target_functions", targetFunctions.stream()
             .map(f -> Map.of(
                 "name", f.getName(),
                 "address", AddressUtil.formatAddress(f.getEntryPoint())
             ))
             .toList());
-        result.put("commonCallerCount", callerList.size());
-        result.put("commonCallers", callerList);
+        result.put("common_caller_count", callerList.size());
+        result.put("common_callers", callerList);
 
         return createJsonResult(result);
     }
@@ -562,12 +563,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("targetFunction", Map.of(
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("target_function", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("callerCount", callerList.size());
+        result.put("caller_count", callerList.size());
         result.put("callers", callerList);
 
         return createJsonResult(result);
@@ -607,12 +608,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("targetFunction", Map.of(
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("target_function", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("calleeCount", calleeList.size());
+        result.put("callee_count", calleeList.size());
         result.put("callees", calleeList);
 
         return createJsonResult(result);
@@ -734,13 +735,13 @@ public class CallGraphToolProvider extends AbstractToolProvider {
 
         // Build result
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", programPath);
-        result.put("targetFunction", targetFunction.getName());
-        result.put("targetAddress", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
-        result.put("totalCallers", totalCallers);
-        result.put("startIndex", startIndex);
-        result.put("returnedCount", decompilations.size());
-        result.put("nextStartIndex", startIndex + decompilations.size());
+        result.put("program_path", programPath);
+        result.put("target_function", targetFunction.getName());
+        result.put("target_address", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
+        result.put("total_callers", totalCallers);
+        result.put("start_index", startIndex);
+        result.put("returned_count", decompilations.size());
+        result.put("next_start_index", startIndex + decompilations.size());
         result.put("hasMore", endIndex < totalCallers);
         result.put("callers", decompilations);
 
@@ -996,12 +997,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("targetFunction", Map.of(
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("target_function", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("callerCount", callerList.size());
+        result.put("caller_count", callerList.size());
         result.put("callers", callerList);
 
         return createJsonResult(result);
@@ -1029,12 +1030,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("targetFunction", Map.of(
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("target_function", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("calleeCount", calleeList.size());
+        result.put("callee_count", calleeList.size());
         result.put("callees", calleeList);
 
         return createJsonResult(result);
@@ -1151,13 +1152,13 @@ public class CallGraphToolProvider extends AbstractToolProvider {
 
         // Build result
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", programPath);
-        result.put("targetFunction", targetFunction.getName());
-        result.put("targetAddress", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
-        result.put("totalCallers", totalCallers);
-        result.put("startIndex", startIndex);
-        result.put("returnedCount", decompilations.size());
-        result.put("nextStartIndex", startIndex + decompilations.size());
+        result.put("program_path", programPath);
+        result.put("target_function", targetFunction.getName());
+        result.put("target_address", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
+        result.put("total_callers", totalCallers);
+        result.put("start_index", startIndex);
+        result.put("returned_count", decompilations.size());
+        result.put("next_start_index", startIndex + decompilations.size());
         result.put("hasMore", endIndex < totalCallers);
         result.put("callers", decompilations);
 

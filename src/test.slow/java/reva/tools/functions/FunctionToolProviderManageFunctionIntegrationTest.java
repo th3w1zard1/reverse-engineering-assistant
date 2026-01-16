@@ -116,7 +116,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", programPath);
             arguments.put("action", "create");
             arguments.put("address", "0x01000100");
             arguments.put("name", "newFunction");
@@ -138,7 +138,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", programPath);
             arguments.put("action", "set_prototype");
             arguments.put("function_identifier", "0x01000200");
             arguments.put("prototype", "int main(int argc, char** argv)");
@@ -160,7 +160,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", programPath);
             arguments.put("action", "rename_function");
             arguments.put("function_identifier", "oldFunction");
             arguments.put("name", "renamedFunction");
@@ -190,7 +190,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
 
             // Then rename a variable
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", programPath);
             arguments.put("action", "rename_variable");
             arguments.put("function_identifier", "0x01000200");
             arguments.put("old_name", "param1");
@@ -218,7 +218,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
 
             // Then change variable type
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", programPath);
             arguments.put("action", "set_variable_type");
             arguments.put("function_identifier", "0x01000200");
             arguments.put("variable_name", "param1");
@@ -246,7 +246,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
 
             // Then change multiple variable types
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", programPath);
             arguments.put("action", "change_datatypes");
             arguments.put("function_identifier", "0x01000200");
             arguments.put("datatype_mappings", "param1:long,param2:short");

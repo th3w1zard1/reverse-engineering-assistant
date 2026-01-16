@@ -36,11 +36,11 @@ import reva.RevaIntegrationTestBase;
  */
 public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
-    private String programPath;
+    private String program_path;
 
     @Before
     public void setUpTestData() throws Exception {
-        programPath = program.getDomainFile().getPathname();
+        program_path = program.getDomainFile().getPathname();
 
         env.open(program);
 
@@ -60,7 +60,7 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "analyze");
             arguments.put("vtable_address", "0x01000000");
 
@@ -82,7 +82,7 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "callers");
             arguments.put("function_address", "0x01000100");
 
@@ -104,7 +104,7 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "containing");
             arguments.put("function_address", "0x01000100");
 

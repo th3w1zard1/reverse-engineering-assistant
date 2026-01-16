@@ -116,7 +116,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
      */
     private void registerCrossReferencesTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
@@ -190,7 +190,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             "default", true
         ));
 
-        List<String> required = List.of("programPath", "target");
+        List<String> required = List.of("program_path", "target");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("get-references")
@@ -204,9 +204,14 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
                 Program program = getProgramFromArgs(request);
 
                 // Check if target is an array (batch mode)
-                Object targetValue = request.arguments().get("target");
-                if (targetValue instanceof List) {
-                    return handleBatchGetReferences(program, request, (List<?>) targetValue);
+                // Use getParameterAsList to support both camelCase and snake_case parameter names
+                List<Object> targetList = getParameterAsList(request.arguments(), "target");
+                if (!targetList.isEmpty() && targetList.size() > 1) {
+                    // Multiple targets - batch mode
+                    return handleBatchGetReferences(program, request, targetList);
+                } else if (!targetList.isEmpty() && targetList.get(0) instanceof List) {
+                    // Single target that is itself a list - batch mode
+                    return handleBatchGetReferences(program, request, (List<?>) targetList.get(0));
                 }
 
                 // Single target mode
@@ -541,15 +546,15 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", programPath);
-        result.put("targetAddress", AddressUtil.formatAddress(targetAddress));
-        result.put("resolvedFrom", target);
-        result.put("totalReferencers", totalReferencers);
-        result.put("startIndex", startIndex);
-        result.put("returnedCount", decompiledFunctions.size());
-        result.put("nextStartIndex", startIndex + decompiledFunctions.size());
-        result.put("hasMore", endIndex < totalReferencers);
-        result.put("includeDataRefs", includeDataRefs);
+        result.put("program_path", programPath);
+        result.put("target_address", AddressUtil.formatAddress(targetAddress));
+        result.put("resolved_from", target);
+        result.put("total_referencers", totalReferencers);
+        result.put("start_index", startIndex);
+        result.put("returned_count", decompiledFunctions.size());
+        result.put("next_start_index", startIndex + decompiledFunctions.size());
+        result.put("has_more", endIndex < totalReferencers);
+        result.put("include_data_refs", includeDataRefs);
         result.put("referencers", decompiledFunctions);
         return createJsonResult(result);
     }
@@ -583,7 +588,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("program_path", program.getDomainFile().getPathname());
         result.put("searchedImport", target);
         result.put("matchedImports", importInfoList);
         result.put("referenceCount", references.size());
@@ -610,12 +615,12 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("startAddress", AddressUtil.formatAddress(address));
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("start_address", AddressUtil.formatAddress(address));
         result.put("chain", chain);
-        result.put("chainLength", chain.size());
-        result.put("finalTarget", finalTarget);
-        result.put("isResolved", isResolved);
+        result.put("chain_length", chain.size());
+        result.put("final_target", finalTarget);
+        result.put("is_resolved", isResolved);
         return createJsonResult(result);
     }
 

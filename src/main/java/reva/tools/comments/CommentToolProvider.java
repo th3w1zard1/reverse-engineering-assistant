@@ -104,7 +104,7 @@ public class CommentToolProvider extends AbstractToolProvider {
 
     private void registerManageCommentsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
+        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("action", Map.of(
             "type", "string",
             "description", "Action to perform: 'set', 'get', 'remove', 'search', or 'search_decomp'",
@@ -287,9 +287,6 @@ public class CommentToolProvider extends AbstractToolProvider {
             functionStr = getOptionalString(request, "function_name_or_address", null);
         }
         Integer lineNumber = getOptionalInteger(request.arguments(), "line_number", null);
-        if (lineNumber == null) {
-            lineNumber = getOptionalInteger(request.arguments(), "lineNumber", null);
-        }
 
         // If we have function and line_number but no address, this is a decompilation line comment
         if (addressStr == null && functionStr != null && lineNumber != null) {
@@ -313,7 +310,7 @@ public class CommentToolProvider extends AbstractToolProvider {
 
         String commentTypeStr = getOptionalString(request, "comment_type", null);
         if (commentTypeStr == null) {
-            commentTypeStr = getOptionalString(request, "commentType", null);
+            commentTypeStr = getOptionalString(request, "comment_type", null);
         }
 
         // Auto-label comment type if not provided (controlled by environment variable)
@@ -375,10 +372,12 @@ public class CommentToolProvider extends AbstractToolProvider {
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getOptionalCommentsArray(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        Object value = request.arguments().get("comments");
-        if (value == null) {
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> commentsList = getParameterAsList(request.arguments(), "comments");
+        if (commentsList.isEmpty()) {
             return null;
         }
+        Object value = commentsList.size() == 1 ? commentsList.get(0) : commentsList;
         if (value instanceof List) {
             return (List<Map<String, Object>>) value;
         }
@@ -495,10 +494,7 @@ public class CommentToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSetDecompilationLineComment(Program program,
             io.modelcontextprotocol.spec.McpSchema.CallToolRequest request,
             String functionStr, int lineNumber) {
-        String commentTypeStr = getOptionalString(request, "comment_type", null);
-        if (commentTypeStr == null) {
-            commentTypeStr = getOptionalString(request, "commentType", "eol");
-        }
+        String commentTypeStr = getOptionalString(request, "comment_type", "eol");
         String comment = getString(request, "comment");
 
         // Validate comment type (only 'pre' and 'eol' are valid for decompilation comments)
@@ -534,7 +530,7 @@ public class CommentToolProvider extends AbstractToolProvider {
         }
 
         // Validate that the decompilation has been read for this function first
-        String programPath = getString(request, "programPath");
+        String programPath = getString(request, "program_path");
         String functionKey = programPath + ":" + AddressUtil.formatAddress(function.getEntryPoint());
 
         // If decompilation hasn't been read yet, we'll decompile it in this method anyway,
@@ -643,7 +639,11 @@ public class CommentToolProvider extends AbstractToolProvider {
                 types.add(type);
             }
         } else {
-            List<String> commentTypesList = getOptionalStringList(request.arguments(), "commentTypes", null);
+            // Use getOptionalStringList which already supports both camelCase and snake_case via getParameterValue
+            List<String> commentTypesList = getOptionalStringList(request.arguments(), "comment_types", null);
+            if (commentTypesList == null || commentTypesList.isEmpty()) {
+                commentTypesList = getOptionalStringList(request.arguments(), "commentTypes", null);
+            }
             if (commentTypesList != null && !commentTypesList.isEmpty()) {
                 for (String typeStr : commentTypesList) {
                     CommentType type = COMMENT_TYPES.get(typeStr.toLowerCase());
@@ -704,7 +704,7 @@ public class CommentToolProvider extends AbstractToolProvider {
 
         String commentTypeStr = getOptionalString(request, "comment_type", null);
         if (commentTypeStr == null) {
-            commentTypeStr = getOptionalString(request, "commentType", null);
+            commentTypeStr = getOptionalString(request, "comment_type", null);
         }
         if (commentTypeStr == null) {
             return createErrorResult("comment_type is required for action='remove'");
@@ -743,20 +743,19 @@ public class CommentToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSearchComments(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String searchText = getOptionalString(request, "search_text", null);
         if (searchText == null) {
-            searchText = getOptionalString(request, "searchText", null);
+            searchText = getOptionalString(request, "search_text", null);
         }
         if (searchText == null) {
             return createErrorResult("search_text is required for action='search'");
         }
 
-        boolean caseSensitive = getOptionalBoolean(request, "case_sensitive",
-            getOptionalBoolean(request, "caseSensitive", false));
+        boolean caseSensitive = getOptionalBoolean(request, "case_sensitive", false);
 
         String commentTypesStr = getOptionalString(request, "comment_types", null);
         List<String> commentTypesList = getOptionalStringList(request.arguments(), "commentTypes", null);
 
         int maxResults = getOptionalInt(request, "max_results",
-            getOptionalInt(request, "maxResults", 100));
+            getOptionalInt(request, "max_results", 100));
 
         List<CommentType> types = new ArrayList<>();
         if (commentTypesStr != null && !commentTypesStr.isEmpty()) {
@@ -830,12 +829,9 @@ public class CommentToolProvider extends AbstractToolProvider {
             return createErrorResult("pattern is required for action='search_decomp'");
         }
 
-        boolean caseSensitive = getOptionalBoolean(request, "case_sensitive",
-            getOptionalBoolean(request, "caseSensitive", false));
-        int maxResults = getOptionalInt(request, "max_results",
-            getOptionalInt(request, "maxResults", 50));
-        boolean overrideMaxFunctionsLimit = getOptionalBoolean(request, "override_max_functions_limit",
-            getOptionalBoolean(request, "overrideMaxFunctionsLimit", false));
+        boolean caseSensitive = getOptionalBoolean(request, "case_sensitive", false);
+        int maxResults = getOptionalInt(request, "max_results", 50);
+        boolean overrideMaxFunctionsLimit = getOptionalBoolean(request, "override_max_functions_limit", false);
 
         if (pattern.trim().isEmpty()) {
             return createErrorResult("Search pattern cannot be empty");
@@ -890,10 +886,10 @@ public class CommentToolProvider extends AbstractToolProvider {
 
                                 if (matcher.find()) {
                                     Map<String, Object> result = new HashMap<>();
-                                    result.put("functionName", function.getName());
-                                    result.put("functionAddress", AddressUtil.formatAddress(function.getEntryPoint()));
-                                    result.put("lineNumber", i + 1);
-                                    result.put("lineContent", line.trim());
+                                    result.put("function_name", function.getName());
+                                    result.put("function_address", AddressUtil.formatAddress(function.getEntryPoint()));
+                                    result.put("line_number", i + 1);
+                                    result.put("line_content", line.trim());
                                     result.put("matchStart", matcher.start());
                                     result.put("matchEnd", matcher.end());
                                     result.put("matchedText", matcher.group());

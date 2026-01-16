@@ -31,6 +31,8 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
+import ghidra.framework.data.DefaultCheckinHandler;
+import ghidra.framework.model.DomainFile;
 import reva.util.AddressUtil;
 import reva.util.EnvConfigUtil;
 import reva.util.RevaToolLogger;
@@ -297,7 +299,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @param key The parameter key to look for (can be in either convention)
      * @return The value if found, null otherwise
      */
-    private Object getParameterValue(Map<String, Object> args, String key) {
+    protected Object getParameterValue(Map<String, Object> args, String key) {
         if (args == null || key == null) {
             return null;
         }
@@ -731,7 +733,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected Program getProgramFromArgs(Map<String, Object> args) throws IllegalArgumentException, ProgramValidationException {
         // Try to get programPath, but don't throw if it's missing - we'll try current program instead
-        String programPath = getOptionalString(args, "programPath", null);
+        String programPath = getOptionalString(args, "program_path", null);
         return getValidatedProgram(programPath);
     }
 
@@ -748,8 +750,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return PaginationParams object
      */
     protected PaginationParams getPaginationParams(CallToolRequest request, int defaultMaxCount) {
-        int startIndex = getOptionalInt(request, "startIndex", 0);
-        int maxCount = getOptionalInt(request, "maxCount", defaultMaxCount);
+        int startIndex = getOptionalInt(request, "start_index", 0);
+        int maxCount = getOptionalInt(request, "max_count", defaultMaxCount);
         return new PaginationParams(startIndex, maxCount);
     }
 
@@ -760,8 +762,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return PaginationParams object
      */
     protected PaginationParams getPaginationParams(Map<String, Object> args, int defaultMaxCount) {
-        int startIndex = getOptionalInt(args, "startIndex", 0);
-        int maxCount = getOptionalInt(args, "maxCount", defaultMaxCount);
+        int startIndex = getOptionalInt(args, "start_index", 0);
+        int maxCount = getOptionalInt(args, "max_count", defaultMaxCount);
         return new PaginationParams(startIndex, maxCount);
     }
 
@@ -932,7 +934,11 @@ public abstract class AbstractToolProvider implements ToolProvider {
     /**
      * Automatically save a program after modifications.
      * This ensures changes are persisted to disk immediately after successful transactions.
+     * For version-controlled programs, also automatically checks in changes to ensure full persistence.
      * Handles read-only programs gracefully and logs errors without failing the operation.
+     * <p>
+     * This is a workaround for MCP server crashes - all changes are immediately persisted
+     * including version control checkin to prevent data loss.
      *
      * @param program The program to save
      * @param operationDescription Description of the operation that triggered the save (e.g., "Set comment")
@@ -944,7 +950,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
         }
 
         try {
-            ghidra.framework.model.DomainFile domainFile = program.getDomainFile();
+            DomainFile domainFile = program.getDomainFile();
 
             // Skip save for read-only programs (common in test environments or versioned files that aren't checked out)
             if (domainFile.isReadOnly()) {
@@ -958,12 +964,50 @@ public abstract class AbstractToolProvider implements ToolProvider {
                 return false;
             }
 
-            // Save the program with a descriptive message
+            String programPath = domainFile.getPathname();
             String saveMessage = "Auto-save: " + operationDescription;
+
+            // Save the program first (required before version control operations)
             program.save(saveMessage, TaskMonitor.DUMMY);
             program.flushEvents(); // Ensure SAVED event is processed
 
-            logInfo("Auto-saved program: " + domainFile.getPathname() + " (" + operationDescription + ")");
+            logInfo("Auto-saved program: " + programPath + " (" + operationDescription + ")");
+
+            // For version-controlled programs, also check in changes automatically
+            // This ensures full persistence even if the MCP server crashes
+            if (domainFile.isVersioned() && domainFile.canCheckin()) {
+                try {
+                    // Release program from cache before version control operations
+                    // Version control requires no active consumers on the domain file
+                    boolean wasCached = RevaProgramManager.releaseProgramFromCache(program);
+                    if (wasCached) {
+                        Msg.debug(this, "Released program from cache for auto-checkin: " + programPath);
+                    }
+
+                    // Check in with keepCheckedOut=true so user can continue making changes
+                    // Use a descriptive commit message
+                    String checkinMessage = saveMessage + "\n💜🐉✨ (ReVa auto-persist)";
+                    DefaultCheckinHandler checkinHandler = new DefaultCheckinHandler(
+                            checkinMessage, true, false);
+                    domainFile.checkin(checkinHandler, TaskMonitor.DUMMY);
+
+                    // Re-open program to cache if it was cached
+                    if (wasCached) {
+                        Program reopenedProgram = RevaProgramManager.reopenProgramToCache(programPath);
+                        if (reopenedProgram != null) {
+                            Msg.debug(this, "Re-opened program to cache after auto-checkin: " + programPath);
+                        }
+                    }
+
+                    logInfo("Auto-checked in version-controlled program: " + programPath + " (" + operationDescription + ")");
+                } catch (Exception e) {
+                    // Log error but don't fail the operation - program was already saved
+                    logError("Failed to auto-checkin version-controlled program after " + operationDescription + 
+                            ": " + e.getMessage() + " (program was saved, but not checked in)", e);
+                    // Return true because save succeeded even if checkin failed
+                }
+            }
+
             return true;
         } catch (Exception e) {
             // Log error but don't fail the operation - changes are still in memory

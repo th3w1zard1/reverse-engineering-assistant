@@ -43,14 +43,14 @@ import reva.RevaIntegrationTestBase;
  */
 public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
-    private String programPath;
+    private String program_path;
     private Address stringAddress1;
     private Address stringAddress2;
     private Address stringAddress3;
 
     @Before
     public void setUpTestData() throws Exception {
-        programPath = program.getDomainFile().getPathname();
+        program_path = program.getDomainFile().getPathname();
 
         // Set up test string data in the program
         int txId = program.startTransaction("Setup test string data");
@@ -107,7 +107,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
 
             arguments.put("mode", "count");
             CallToolResult result = client.callTool(new CallToolRequest("manage-strings", arguments));
@@ -135,8 +135,8 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
-            arguments.put("startIndex", 0);
+            arguments.put("program_path", program_path);
+            arguments.put("start_index", 0);
             arguments.put("maxCount", 10);
 
             if (!arguments.containsKey("mode")) {
@@ -159,12 +159,12 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // Check pagination info (first element)
             JsonNode paginationInfo = json.get(0);
-            assertTrue("Pagination info should have startIndex", paginationInfo.has("startIndex"));
+            assertTrue("Pagination info should have start_index", paginationInfo.has("start_index"));
             assertTrue("Pagination info should have requestedCount", paginationInfo.has("requestedCount"));
             assertTrue("Pagination info should have actualCount", paginationInfo.has("actualCount"));
             assertTrue("Pagination info should have nextStartIndex", paginationInfo.has("nextStartIndex"));
 
-            assertEquals("Start index should be 0", 0, paginationInfo.get("startIndex").asInt());
+            assertEquals("Start index should be 0", 0, paginationInfo.get("start_index").asInt());
             assertEquals("Requested count should be 10", 10, paginationInfo.get("requestedCount").asInt());
 
             // Check string data (remaining elements)
@@ -216,7 +216,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // First, get strings count
             Map<String, Object> countArgs = new HashMap<>();
-            countArgs.put("programPath", programPath);
+            countArgs.put("program_path", program_path);
 
             countArgs.put("mode", "count");
             CallToolResult countResult = client.callTool(new CallToolRequest("manage-strings", countArgs));
@@ -227,8 +227,8 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             if (totalCount > 1) {
                 // Test pagination by requesting strings in chunks of 1
                 Map<String, Object> arguments = new HashMap<>();
-                arguments.put("programPath", programPath);
-                arguments.put("startIndex", 0);
+                arguments.put("program_path", program_path);
+                arguments.put("start_index", 0);
                 arguments.put("maxCount", 1);
 
                 if (!arguments.containsKey("mode")) {
@@ -248,14 +248,14 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
                 // Test second page if there are more strings
                 if (nextStartIndex < totalCount) {
-                    arguments.put("startIndex", nextStartIndex);
+                    arguments.put("start_index", nextStartIndex);
                     CallToolResult secondResult = client.callTool(new CallToolRequest("manage-strings", arguments));
                     TextContent secondContent = (TextContent) secondResult.content().get(0);
                     JsonNode secondJson = parseJsonContent(secondContent.text());
 
                     JsonNode secondPaginationInfo = secondJson.get(0);
                     assertEquals("Second page start index should match",
-                        nextStartIndex, secondPaginationInfo.get("startIndex").asInt());
+                        nextStartIndex, secondPaginationInfo.get("start_index").asInt());
                 }
             }
         });
@@ -266,9 +266,9 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
         withMcpClient(createMcpTransport(), (Consumer<McpSyncClient>) client -> {
             client.initialize();
 
-            // Test with only programPath (should use default startIndex=0, maxCount=2000 via limit)
+            // Test with only program_path (should use default start_index=0, maxCount=2000 via limit)
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
 
             if (!arguments.containsKey("mode")) {
                 arguments.put("mode", "list");
@@ -282,7 +282,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             JsonNode json = parseJsonContent(content.text());
 
             JsonNode paginationInfo = json.get(0);
-            assertEquals("Default start index should be 0", 0, paginationInfo.get("startIndex").asInt());
+            assertEquals("Default start index should be 0", 0, paginationInfo.get("start_index").asInt());
             assertEquals("Default max count should be 2000", 2000, paginationInfo.get("requestedCount").asInt());
         });
     }
@@ -304,7 +304,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
     @Test
     public void testGetStringsWithInvalidProgramPath() throws Exception {
         Map<String, Object> arguments = new HashMap<>();
-        arguments.put("programPath", "/this/path/does/not/exist");
+        arguments.put("program_path", "/this/path/does/not/exist");
         arguments.put("mode", "list");
         verifyMcpToolFailsWithError("manage-strings", arguments, "Program");
     }
@@ -312,7 +312,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
     @Test
     public void testGetStringsCountWithInvalidProgramPath() throws Exception {
         Map<String, Object> arguments = new HashMap<>();
-        arguments.put("programPath", "/this/path/does/not/exist");
+        arguments.put("program_path", "/this/path/does/not/exist");
         arguments.put("mode", "count");
         verifyMcpToolFailsWithError("manage-strings", arguments, "Program");
     }
@@ -346,7 +346,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // Search for strings containing "String"
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("regexPattern", ".*String.*");
 
             arguments.put("mode", "regex");
@@ -374,9 +374,9 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             assertTrue("Metadata should have searchComplete", metadata.has("searchComplete"));
             assertTrue("Metadata should have actualCount", metadata.has("actualCount"));
 
-            assertEquals("Regex pattern should match", ".*String.*", metadata.get("regexPattern").asText());
+            assertEquals("Regex pattern should match", ".*String.*", metadata.get("regex_pattern").asText());
 
-            int actualCount = metadata.get("actualCount").asInt();
+            int actualCount = metadata.get("actual_count").asInt();
 
             // Should find at least 2 strings: "Test String" and "Another String"
             assertTrue("Should find at least 2 matches", actualCount >= 2);
@@ -398,7 +398,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // Search for exact match of "Hello World"
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("regexPattern", "^Hello World$");
 
             arguments.put("mode", "regex");
@@ -414,7 +414,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             JsonNode json = parseJsonContent(content.text());
 
             JsonNode metadata = json.get(0);
-            int actualCount = metadata.get("actualCount").asInt();
+            int actualCount = metadata.get("actual_count").asInt();
 
             // Should find exactly 1 match
             assertEquals("Actual count should be 1", 1, actualCount);
@@ -434,7 +434,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // Search for pattern that won't match anything
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("regexPattern", "^NoMatchPattern12345$");
 
             arguments.put("mode", "regex");
@@ -462,7 +462,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // Invalid regex pattern
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("regexPattern", "[invalid(regex");
 
             arguments.put("mode", "regex");
@@ -489,10 +489,10 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
             // Search with pagination - get only 1 result at a time
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("regexPattern", ".*");  // Match all strings
-            arguments.put("startIndex", 0);
-            arguments.put("maxResults", 1);  // Use maxResults for regex mode
+            arguments.put("start_index", 0);
+            arguments.put("max_results", 1);  // Use max_results for regex mode
 
             arguments.put("mode", "regex");
             if (!arguments.containsKey("pattern")) {
@@ -507,22 +507,22 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
             JsonNode json = parseJsonContent(content.text());
 
             JsonNode metadata = json.get(0);
-            int actualCount = metadata.get("actualCount").asInt();
-            boolean searchComplete = metadata.get("searchComplete").asBoolean();
+            int actualCount = metadata.get("actual_count").asInt();
+            boolean searchComplete = metadata.get("search_complete").asBoolean();
 
             // Should return at most 1 match
             assertTrue("Should return at most 1 match", actualCount <= 1);
 
             // If search was not complete (more matches exist), test second page
             if (!searchComplete) {
-                arguments.put("startIndex", 1);
+                arguments.put("start_index", 1);
                 CallToolResult secondResult = client.callTool(new CallToolRequest("manage-strings", arguments));
 
                 TextContent secondContent = (TextContent) secondResult.content().get(0);
                 JsonNode secondJson = parseJsonContent(secondContent.text());
 
                 JsonNode secondMetadata = secondJson.get(0);
-                assertEquals("Second page start index should be 1", 1, secondMetadata.get("startIndex").asInt());
+                assertEquals("Second page start index should be 1", 1, secondMetadata.get("start_index").asInt());
 
                 // Verify we get different content on second page
                 if (secondJson.size() > 1 && json.size() > 1) {
@@ -544,7 +544,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
     @Test
     public void testSearchStringsRegexWithMissingPattern() throws Exception {
         Map<String, Object> arguments = new HashMap<>();
-        arguments.put("programPath", programPath);
+        arguments.put("program_path", program_path);
 
         arguments.put("mode", "regex");
         verifyMcpToolFailsWithError("manage-strings", arguments, "pattern");
@@ -553,7 +553,7 @@ public class StringToolProviderIntegrationTest extends RevaIntegrationTestBase {
     @Test
     public void testSearchStringsRegexWithInvalidProgramPath() throws Exception {
         Map<String, Object> arguments = new HashMap<>();
-        arguments.put("programPath", "/invalid/path");
+        arguments.put("program_path", "/invalid/path");
         arguments.put("regexPattern", ".*");
 
         arguments.put("mode", "regex");

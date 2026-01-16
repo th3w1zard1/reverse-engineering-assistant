@@ -85,7 +85,7 @@ public class FunctionToolProviderTest {
     public void testValidateListFunctionsParameters() {
         // Test parameter validation for the list-functions tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("programPath", "/test/program");
+        validArgs.put("program_path", "/test/program");
         validArgs.put("mode", "all");
 
         // Valid parameters should not throw
@@ -97,7 +97,7 @@ public class FunctionToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("programPath");
+        missingProgram.remove("program_path");
         try {
             validateListFunctionsArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -325,7 +325,7 @@ public class FunctionToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateListFunctionsArgs(Map<String, Object> args) {
-        if (args.get("programPath") == null) {
+        if (args.get("program_path") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
     }
@@ -432,7 +432,7 @@ public class FunctionToolProviderTest {
     public void testValidateManageFunctionParameters() {
         // Test parameter validation for the manage-function tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("programPath", "/test/program");
+        validArgs.put("program_path", "/test/program");
         validArgs.put("action", "create");
         validArgs.put("address", "0x401000");
 
@@ -445,7 +445,7 @@ public class FunctionToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("programPath");
+        missingProgram.remove("program_path");
         try {
             validateManageFunctionArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -771,7 +771,7 @@ public class FunctionToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateManageFunctionArgs(Map<String, Object> args) {
-        if (args.get("programPath") == null) {
+        if (args.get("program_path") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("action") == null) {

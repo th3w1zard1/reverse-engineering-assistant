@@ -81,7 +81,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             Map.of("type", "string", "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."),
             Map.of("type", "array", "items", Map.of("type", "string"), "description", "Array of program paths for multi-program analysis")
         ));
-        properties.put("programPath", programPathProperty);
+        properties.put("program_path", programPathProperty);
         Map<String, Object> identifierProperty = new HashMap<>();
         identifierProperty.put("type", "string");
         identifierProperty.put("description", "Function name or address (e.g., 'main' or '0x401000'). Can be a single string or an array of strings for batch operations. When omitted, returns all functions.");
@@ -147,15 +147,21 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
 
         registerTool(tool, (exchange, request) -> {
             try {
-                Object identifierValue = request.arguments().get("identifier");
+                // Use getParameterAsList to support both camelCase and snake_case parameter names
+                List<Object> identifierList = getParameterAsList(request.arguments(), "identifier");
+                Object identifierValue = identifierList.isEmpty() ? null : identifierList.get(0);
                 
                 // When identifier is omitted, return all functions
                 if (identifierValue == null) {
                     return handleAllFunctions(request);
                 }
 
-                // Handle programPath as array or string
-                Object programPathValue = request.arguments().get("programPath");
+                // Handle programPath as array or string - supports both camelCase and snake_case
+                List<Object> programPathList = getParameterAsList(request.arguments(), "program_path");
+                if (programPathList.isEmpty()) {
+                    programPathList = getParameterAsList(request.arguments(), "programPath");
+                }
+                Object programPathValue = programPathList.isEmpty() ? null : (programPathList.size() == 1 ? programPathList.get(0) : programPathList);
                 Program program;
                 if (programPathValue instanceof List) {
                     @SuppressWarnings("unchecked")
@@ -695,7 +701,12 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
      */
     private McpSchema.CallToolResult handleAllFunctions(CallToolRequest request) {
         try {
-            Object programPathValue = request.arguments().get("programPath");
+            // Use getParameterAsList to support both camelCase and snake_case parameter names
+            List<Object> programPathList = getParameterAsList(request.arguments(), "program_path");
+            if (programPathList.isEmpty()) {
+                programPathList = getParameterAsList(request.arguments(), "programPath");
+            }
+            Object programPathValue = programPathList.isEmpty() ? null : (programPathList.size() == 1 ? programPathList.get(0) : programPathList);
             List<Program> programs = new ArrayList<>();
             
             if (programPathValue instanceof List) {
@@ -762,8 +773,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 actions.put("finalFunctionCount", finalFunctionCount);
                 
                 Map<String, Object> programResult = new HashMap<>();
-                programResult.put("programPath", program.getDomainFile().getPathname());
-                programResult.put("totalFunctions", functions.size());
+                programResult.put("program_path", program.getDomainFile().getPathname());
+                programResult.put("total_functions", functions.size());
                 programResult.put("functions", functions);
                 programResult.put("actions", actions);
                 programResults.add(programResult);
@@ -776,8 +787,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 result.putAll(programResults.get(0));
             } else {
                 result.put("programs", programResults);
-                result.put("totalPrograms", programResults.size());
-                result.put("totalFunctions", totalFunctions);
+                result.put("total_programs", programResults.size());
+                result.put("total_functions", totalFunctions);
             }
             
             return createJsonResult(result);
@@ -872,8 +883,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 // Leave as -1 if counting fails
             }
         }
-        info.put("callerCount", callerCount);
-        info.put("calleeCount", calleeCount);
+        info.put("caller_count", callerCount);
+        info.put("callee_count", calleeCount);
         
         return info;
     }

@@ -85,7 +85,7 @@ public class RevaToolLogger {
             entry.put("timestamp", Instant.now().toString());
             entry.put("type", "REQUEST");
             entry.put("tool", toolName);
-            entry.put("requestId", requestId);
+            entry.put("request_id", requestId);
             entry.put("params", params != null ? params : Map.of());
 
             writeLogEntry(JSON.writeValueAsString(entry));
@@ -114,9 +114,9 @@ public class RevaToolLogger {
             entry.put("timestamp", Instant.now().toString());
             entry.put("type", "RESPONSE");
             entry.put("tool", toolName);
-            entry.put("requestId", requestId);
-            entry.put("durationMs", durationMs);
-            entry.put("isError", isError);
+            entry.put("request_id", requestId);
+            entry.put("duration_ms", durationMs);
+            entry.put("is_error", isError);
 
             // Decode response content from JSON string back to object for clean nesting
             Object decodedContent = decodeResponseContent(result);
@@ -148,8 +148,8 @@ public class RevaToolLogger {
             entry.put("timestamp", Instant.now().toString());
             entry.put("type", "RESPONSE");
             entry.put("tool", toolName);
-            entry.put("requestId", requestId);
-            entry.put("durationMs", durationMs);
+            entry.put("request_id", requestId);
+            entry.put("duration_ms", durationMs);
             entry.put("isError", true);
             entry.put("error", errorMessage);
 
@@ -180,7 +180,7 @@ public class RevaToolLogger {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("timestamp", Instant.now().toString());
             entry.put("type", "HTTP_REQUEST");
-            entry.put("requestId", requestId);
+            entry.put("request_id", requestId);
             entry.put("method", method);
             entry.put("uri", uri);
             entry.put("headers", headers != null ? headers : Map.of());
@@ -220,9 +220,9 @@ public class RevaToolLogger {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("timestamp", Instant.now().toString());
             entry.put("type", "HTTP_RESPONSE");
-            entry.put("requestId", requestId);
-            entry.put("statusCode", statusCode);
-            entry.put("durationMs", durationMs);
+            entry.put("request_id", requestId);
+            entry.put("status_code", statusCode);
+            entry.put("duration_ms", durationMs);
             if (headers != null && !headers.isEmpty()) {
                 entry.put("headers", headers);
             }

@@ -59,7 +59,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
 
                 // Create a test program
                 testProgram = createDefaultProgram("test-checkin", "x86:LE:64:default", this);
-                String programPath = testProgram.getDomainFile().getPathname();
+                String program_path = testProgram.getDomainFile().getPathname();
 
                 // Register the program so it can be found by tools
                 RevaProgramManager.registerProgram(testProgram);
@@ -83,7 +83,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
                     "checkin-program",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "message", "Test commit"
                     )
                 ));
@@ -136,7 +136,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
 
                 // Create a test program
                 testProgram = createDefaultProgram("test-unversioned", "x86:LE:64:default", this);
-                String programPath = testProgram.getDomainFile().getPathname();
+                String program_path = testProgram.getDomainFile().getPathname();
                 DomainFile domainFile = testProgram.getDomainFile();
 
                 // Register the program so it can be found by tools
@@ -164,7 +164,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
                     "checkin-program",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "message", "Test commit"
                     )
                 ));
@@ -191,7 +191,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                     assertEquals("Action should be added_to_version_control when supported", "added_to_version_control", action);
                 } else {
                     assertEquals("Action should be saved when version control not supported", "saved", action);
-                    assertFalse("Response should indicate file is not versioned", Boolean.TRUE.equals(response.get("isVersioned")));
+                    assertFalse("Response should indicate file is not versioned", Boolean.TRUE.equals(response.get("is_versioned")));
                 }
 
                 return null;
@@ -222,7 +222,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
 
                 // Create a test program
                 testProgram = createDefaultProgram("test-message", "x86:LE:64:default", this);
-                String programPath = testProgram.getDomainFile().getPathname();
+                String program_path = testProgram.getDomainFile().getPathname();
 
                 // Register the program so it can be found by tools
                 RevaProgramManager.registerProgram(testProgram);
@@ -248,7 +248,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
                     "checkin-program",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "message", commitMessage
                     )
                 ));

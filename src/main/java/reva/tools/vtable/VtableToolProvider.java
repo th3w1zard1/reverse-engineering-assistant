@@ -78,7 +78,7 @@ public class VtableToolProvider extends AbstractToolProvider {
 
     private void registerAnalyzeVtablesTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
+        properties.put("program_path", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
@@ -99,7 +99,7 @@ public class VtableToolProvider extends AbstractToolProvider {
             "type", "string",
             "description", "Address or name of the virtual function when mode='callers' or function to search for when mode='containing' (required for callers/containing modes)"
         ));
-        properties.put("functionAddress", Map.of(
+        properties.put("function_address", Map.of(
             "type", "string",
             "description", "Address or name of the function (alternative parameter name)"
         ));
@@ -108,27 +108,16 @@ public class VtableToolProvider extends AbstractToolProvider {
             "description", "Maximum number of vtable entries to read when mode='analyze' (default: 200)",
             "default", DEFAULT_MAX_VTABLE_ENTRIES
         ));
-        properties.put("maxEntries", Map.of(
-            "type", "integer",
-            "description", "Maximum number of vtable entries (alternative parameter name)",
-            "default", DEFAULT_MAX_VTABLE_ENTRIES
-        ));
         properties.put("max_results", Map.of(
             "type", "integer",
             "description", "Maximum number of results to return when mode='callers' (optional, default: 500)",
             "default", DEFAULT_MAX_RESULTS
         ));
-        properties.put("maxResults", Map.of(
-            "type", "integer",
-            "description", "Maximum number of results (alternative parameter name, optional)",
-            "default", DEFAULT_MAX_RESULTS
-        ));
-
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("analyze-vtables")
             .title("Analyze Vtables")
             .description("Analyze vtables, find vtable callers, or find vtables containing a specific function.")
-            .inputSchema(createSchema(properties, List.of("programPath", "mode")))
+            .inputSchema(createSchema(properties, List.of("program_path", "mode")))
             .build();
 
         registerTool(tool, (exchange, request) -> {
@@ -136,16 +125,12 @@ public class VtableToolProvider extends AbstractToolProvider {
                 Program program = getProgramFromArgs(request);
                 String mode = getString(request, "mode");
 
-                switch (mode) {
-                    case "analyze":
-                        return handleAnalyzeMode(program, request);
-                    case "callers":
-                        return handleCallersMode(program, request);
-                    case "containing":
-                        return handleContainingMode(program, request);
-                    default:
-                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: analyze, callers, containing");
-                }
+                return switch (mode) {
+                    case "analyze" -> handleAnalyzeMode(program, request);
+                    case "callers" -> handleCallersMode(program, request);
+                    case "containing" -> handleContainingMode(program, request);
+                    default -> createErrorResult("Invalid mode: " + mode + ". Valid modes are: analyze, callers, containing");
+                };
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
@@ -158,9 +143,6 @@ public class VtableToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleAnalyzeMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String vtableAddrStr = getOptionalString(request, "vtable_address", null);
         if (vtableAddrStr == null) {
-            vtableAddrStr = getOptionalString(request, "vtableAddress", null);
-        }
-        if (vtableAddrStr == null) {
             return createErrorResult("vtable_address is required for mode='analyze'");
         }
 
@@ -169,17 +151,13 @@ public class VtableToolProvider extends AbstractToolProvider {
             return createErrorResult("Could not resolve vtable address or symbol: " + vtableAddrStr);
         }
 
-        int maxEntries = getOptionalInt(request, "max_entries",
-            getOptionalInt(request, "maxEntries", DEFAULT_MAX_VTABLE_ENTRIES));
+        int maxEntries = getOptionalInt(request, "max_entries", DEFAULT_MAX_VTABLE_ENTRIES);
 
         return analyzeVtable(program, vtableAddr, maxEntries);
     }
 
     private McpSchema.CallToolResult handleCallersMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String functionAddrStr = getOptionalString(request, "function_address", null);
-        if (functionAddrStr == null) {
-            functionAddrStr = getOptionalString(request, "functionAddress", null);
-        }
         if (functionAddrStr == null) {
             return createErrorResult("function_address is required for mode='callers'");
         }
@@ -190,11 +168,8 @@ public class VtableToolProvider extends AbstractToolProvider {
         }
 
         String vtableAddrStr = getOptionalString(request, "vtable_address", null);
-        if (vtableAddrStr == null) {
-            vtableAddrStr = getOptionalString(request, "vtableAddress", null);
-        }
 
-        Address vtableAddr = null;
+        Address vtableAddr = AddressUtil.resolveAddressOrSymbol(program, vtableAddrStr);
         if (vtableAddrStr != null && !vtableAddrStr.isEmpty()) {
             vtableAddr = AddressUtil.resolveAddressOrSymbol(program, vtableAddrStr);
             if (vtableAddr == null) {
@@ -202,17 +177,13 @@ public class VtableToolProvider extends AbstractToolProvider {
             }
         }
 
-        int maxResults = getOptionalInt(request, "max_results",
-            getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS));
+        int maxResults = getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS);
 
         return findVtableCallers(program, functionAddr, vtableAddr, maxResults);
     }
 
     private McpSchema.CallToolResult handleContainingMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String functionAddrStr = getOptionalString(request, "function_address", null);
-        if (functionAddrStr == null) {
-            functionAddrStr = getOptionalString(request, "functionAddress", null);
-        }
         if (functionAddrStr == null) {
             return createErrorResult("function_address is required for mode='containing'");
         }
@@ -260,7 +231,7 @@ public class VtableToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("program_path", program.getDomainFile().getPathname());
         result.put("vtableAddress", AddressUtil.formatAddress(vtableAddr));
         result.put("pointerSize", pointerSize);
         result.put("entryCount", entries.size());
@@ -468,7 +439,7 @@ public class VtableToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("program_path", program.getDomainFile().getPathname());
         result.put("functionAddress", AddressUtil.formatAddress(functionAddr));
         result.put("functionName", targetFunc.getName());
         result.put("vtables", vtableInfo);
@@ -476,7 +447,7 @@ public class VtableToolProvider extends AbstractToolProvider {
         result.put("note", !callers.isEmpty()
             ? "These are indirect calls with matching offsets - verify vtable usage at each site"
             : "No indirect calls found with matching vtable slot offsets");
-        result.put("potentialCallers", callers);
+        result.put("potential_callers", callers);
 
         return createJsonResult(result);
     }
@@ -516,7 +487,7 @@ public class VtableToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("program_path", program.getDomainFile().getPathname());
         result.put("functionAddress", AddressUtil.formatAddress(functionAddr));
         result.put("functionName", targetFunc.getName());
         result.put("vtableCount", vtables.size());
@@ -740,7 +711,7 @@ public class VtableToolProvider extends AbstractToolProvider {
                 Function func = program.getFunctionManager().getFunctionContaining(instr.getAddress());
                 if (func != null) {
                     caller.put("function", func.getName());
-                    caller.put("functionAddress", AddressUtil.formatAddress(func.getEntryPoint()));
+                    caller.put("function_address", AddressUtil.formatAddress(func.getEntryPoint()));
                 }
 
                 results.add(caller);

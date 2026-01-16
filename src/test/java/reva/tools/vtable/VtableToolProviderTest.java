@@ -82,7 +82,7 @@ public class VtableToolProviderTest {
     public void testValidateAnalyzeVtablesParameters() {
         // Test parameter validation for the analyze-vtables tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("programPath", "/test/program");
+        validArgs.put("program_path", "/test/program");
         validArgs.put("mode", "analyze");
 
         // Valid parameters should not throw
@@ -94,7 +94,7 @@ public class VtableToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("programPath");
+        missingProgram.remove("program_path");
         try {
             validateAnalyzeVtablesArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -269,7 +269,7 @@ public class VtableToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handler
     private void validateAnalyzeVtablesArgs(Map<String, Object> args) {
-        if (args.get("programPath") == null) {
+        if (args.get("program_path") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("mode") == null) {

@@ -256,14 +256,14 @@ public class DecompilerToolProvider extends AbstractToolProvider {
 
         DecompInterface newDecompiler = createConfiguredDecompiler(program, toolName + "-diff");
         if (newDecompiler == null) {
-            result.put("decompilationError", "Failed to initialize decompiler for diff");
+            result.put("decompilation_error", "Failed to initialize decompiler for diff");
             return result;
         }
 
         try {
             DecompilationAttempt attempt = decompileFunctionSafely(newDecompiler, function, toolName + "-diff");
             if (!attempt.success()) {
-                result.put("decompilationError", attempt.errorMessage());
+                result.put("decompilation_error", attempt.errorMessage());
                 return result;
             }
 
@@ -281,7 +281,7 @@ public class DecompilerToolProvider extends AbstractToolProvider {
             }
         } catch (Exception e) {
             logError(toolName + "-diff: Error during diff decompilation", e);
-            result.put("decompilationError", "Exception during decompilation: " + e.getMessage());
+            result.put("decompilation_error", "Exception during decompilation: " + e.getMessage());
         } finally {
             newDecompiler.dispose();
         }
@@ -547,7 +547,7 @@ public class DecompilerToolProvider extends AbstractToolProvider {
             funcInfo.put("name", func.getName());
             funcInfo.put("address", AddressUtil.formatAddress(func.getEntryPoint()));
             funcInfo.put("signature", func.getSignature().getPrototypeString());
-            funcInfo.put("callCount", callCounts.getOrDefault(func.getEntryPoint(), 0));
+            funcInfo.put("call_count", callCounts.getOrDefault(func.getEntryPoint(), 0));
 
             resultList.add(funcInfo);
             count++;

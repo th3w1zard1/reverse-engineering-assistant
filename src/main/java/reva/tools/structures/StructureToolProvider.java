@@ -60,7 +60,7 @@ public class StructureToolProvider extends AbstractToolProvider {
 
     private void registerManageStructuresTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
         properties.put("action", Map.of(
             "type", "string",
             "description", "Action to perform: 'parse', 'validate', 'create', 'add_field', 'modify_field', 'modify_from_c', 'info', 'list', 'apply', 'delete', 'parse_header'",
@@ -105,7 +105,7 @@ public class StructureToolProvider extends AbstractToolProvider {
         properties.put("name_filter", SchemaUtil.stringProperty("Filter by name (substring match) when action='list'"));
         properties.put("include_built_in", SchemaUtil.booleanPropertyWithDefault("Include built-in types when action='list'", false));
 
-        List<String> required = List.of("programPath", "action");
+        List<String> required = List.of("program_path", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("manage-structures")
@@ -152,7 +152,7 @@ public class StructureToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleParseAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program program = getProgramFromArgs(request);
-        String cDefinition = getOptionalString(request, "c_definition", getOptionalString(request, "cDefinition", null));
+        String cDefinition = getOptionalString(request, "c_definition", null);
         if (cDefinition == null) {
             return createErrorResult("c_definition is required for action='parse'");
         }
@@ -191,7 +191,7 @@ public class StructureToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleValidateAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        String cDefinition = getOptionalString(request, "c_definition", getOptionalString(request, "cDefinition", null));
+        String cDefinition = getOptionalString(request, "c_definition", null);
         if (cDefinition == null) {
             return createErrorResult("c_definition is required for action='validate'");
         }
@@ -276,11 +276,11 @@ public class StructureToolProvider extends AbstractToolProvider {
         if (structureName == null) {
             return createErrorResult("structure_name is required for action='add_field'");
         }
-        String fieldName = getOptionalString(request, "field_name", getOptionalString(request, "fieldName", null));
+        String fieldName = getOptionalString(request, "field_name", null);
         if (fieldName == null) {
             return createErrorResult("field_name is required for action='add_field'");
         }
-        String dataTypeStr = getOptionalString(request, "data_type", getOptionalString(request, "dataType", null));
+        String dataTypeStr = getOptionalString(request, "data_type", null);
         if (dataTypeStr == null) {
             return createErrorResult("data_type is required for action='add_field'");
         }
@@ -343,10 +343,10 @@ public class StructureToolProvider extends AbstractToolProvider {
         if (structureName == null) {
             return createErrorResult("structure_name is required for action='modify_field'");
         }
-        String fieldName = getOptionalString(request, "field_name", getOptionalString(request, "fieldName", null));
-        String newDataTypeStr = getOptionalString(request, "new_data_type", getOptionalString(request, "newDataType", null));
-        String newFieldName = getOptionalString(request, "new_field_name", getOptionalString(request, "newFieldName", null));
-        String newComment = getOptionalString(request, "new_comment", getOptionalString(request, "newComment", null));
+        String fieldName = getOptionalString(request, "field_name", null);
+        String newDataTypeStr = getOptionalString(request, "new_data_type", null);
+        String newFieldName = getOptionalString(request, "new_field_name", null);
+        String newComment = getOptionalString(request, "new_comment", null);
         Integer newLength = getOptionalInteger(request.arguments(), "new_length", null);
 
         DataTypeManager dtm = program.getDataTypeManager();
@@ -429,7 +429,7 @@ public class StructureToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleModifyFromCAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program program = getProgramFromArgs(request);
-        String cDefinition = getOptionalString(request, "c_definition", getOptionalString(request, "cDefinition", null));
+        String cDefinition = getOptionalString(request, "c_definition", null);
         if (cDefinition == null) {
             return createErrorResult("c_definition is required for action='modify_from_c'");
         }
@@ -493,7 +493,7 @@ public class StructureToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleListAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program program = getProgramFromArgs(request);
         String nameFilter = getOptionalString(request, "name_filter", getOptionalString(request, "nameFilter", null));
-        boolean includeBuiltIn = getOptionalBoolean(request, "include_built_in", getOptionalBoolean(request, "includeBuiltIn", false));
+        boolean includeBuiltIn = getOptionalBoolean(request, "include_built_in", false);
 
         DataTypeManager dtm = program.getDataTypeManager();
         List<Map<String, Object>> structures = new ArrayList<>();
@@ -523,20 +523,21 @@ public class StructureToolProvider extends AbstractToolProvider {
         if (structureName == null) {
             return createErrorResult("structure_name is required for action='apply'");
         }
-        boolean clearExisting = getOptionalBoolean(request, "clear_existing", getOptionalBoolean(request, "clearExisting", true));
+        boolean clearExisting = getOptionalBoolean(request, "clear_existing", true);
 
-        // Check if address_or_symbol is an array (batch mode)
-        Object addressOrSymbolValue = request.arguments().get("address_or_symbol");
-        if (addressOrSymbolValue == null) {
-            addressOrSymbolValue = request.arguments().get("addressOrSymbol");
+        // Check if address_or_symbol is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> addressOrSymbolList = getParameterAsList(request.arguments(), "address_or_symbol");
+        if (addressOrSymbolList.isEmpty()) {
+            addressOrSymbolList = getParameterAsList(request.arguments(), "addressOrSymbol");
         }
 
-        if (addressOrSymbolValue instanceof List) {
-            return handleBatchApplyStructure(program, request, structureName, clearExisting, (List<?>) addressOrSymbolValue);
+        if (addressOrSymbolList.size() > 1 || (!addressOrSymbolList.isEmpty() && addressOrSymbolList.get(0) instanceof List)) {
+            List<?> batchList = addressOrSymbolList.size() > 1 ? addressOrSymbolList : (List<?>) addressOrSymbolList.get(0);
+            return handleBatchApplyStructure(program, request, structureName, clearExisting, batchList);
         }
 
         // Single address mode
-        String addressOrSymbol = getOptionalString(request, "address_or_symbol", getOptionalString(request, "addressOrSymbol", null));
+        String addressOrSymbol = getOptionalString(request, "address_or_symbol", null);
         if (addressOrSymbol == null) {
             return createErrorResult("address_or_symbol is required for action='apply'");
         }
@@ -732,7 +733,7 @@ public class StructureToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleParseHeaderAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program program = getProgramFromArgs(request);
-        String headerContent = getOptionalString(request, "header_content", getOptionalString(request, "headerContent", null));
+        String headerContent = getOptionalString(request, "header_content", null);
         if (headerContent == null) {
             return createErrorResult("header_content is required for action='parse_header'");
         }

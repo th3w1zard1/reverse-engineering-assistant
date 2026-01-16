@@ -64,9 +64,11 @@ public class KeepAliveFilter implements Filter {
         httpResponse.setHeader("Connection", "keep-alive");
         
         // Keep-Alive header specifies timeout and max requests
-        // timeout=300: keep connection alive for 5 minutes of inactivity
-        // max=1000: allow up to 1000 requests on the same connection
-        httpResponse.setHeader("Keep-Alive", "timeout=300, max=1000");
+        // timeout=86400: keep connection alive for 24 hours of inactivity (matches Jetty idle timeout)
+        // This prevents premature connection closure that causes "Session terminated" errors
+        // The MCP SDK's keepAliveInterval (30s) sends periodic messages to keep the connection alive
+        // max=10000: allow up to 10000 requests on the same connection for long-running sessions
+        httpResponse.setHeader("Keep-Alive", "timeout=86400, max=10000");
 
         // Continue with the filter chain
         chain.doFilter(request, response);

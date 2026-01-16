@@ -21,11 +21,14 @@ import java.util.Set;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 import java.util.EnumSet;
 import jakarta.servlet.DispatcherType;
@@ -253,20 +256,58 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         FilterHolder keepAliveFilterHolder = new FilterHolder(new KeepAliveFilter());
         servletContextHandler.addFilter(keepAliveFilterHolder, "/*", EnumSet.of(DispatcherType.REQUEST));
 
-        // Create server with specific host binding for security
-        httpServer = new Server();
-        ServerConnector connector = new ServerConnector(httpServer);
+        // Create explicit thread pool with configuration for long-running headless server
+        // CRITICAL: Without an explicit thread pool, Jetty uses a default QueuedThreadPool
+        // with a default idleTimeout (often 60 seconds) that causes threads to be removed
+        // after being idle. This leads to thread pool exhaustion and server crashes after
+        // ~5 minutes of use. The canonical solution is to explicitly configure the thread
+        // pool with a long idleTimeout to prevent premature thread removal.
+        //
+        // Configuration rationale:
+        // - idleTimeout: Set to 24 hours (86400000ms) to prevent threads from being removed
+        //   during long idle periods. This is critical for headless servers that may have
+        //   periods of inactivity but must remain responsive.
+        // - maxThreads: 200 threads maximum (default is typically 200, but we're explicit)
+        // - minThreads: 8 threads minimum to ensure threads are always available for requests
+        //   even after idle periods. This prevents the server from having to create threads
+        //   on-demand which can cause delays or failures.
+        QueuedThreadPool jettyThreadPool = new QueuedThreadPool();
+        jettyThreadPool.setIdleTimeout(86400000); // 24 hours (86400000ms) - prevents thread removal during idle periods
+        jettyThreadPool.setMaxThreads(200);        // Maximum threads for handling concurrent requests
+        jettyThreadPool.setMinThreads(8);         // Minimum threads to keep alive (prevents thread creation delays)
+        jettyThreadPool.setName("ReVa-Jetty");     // Named threads for easier debugging
+
+        // Create server with explicit thread pool configuration
+        // This is the canonical solution for long-running embedded Jetty servers
+        // See: https://jetty.org/docs/jetty/12.1/programming-guide/arch/threads.html
+        httpServer = new Server(jettyThreadPool);
+
+        // CRITICAL: Configure HttpConfiguration with explicit idle timeout
+        // Without explicit HttpConfiguration, Jetty may use default HTTP idle timeout
+        // (often 30 seconds in jetty-home, though -1/infinite in code defaults).
+        // This causes HTTP connections to close prematurely, leading to "Connection closed" errors.
+        // The HttpConfiguration idleTimeout controls HTTP-level connection timeouts,
+        // separate from the connector-level idleTimeout.
+        HttpConfiguration httpConfig = new HttpConfiguration();
+        // Set HTTP idle timeout to 24 hours (86400000ms) to prevent HTTP connection closure
+        // A value of -1 would mean infinite, but we use 24 hours for safety and resource management
+        httpConfig.setIdleTimeout(86400000L); // 24 hours in milliseconds
+
+        // Create connector with HttpConfiguration
+        // The ServerConnector needs both the connector-level idleTimeout AND the HttpConfiguration
+        // to properly handle long-running connections
+        ServerConnector connector = new ServerConnector(httpServer, 
+            new HttpConnectionFactory(httpConfig));
         connector.setHost(serverHost);
         connector.setPort(serverPort);
 
-        // Configure connection timeouts to prevent premature session termination
+        // Configure connector-level idle timeout to prevent premature session termination
         // Set idle timeout to 24 hours (86400000ms) to keep connections alive indefinitely
         // This prevents the "Session terminated" error that occurs when connections timeout
         // The idle timeout is the maximum time a connection can be idle before being closed
+        // NOTE: Both connector.setIdleTimeout() AND HttpConfiguration.setIdleTimeout() must be set
+        // for complete timeout protection across all layers
         connector.setIdleTimeout(86400000L); // 24 hours in milliseconds
-
-        // NOTE: Connection timeout (for establishing connections) is handled by Jetty's
-        // default settings and doesn't need to be configured separately on ServerConnector
 
         httpServer.addConnector(connector);
         httpServer.setHandler(servletContextHandler);
@@ -475,6 +516,9 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         JacksonMcpJsonMapper jsonMapper = new JacksonMcpJsonMapper(objectMapper);
 
         // Create new transport provider with updated configuration
+        // keepAliveInterval: Send keep-alive messages every 30 seconds to prevent connection timeout
+        // This works in conjunction with the HTTP Keep-Alive header (24 hour timeout) to maintain
+        // long-lived connections for headless mode sessions that may run for hours
         currentTransportProvider = HttpServletStreamableServerTransportProvider.builder()
             .mcpEndpoint(MCP_MSG_ENDPOINT)
             .jsonMapper(jsonMapper)

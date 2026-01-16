@@ -7,11 +7,12 @@ import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.lang.Language;
 import ghidra.program.model.lang.CompilerSpec;
-import io.modelcontextprotocol.sdk.java.resources.Resource;
-import io.modelcontextprotocol.sdk.java.resources.ResourceContents;
-import io.modelcontextprotocol.sdk.java.resources.ReadResourceResult;
-import io.modelcontextprotocol.sdk.java.resources.SyncResourceSpecification;
-import io.modelcontextprotocol.sdk.java.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpServerFeatures.SyncResourceSpecification;
+import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.spec.McpSchema.ReadResourceResult;
+import io.modelcontextprotocol.spec.McpSchema.Resource;
+import io.modelcontextprotocol.spec.McpSchema.ResourceContents;
+import io.modelcontextprotocol.spec.McpSchema.TextResourceContents;
 import reva.plugin.RevaProgramManager;
 import reva.resources.AbstractResourceProvider;
 import reva.util.RevaInternalServiceRegistry;
@@ -64,7 +65,7 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
                     // Use cached documentation if available and recent
                     long now = System.currentTimeMillis();
                     if (cachedFullDocumentation != null && (now - cacheTimestamp) < CACHE_VALIDITY_MS) {
-                        ResourceContents cachedContent = new ResourceContents(
+                        TextResourceContents cachedContent = new TextResourceContents(
                             RESOURCE_ID,
                             RESOURCE_MIME_TYPE,
                             cachedFullDocumentation
@@ -73,29 +74,17 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
                         return new ReadResourceResult(resourceContents);
                     }
 
-                    RevaProgramManager programManager = RevaInternalServiceRegistry.getInstance()
-                        .getService(RevaProgramManager.class);
-
-                    if (programManager == null) {
-                        ResourceContents emptyContent = new ResourceContents(
-                            RESOURCE_ID,
-                            RESOURCE_MIME_TYPE,
-                            "# Program Documentation\n\nNo programs are currently open."
-                        );
-                        resourceContents.add(emptyContent);
-                        return new ReadResourceResult(resourceContents);
-                    }
-
-                    List<Program> openPrograms = programManager.getOpenPrograms();
+                    List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
 
                     if (openPrograms.isEmpty()) {
-                        ResourceContents emptyContent = new ResourceContents(
+                        String emptyText = "# Program Documentation\n\nNo programs are currently open.";
+                        TextResourceContents emptyContent = new TextResourceContents(
                             RESOURCE_ID,
                             RESOURCE_MIME_TYPE,
-                            "# Program Documentation\n\nNo programs are currently open."
+                            emptyText
                         );
                         resourceContents.add(emptyContent);
-                        cachedFullDocumentation = emptyContent.text();
+                        cachedFullDocumentation = emptyText;
                         cacheTimestamp = now;
                         return new ReadResourceResult(resourceContents);
                     }
@@ -135,7 +124,7 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
                         }
                     }
 
-                    ResourceContents content = new ResourceContents(
+                    TextResourceContents content = new TextResourceContents(
                         RESOURCE_ID,
                         RESOURCE_MIME_TYPE,
                         documentation.toString()
@@ -143,7 +132,7 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
                     resourceContents.add(content);
 
                 } catch (Exception e) {
-                    ResourceContents errorContent = new ResourceContents(
+                    TextResourceContents errorContent = new TextResourceContents(
                         RESOURCE_ID,
                         RESOURCE_MIME_TYPE,
                         "# Program Documentation\n\nError generating documentation: " + e.getMessage()
@@ -219,9 +208,8 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
         if (program.getCreationDate() != null) {
             doc.append("- **Creation Date:** ").append(program.getCreationDate().toString()).append("\n");
         }
-        if (program.getModificationDate() != null) {
-            doc.append("- **Modification Date:** ").append(program.getModificationDate().toString()).append("\n");
-        }
+        // Modification number is available but not a date
+        doc.append("- **Modification Number:** ").append(program.getModificationNumber()).append("\n");
 
         return doc.toString();
     }
@@ -251,8 +239,7 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
         }
 
         // Get thread pool from service registry
-        GThreadPool threadPool = RevaInternalServiceRegistry.getInstance()
-            .getService(GThreadPool.class);
+        GThreadPool threadPool = RevaInternalServiceRegistry.getService(GThreadPool.class);
 
         if (threadPool == null) {
             // Fallback: generate synchronously if no thread pool available

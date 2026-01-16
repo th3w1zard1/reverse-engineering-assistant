@@ -38,7 +38,6 @@ import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TimeoutTaskMonitor;
 import java.util.concurrent.TimeUnit;
 import reva.plugin.ConfigManager;
-import reva.util.RevaInternalServiceRegistry;
 
 /**
  * Utility class for working with decompilation context and cross references.
@@ -242,25 +241,25 @@ public class DecompilationContextUtil {
                 processed++;
 
                 Map<String, Object> refInfo = new HashMap<>();
-                refInfo.put("fromAddress", AddressUtil.formatAddress(fromAddress));
-                refInfo.put("referenceType", ref.getReferenceType().toString());
+                refInfo.put("from_address", AddressUtil.formatAddress(fromAddress));
+                refInfo.put("reference_type", ref.getReferenceType().toString());
 
                 // Add symbol name if available
                 if (fromAddress != null) {
                     Symbol fromSymbol = program.getSymbolTable().getPrimarySymbol(fromAddress);
                     if (fromSymbol != null) {
-                        refInfo.put("fromSymbol", fromSymbol.getName());
-                        refInfo.put("fromSymbolType", fromSymbol.getSymbolType().toString());
+                        refInfo.put("from_symbol", fromSymbol.getName());
+                        refInfo.put("from_symbol_type", fromSymbol.getSymbolType().toString());
                     }
                 }
 
                 if (fromFunction != null) {
-                    refInfo.put("fromFunction", fromFunction.getName());
+                    refInfo.put("from_function", fromFunction.getName());
 
                     // Get line number in the source function
                     int lineNumber = getLineNumberForAddress(program, fromFunction, fromAddress);
                     if (lineNumber > 0) {
-                        refInfo.put("fromLine", lineNumber);
+                        refInfo.put("from_line", lineNumber);
 
                         // Add context if requested (this is expensive - requires decompilation)
                         if (includeContext) {
@@ -320,20 +319,20 @@ public class DecompilationContextUtil {
                 Function fromFunction = program.getFunctionManager().getFunctionContaining(fromAddress);
 
                 Map<String, Object> refInfo = new HashMap<>();
-                refInfo.put("fromAddress", AddressUtil.formatAddress(fromAddress));
-                refInfo.put("toAddress", AddressUtil.formatAddress(ref.getToAddress()));
-                refInfo.put("referenceType", ref.getReferenceType().toString());
-                refInfo.put("isPrimary", ref.isPrimary());
-                refInfo.put("operandIndex", ref.getOperandIndex());
-                refInfo.put("sourceType", ref.getSource().toString());
+                refInfo.put("from_address", AddressUtil.formatAddress(fromAddress));
+                refInfo.put("to_address", AddressUtil.formatAddress(ref.getToAddress()));
+                refInfo.put("reference_type", ref.getReferenceType().toString());
+                refInfo.put("is_primary", ref.isPrimary());
+                refInfo.put("operand_index", ref.getOperandIndex());
+                refInfo.put("source_type", ref.getSource().toString());
 
                 if (fromFunction != null) {
-                    refInfo.put("fromFunction", fromFunction.getName());
+                    refInfo.put("from_function", fromFunction.getName());
 
                     // Get line number in the source function
                     int lineNumber = getLineNumberForAddress(program, fromFunction, fromAddress);
                     if (lineNumber > 0) {
-                        refInfo.put("fromLine", lineNumber);
+                        refInfo.put("from_line", lineNumber);
 
                         // Add context if requested
                         if (includeContext) {

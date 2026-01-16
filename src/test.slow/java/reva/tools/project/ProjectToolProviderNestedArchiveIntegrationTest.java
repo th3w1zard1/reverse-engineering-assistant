@@ -76,12 +76,12 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<Map<String, Object>>() {});
                 
                 assertEquals("Import should be successful", true, response.get("success"));
-                assertNotNull("Should have importedFrom field", response.get("importedFrom"));
-                assertEquals("Should import from the specified path", testFilePath, response.get("importedFrom"));
-                assertNotNull("Should have filesDiscovered field", response.get("filesDiscovered"));
+                assertNotNull("Should have imported_from field", response.get("imported_from"));
+                assertEquals("Should import from the specified path", testFilePath, response.get("imported_from"));
+                assertNotNull("Should have files_discovered field", response.get("files_discovered"));
                 
                 // Verify that at least one file was discovered
-                Integer filesDiscovered = (Integer) response.get("filesDiscovered");
+                    Integer filesDiscovered = (Integer) response.get("files_discovered");
                 assertTrue("Should discover at least one file", filesDiscovered > 0);
                 
                 return null; // withMcpClient expects a return value
@@ -160,7 +160,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 // If project supports version control, should have filesAddedToVersionControl count
                 // (This may be 0 if project doesn't support version control, but field should exist)
                 if (response.containsKey("filesAddedToVersionControl")) {
-                    Integer versionedCount = (Integer) response.get("filesAddedToVersionControl");
+                    Integer versionedCount = (Integer) response.get("files_added_to_version_control");
                     assertNotNull("filesAddedToVersionControl should not be null", versionedCount);
                     assertTrue("filesAddedToVersionControl should be >= 0", versionedCount >= 0);
                 }
@@ -204,7 +204,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<Map<String, Object>>() {});
 
                 assertTrue("Import should be successful", Boolean.TRUE.equals(response.get("success")));
-                assertFalse("enableVersionControl should be false", Boolean.TRUE.equals(response.get("enableVersionControl")));
+                assertFalse("enable_version_control should be false", Boolean.TRUE.equals(response.get("enable_version_control")));
 
                 // Should not have filesAddedToVersionControl field when disabled
                 assertFalse("Should not have filesAddedToVersionControl when disabled",
@@ -272,7 +272,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 assertTrue("Import should be successful", Boolean.TRUE.equals(response.get("success")));
 
                 // Verify archive was discovered
-                Integer filesDiscovered = (Integer) response.get("filesDiscovered");
+                    Integer filesDiscovered = (Integer) response.get("files_discovered");
                 assertNotNull("Should have filesDiscovered", filesDiscovered);
                 assertTrue("Should discover files from archive (found " + filesDiscovered + ")", filesDiscovered >= 3);
 
@@ -284,7 +284,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
 
                 // Verify importedPrograms list
                 @SuppressWarnings("unchecked")
-                List<String> importedPrograms = (List<String>) response.get("importedPrograms");
+                List<String> importedPrograms = (List<String>) response.get("imported_programs");
                 assertNotNull("Should have importedPrograms list", importedPrograms);
                 assertTrue("Should have multiple imported programs", importedPrograms.size() >= 3);
 
@@ -339,7 +339,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
 
                 // Verify importedPrograms list has 2 entries
                 @SuppressWarnings("unchecked")
-                List<String> importedPrograms = (List<String>) response.get("importedPrograms");
+                List<String> importedPrograms = (List<String>) response.get("imported_programs");
                 assertNotNull("Should have importedPrograms list", importedPrograms);
                 assertEquals("Should have 2 imported programs from fat binary", 2, importedPrograms.size());
 
@@ -393,20 +393,20 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
 
                 // Verify required fields
                 assertTrue("Should have success field", response.containsKey("success"));
-                assertTrue("Should have importedFrom field", response.containsKey("importedFrom"));
-                assertTrue("Should have filesDiscovered field", response.containsKey("filesDiscovered"));
-                assertTrue("Should have filesImported field", response.containsKey("filesImported"));
-                assertTrue("Should have importedPrograms field", response.containsKey("importedPrograms"));
+                assertTrue("Should have imported_from field", response.containsKey("imported_from"));
+                assertTrue("Should have files_discovered field", response.containsKey("files_discovered"));
+                assertTrue("Should have files_imported field", response.containsKey("files_imported"));
+                assertTrue("Should have imported_programs field", response.containsKey("imported_programs"));
 
                 // Verify group tracking fields
-                assertTrue("Should have enabledGroups field", response.containsKey("enabledGroups"));
-                assertTrue("Should have skippedGroups field", response.containsKey("skippedGroups"));
-                assertTrue("Should have groupsCreated field", response.containsKey("groupsCreated"));
+                assertTrue("Should have enabled_groups field", response.containsKey("enabled_groups"));
+                assertTrue("Should have skipped_groups field", response.containsKey("skipped_groups"));
+                assertTrue("Should have groups_created field", response.containsKey("groups_created"));
 
                 // Verify path handling fields
-                assertTrue("Should have stripLeadingPath field", response.containsKey("stripLeadingPath"));
-                assertTrue("Should have stripAllContainerPath field", response.containsKey("stripAllContainerPath"));
-                assertTrue("Should have mirrorFs field", response.containsKey("mirrorFs"));
+                assertTrue("Should have strip_leading_path field", response.containsKey("strip_leading_path"));
+                assertTrue("Should have strip_all_container_path field", response.containsKey("strip_all_container_path"));
+                assertTrue("Should have mirror_fs field", response.containsKey("mirror_fs"));
 
                 return null;
             } catch (Exception e) {

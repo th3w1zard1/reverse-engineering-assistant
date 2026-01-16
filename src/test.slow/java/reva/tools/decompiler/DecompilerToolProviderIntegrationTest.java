@@ -160,8 +160,8 @@ public class DecompilerToolProviderIntegrationTest extends RevaIntegrationTestBa
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
 
-            assertEquals("Program name should match", program.getName(), json.get("programName").asText());
-            assertEquals("Function name should match", "testFunction", json.get("functionName").asText());
+            assertEquals("Program name should match", program.getName(), json.get("program_name").asText());
+            assertEquals("Function name should match", "testFunction", json.get("function_name").asText());
             assertTrue("Should have address", json.has("address"));
             assertTrue("Should have decompilation", json.has("decompilation"));
             assertTrue("Should have metadata", json.has("metadata"));
@@ -223,24 +223,24 @@ public class DecompilerToolProviderIntegrationTest extends RevaIntegrationTestBa
                 // Parse the result as JSON only if it's not an error
                 JsonNode changeJson = parseJsonContent(changeContent.text());
                 // If successful, validate the structure
-                assertEquals("Program name should match", program.getName(), changeJson.get("programName").asText());
-                assertEquals("Function name should match", "testFunction", changeJson.get("functionName").asText());
+                assertEquals("Program name should match", program.getName(), changeJson.get("program_name").asText());
+                assertEquals("Function name should match", "testFunction", changeJson.get("function_name").asText());
                 assertTrue("Should have address", changeJson.has("address"));
-                assertTrue("Should have dataTypesChanged flag", changeJson.has("dataTypesChanged"));
+                assertTrue("Should have data_types_changed flag", changeJson.has("data_types_changed"));
 
                 // Should have changes information
                 assertTrue("Should have changes or error",
-                    changeJson.has("changes") || changeJson.has("decompilationError"));
+                    changeJson.has("changes") || changeJson.has("decompilation_error"));
 
                 // If we have changes, validate the structure
                 if (changeJson.has("changes")) {
                     JsonNode changes = changeJson.get("changes");
-                    assertTrue("Changes should have hasChanges field", changes.has("hasChanges"));
+                    assertTrue("Changes should have has_changes field", changes.has("has_changes"));
                     assertTrue("Changes should have summary field", changes.has("summary"));
                 }
 
                 // Validate that the program state has actually been updated
-                if (changeJson.get("dataTypesChanged").asBoolean()) {
+                if (changeJson.get("data_types_changed").asBoolean()) {
                     // Re-get the function to see updated state
                     Function updatedFunction = program.getFunctionManager().getFunctionAt(testFunction.getEntryPoint());
                     assertNotNull("Function should still exist", updatedFunction);
@@ -333,24 +333,24 @@ public class DecompilerToolProviderIntegrationTest extends RevaIntegrationTestBa
                 // Parse the result as JSON only if it's not an error
                 JsonNode renameJson = parseJsonContent(renameContent.text());
                 // If successful, validate the structure
-                assertEquals("Program name should match", program.getName(), renameJson.get("programName").asText());
-                assertEquals("Function name should match", "testFunction", renameJson.get("functionName").asText());
+                assertEquals("Program name should match", program.getName(), renameJson.get("program_name").asText());
+                assertEquals("Function name should match", "testFunction", renameJson.get("function_name").asText());
                 assertTrue("Should have address", renameJson.has("address"));
-                assertTrue("Should have variablesRenamed flag", renameJson.has("variablesRenamed"));
+                assertTrue("Should have variables_renamed flag", renameJson.has("variables_renamed"));
 
                 // Should have changes information
                 assertTrue("Should have changes or error",
-                    renameJson.has("changes") || renameJson.has("decompilationError"));
+                    renameJson.has("changes") || renameJson.has("decompilation_error"));
 
                 // If we have changes, validate the structure
                 if (renameJson.has("changes")) {
                     JsonNode changes = renameJson.get("changes");
-                    assertTrue("Changes should have hasChanges field", changes.has("hasChanges"));
+                    assertTrue("Changes should have has_changes field", changes.has("has_changes"));
                     assertTrue("Changes should have summary field", changes.has("summary"));
                 }
 
                 // Validate that the program state has actually been updated
-                if (renameJson.get("variablesRenamed").asBoolean()) {
+                if (renameJson.get("variables_renamed").asBoolean()) {
                     // Re-get the function to see updated state
                     Function updatedFunction = program.getFunctionManager().getFunctionAt(testFunction.getEntryPoint());
                     assertNotNull("Function should still exist", updatedFunction);

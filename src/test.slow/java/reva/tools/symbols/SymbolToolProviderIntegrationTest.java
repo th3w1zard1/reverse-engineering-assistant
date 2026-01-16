@@ -41,12 +41,12 @@ import reva.RevaIntegrationTestBase;
  */
 public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
-    private String programPath;
+    private String program_path;
     private Address testAddress;
 
     @Before
     public void setUpTestData() throws Exception {
-        programPath = program.getDomainFile().getPathname();
+        program_path = program.getDomainFile().getPathname();
 
         // Create test data and label
         testAddress = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000100);
@@ -80,7 +80,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "count");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
@@ -100,7 +100,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "symbols");
             arguments.put("max_count", 10);
 
@@ -120,7 +120,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "create_label");
             arguments.put("address", "0x01000200");
             arguments.put("label_name", "newTestLabel");
@@ -138,7 +138,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "rename_data");
             arguments.put("address", "0x01000100");
             arguments.put("new_name", "renamedLabel");
@@ -156,7 +156,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "imports");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
@@ -175,7 +175,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "exports");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
@@ -194,7 +194,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "classes");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));
@@ -213,7 +213,7 @@ public class SymbolToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("programPath", programPath);
+            arguments.put("program_path", program_path);
             arguments.put("mode", "namespaces");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-symbols", arguments));

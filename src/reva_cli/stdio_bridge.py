@@ -14,6 +14,12 @@ import asyncio
 import sys
 from typing import TYPE_CHECKING, Any, Iterable
 
+try:
+    from anyio import ClosedResourceError
+except ImportError:
+    # Fallback for older anyio versions
+    ClosedResourceError = Exception
+
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.server import Server
@@ -427,7 +433,27 @@ class ReVaStdioBridge:
                                     )
                                 # If we get here, the server ran successfully
                                 break
+                            except ClosedResourceError as stdio_error:
+                                # Handle closed resource errors gracefully
+                                # This happens when the client disconnects while a response is being sent
+                                # It's a normal shutdown condition, not an error
+                                sys.stderr.write("Client disconnected\n")
+                                break
                             except Exception as stdio_error:
+                                # Check if this is an ExceptionGroup containing ClosedResourceError
+                                # ExceptionGroup is available in Python 3.11+
+                                if hasattr(stdio_error, "exceptions") and isinstance(stdio_error, BaseException):
+                                    # This might be an ExceptionGroup (Python 3.11+)
+                                    try:
+                                        # Check if ExceptionGroup is available and this is one
+                                        if stdio_error.__class__.__name__ == "ExceptionGroup":
+                                            exceptions = stdio_error.exceptions  # type: ignore[attr-defined]
+                                            if len(exceptions) == 1 and isinstance(exceptions[0], ClosedResourceError):
+                                                # This is a normal client disconnect - exit gracefully
+                                                sys.stderr.write("Client disconnected\n")
+                                                break
+                                    except (AttributeError, TypeError):
+                                        pass
                                 # If stdio server fails, check if backend connection is still alive
                                 # and attempt to reconnect if needed
                                 sys.stderr.write(

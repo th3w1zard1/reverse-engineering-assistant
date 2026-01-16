@@ -53,7 +53,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
 
     private void registerManageBookmarksTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
+        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional - if not provided, uses the currently active program in the Code Browser (GUI mode only). In headless mode or when no program is active, program_path is required."));
         properties.put("action", Map.of(
                 "type", "string",
                 "description", "Action to perform: 'set', 'get', 'search', 'remove', 'remove_all', or 'categories'",
@@ -80,7 +80,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         bookmarksArraySchema.put("description", "Array of bookmark objects for batch setting. Each object should have 'address' (required), 'type' (required), 'comment' (required), and optional 'category'. When provided, sets multiple bookmarks in a single transaction.");
         bookmarksArraySchema.put("items", bookmarkItemSchema);
         properties.put("bookmarks", bookmarksArraySchema);
-        properties.put("search_text", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (required for search)"));
+        properties.put("search_text", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (optional - if not provided or empty, returns all bookmarks up to max_results)"));
         properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return when action='search'", 100));
         properties.put("remove_all", SchemaUtil.booleanPropertyWithDefault("When true with action='remove', removes all bookmarks from the program. Can be combined with 'type' and 'category' filters to remove all bookmarks of a specific type/category.", false));
 
@@ -190,10 +190,12 @@ public class BookmarkToolProvider extends AbstractToolProvider {
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getOptionalBookmarksArray(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        Object value = request.arguments().get("bookmarks");
-        if (value == null) {
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> bookmarksList = getParameterAsList(request.arguments(), "bookmarks");
+        if (bookmarksList.isEmpty()) {
             return null;
         }
+        Object value = bookmarksList.size() == 1 ? bookmarksList.get(0) : bookmarksList;
         if (value instanceof List) {
             return (List<Map<String, Object>>) value;
         }
@@ -368,28 +370,27 @@ public class BookmarkToolProvider extends AbstractToolProvider {
      */
     private McpSchema.CallToolResult handleSearchBookmarks(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String searchText = getOptionalString(request, "search_text", null);
-        if (searchText == null) {
-            searchText = getOptionalString(request, "searchText", null);
-        }
-        if (searchText == null || searchText.trim().isEmpty()) {
-            return createErrorResult("search_text is required for action='search'");
-        }
+        boolean hasSearchText = searchText != null && !searchText.trim().isEmpty();
         String typeFilter = getOptionalString(request, "type", null);
-        int maxResults = getOptionalInt(request, "max_results", getOptionalInt(request, "maxResults", 100));
+        int maxResults = getOptionalInt(request, "max_results", 100);
 
         BookmarkManager bookmarkMgr = program.getBookmarkManager();
         List<Map<String, Object>> results = new ArrayList<>();
-        Iterator<Bookmark> iter = bookmarkMgr.getBookmarksIterator();
+        Iterator<Bookmark> iter = typeFilter != null 
+            ? bookmarkMgr.getBookmarksIterator(typeFilter) 
+            : bookmarkMgr.getBookmarksIterator();
 
-        String searchTextLower = searchText.toLowerCase();
+        String searchTextLower = hasSearchText ? searchText.toLowerCase() : null;
         while (iter.hasNext() && results.size() < maxResults) {
             Bookmark bookmark = iter.next();
             if (typeFilter != null && !bookmark.getTypeString().equals(typeFilter)) {
                 continue;
             }
-            String comment = bookmark.getComment();
-            if (comment == null || !comment.toLowerCase().contains(searchTextLower)) {
-                continue;
+            if (hasSearchText) {
+                String comment = bookmark.getComment();
+                if (comment == null || !comment.toLowerCase().contains(searchTextLower)) {
+                    continue;
+                }
             }
             results.add(bookmarkToMap(bookmark));
         }
@@ -397,7 +398,10 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         Map<String, Object> result = new HashMap<>();
         result.put("results", results);
         result.put("count", results.size());
-        result.put("maxResults", maxResults);
+        result.put("max_results", maxResults);
+        if (hasSearchText) {
+            result.put("search_text", searchText);
+        }
         return createJsonResult(result);
     }
 

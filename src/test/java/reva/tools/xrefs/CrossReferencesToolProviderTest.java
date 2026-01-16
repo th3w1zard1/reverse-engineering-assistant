@@ -84,7 +84,7 @@ public class CrossReferencesToolProviderTest {
     public void testValidateGetReferencesParameters() {
         // Test parameter validation for the get-references tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("programPath", "/test/program");
+        validArgs.put("program_path", "/test/program");
         validArgs.put("target", "0x401000");
         validArgs.put("mode", "both");
 
@@ -304,7 +304,7 @@ public class CrossReferencesToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateGetReferencesArgs(Map<String, Object> args) {
-        if (args.get("programPath") == null) {
+        if (args.get("program_path") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("target") == null) {

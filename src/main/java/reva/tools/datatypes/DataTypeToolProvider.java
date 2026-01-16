@@ -55,7 +55,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     private void registerManageDataTypesTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of("type", "string", "description", "Path to the program in the Ghidra Project"));
+        properties.put("program_path", Map.of("type", "string", "description", "Path to the program in the Ghidra Project"));
         properties.put("action", Map.of(
             "type", "string",
             "description", "Action to perform: 'archives', 'list', 'by_string', 'apply'",
@@ -80,7 +80,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         ));
         properties.put("address_or_symbol", addressOrSymbolProperty);
 
-        List<String> required = List.of("programPath", "action");
+        List<String> required = List.of("program_path", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("manage-data-types")
@@ -129,9 +129,9 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         archiveInfo.put("name", dtm.getName());
         archiveInfo.put("type", "PROGRAM");
         archiveInfo.put("id", dtm.getUniversalID() != null ? dtm.getUniversalID().getValue() : null);
-        archiveInfo.put("dataTypeCount", dtm.getDataTypeCount(true));
-        archiveInfo.put("categoryCount", dtm.getCategoryCount());
-        archiveInfo.put("programPath", targetProgram.getDomainFile().getPathname());
+        archiveInfo.put("data_type_count", dtm.getDataTypeCount(true));
+        archiveInfo.put("category_count", dtm.getCategoryCount());
+        archiveInfo.put("program_path", targetProgram.getDomainFile().getPathname());
         archivesData.add(archiveInfo);
 
         List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
@@ -144,9 +144,9 @@ public class DataTypeToolProvider extends AbstractToolProvider {
             programArchiveInfo.put("name", programDtm.getName());
             programArchiveInfo.put("type", "PROGRAM");
             programArchiveInfo.put("id", programDtm.getUniversalID() != null ? programDtm.getUniversalID().getValue() : null);
-            programArchiveInfo.put("dataTypeCount", programDtm.getDataTypeCount(true));
-            programArchiveInfo.put("categoryCount", programDtm.getCategoryCount());
-            programArchiveInfo.put("programPath", program.getDomainFile().getPathname());
+            programArchiveInfo.put("data_type_count", programDtm.getDataTypeCount(true));
+            programArchiveInfo.put("category_count", programDtm.getCategoryCount());
+            programArchiveInfo.put("program_path", program.getDomainFile().getPathname());
             archivesData.add(programArchiveInfo);
         }
 
@@ -183,14 +183,14 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleListAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program targetProgram = getProgramFromArgs(request);
-        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", null));
+        String archiveName = getOptionalString(request, "archive_name", null);
         if (archiveName == null) {
             return createErrorResult("archive_name is required for action='list'");
         }
-        String categoryPath = getOptionalString(request, "category_path", getOptionalString(request, "categoryPath", "/"));
+        String categoryPath = getOptionalString(request, "category_path", "/");
         boolean includeSubcategories = getOptionalBoolean(request, "include_subcategories", getOptionalBoolean(request, "includeSubcategories", false));
-        int startIndex = getOptionalInt(request, "start_index", getOptionalInt(request, "startIndex", 0));
-        int maxCount = getOptionalInt(request, "max_count", getOptionalInt(request, "maxCount", 100));
+        int startIndex = getOptionalInt(request, "start_index", 0);
+        int maxCount = getOptionalInt(request, "max_count", 100);
 
         String programPath = targetProgram.getDomainFile().getPathname();
         DataTypeManager dtm = DataTypeParserUtil.findDataTypeManager(archiveName, programPath);
@@ -228,22 +228,22 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("archiveName", archiveName);
-        result.put("categoryPath", categoryPath);
-        result.put("includeSubcategories", includeSubcategories);
-        result.put("startIndex", startIndex);
-        result.put("totalCount", dataTypes.size());
-        result.put("returnedCount", dataTypesData.size());
+        result.put("category_path", categoryPath);
+        result.put("include_subcategories", includeSubcategories);
+        result.put("start_index", startIndex);
+        result.put("total_count", dataTypes.size());
+        result.put("returned_count", dataTypesData.size());
         result.put("dataTypes", dataTypesData);
         return createJsonResult(result);
     }
 
     private McpSchema.CallToolResult handleByStringAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program targetProgram = getProgramFromArgs(request);
-        String dataTypeString = getOptionalString(request, "data_type_string", getOptionalString(request, "dataTypeString", null));
+        String dataTypeString = getOptionalString(request, "data_type_string", null);
         if (dataTypeString == null) {
             return createErrorResult("data_type_string is required for action='by_string'");
         }
-        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", ""));
+        String archiveName = getOptionalString(request, "archive_name", "");
 
         String programPath = targetProgram.getDomainFile().getPathname();
         try {
@@ -259,24 +259,25 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleApplyAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program program = getProgramFromArgs(request);
-        String dataTypeString = getOptionalString(request, "data_type_string", getOptionalString(request, "dataTypeString", null));
+        String dataTypeString = getOptionalString(request, "data_type_string", null);
         if (dataTypeString == null) {
             return createErrorResult("data_type_string is required for action='apply'");
         }
-        String archiveName = getOptionalString(request, "archive_name", getOptionalString(request, "archiveName", ""));
+        String archiveName = getOptionalString(request, "archive_name", "");
 
-        // Check if address_or_symbol is an array (batch mode)
-        Object addressOrSymbolValue = request.arguments().get("address_or_symbol");
-        if (addressOrSymbolValue == null) {
-            addressOrSymbolValue = request.arguments().get("addressOrSymbol");
+        // Check if address_or_symbol is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> addressOrSymbolList = getParameterAsList(request.arguments(), "address_or_symbol");
+        if (addressOrSymbolList.isEmpty()) {
+            addressOrSymbolList = getParameterAsList(request.arguments(), "addressOrSymbol");
         }
 
-        if (addressOrSymbolValue instanceof List) {
-            return handleBatchApplyDataType(program, request, dataTypeString, archiveName, (List<?>) addressOrSymbolValue);
+        if (addressOrSymbolList.size() > 1 || (!addressOrSymbolList.isEmpty() && addressOrSymbolList.get(0) instanceof List)) {
+            List<?> batchList = addressOrSymbolList.size() > 1 ? addressOrSymbolList : (List<?>) addressOrSymbolList.get(0);
+            return handleBatchApplyDataType(program, request, dataTypeString, archiveName, batchList);
         }
 
         // Single address mode
-        String addressOrSymbol = getOptionalString(request, "address_or_symbol", getOptionalString(request, "addressOrSymbol", null));
+        String addressOrSymbol = getOptionalString(request, "address_or_symbol", null);
         if (addressOrSymbol == null) {
             return createErrorResult("address_or_symbol is required for action='apply'");
         }

@@ -78,6 +78,17 @@ public final class FunctionFingerprintUtil {
                                       Map<String, List<Candidate>> byFingerprint) {}
 
     /**
+     * Cached signature index for fast fuzzy matching.
+     * Stores canonical signatures and function metadata for efficient similarity search.
+     */
+    private record CachedSignatureIndex(long programModificationNumber, int maxInstructions,
+                                        List<IndexedFunction> functions) {
+        record IndexedFunction(Candidate candidate, String signature, long bodySize, int instructionCount) {}
+    }
+
+    private static final Map<String, CachedSignatureIndex> SIGNATURE_INDEX_CACHE = new ConcurrentHashMap<>();
+
+    /**
      * Compute a SHA-256 fingerprint for a function.
      *
      * @param program Program containing the function
@@ -148,7 +159,6 @@ public final class FunctionFingerprintUtil {
         }
 
         Map<String, List<Candidate>> byFingerprint = new HashMap<>();
-        Listing listing = program.getListing();
         FunctionIterator it = program.getFunctionManager().getFunctions(true);
         while (it.hasNext()) {
             Function f = it.next();
@@ -265,6 +275,12 @@ public final class FunctionFingerprintUtil {
     /**
      * Find fuzzy matches for a source function in a target program using similarity scoring.
      * Returns candidates sorted by similarity (highest first).
+     * 
+     * <p>Optimized for large-scale matching (16k+ functions) by:
+     * - Pre-indexing target program signatures (cached)
+     * - Size-based pre-filtering to reduce comparisons
+     * - Early termination for perfect matches
+     * - Limiting expensive Levenshtein calculations
      *
      * @param sourceProgram Source program containing the reference function
      * @param sourceFunction Source function to match
@@ -285,26 +301,86 @@ public final class FunctionFingerprintUtil {
             return List.of();
         }
 
-        List<Candidate.Scored> scored = new ArrayList<>();
-        FunctionIterator it = targetProgram.getFunctionManager().getFunctions(true);
-        String targetPath = targetProgram.getDomainFile().getPathname();
+        // Extract source function metadata for size filtering
+        long sourceBodySize = 0;
+        int sourceInstructionCount = 0;
+        try {
+            sourceBodySize = sourceFunction.getBody().getNumAddresses();
+            // Extract instruction count from signature (format: "C=64;")
+            int cIdx = sourceSig.indexOf("C=");
+            if (cIdx >= 0) {
+                int endIdx = sourceSig.indexOf(';', cIdx);
+                if (endIdx > cIdx) {
+                    try {
+                        sourceInstructionCount = Integer.parseInt(sourceSig.substring(cIdx + 2, endIdx));
+                    } catch (NumberFormatException e) {
+                        // Ignore
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore size extraction errors
+        }
 
-        while (it.hasNext()) {
-            Function targetFunc = it.next();
-            if (targetFunc == null || targetFunc.isExternal()) {
-                continue;
+        // Get or build signature index for target program
+        CachedSignatureIndex index = getOrBuildSignatureIndex(targetProgram, maxInstructions);
+
+        List<Candidate.Scored> scored = new ArrayList<>();
+        Candidate.Scored perfectMatch = null;
+
+        // Size-based pre-filtering: only compare functions with similar sizes
+        // This dramatically reduces comparisons for large programs
+        double sizeTolerance = 0.5; // Allow 50% size difference
+        long minSize = (long) (sourceBodySize * (1.0 - sizeTolerance));
+        long maxSize = (long) (sourceBodySize * (1.0 + sizeTolerance));
+        int minInstrCount = Math.max(1, (int) (sourceInstructionCount * (1.0 - sizeTolerance)));
+        int maxInstrCount = (int) (sourceInstructionCount * (1.0 + sizeTolerance)) + 1;
+
+        for (CachedSignatureIndex.IndexedFunction indexedFunc : index.functions()) {
+            // Quick size-based pre-filter (avoids expensive signature computation)
+            if (sourceBodySize > 0 && indexedFunc.bodySize() > 0) {
+                if (indexedFunc.bodySize() < minSize || indexedFunc.bodySize() > maxSize) {
+                    continue;
+                }
+            }
+            if (sourceInstructionCount > 0 && indexedFunc.instructionCount() > 0) {
+                if (indexedFunc.instructionCount() < minInstrCount || 
+                    indexedFunc.instructionCount() > maxInstrCount) {
+                    continue;
+                }
             }
 
-            String targetSig = computeCanonicalSignature(targetProgram, targetFunc, maxInstructions);
+            String targetSig = indexedFunc.signature();
             if (targetSig == null || targetSig.isEmpty()) {
                 continue;
             }
 
+            // Fast path: exact match (no need for Levenshtein)
+            if (sourceSig.equals(targetSig)) {
+                perfectMatch = new Candidate.Scored(indexedFunc.candidate(), 1.0);
+                break; // Early termination for perfect match
+            }
+
+            // Quick length-based filter before expensive Levenshtein
+            int lenDiff = Math.abs(sourceSig.length() - targetSig.length());
+            int maxLen = Math.max(sourceSig.length(), targetSig.length());
+            if (maxLen > 0) {
+                double lengthSimilarity = 1.0 - ((double) lenDiff / maxLen);
+                // If length similarity is too low, skip expensive Levenshtein
+                if (lengthSimilarity < minSimilarity * 0.7) {
+                    continue;
+                }
+            }
+
             double similarity = computeSignatureSimilarity(sourceSig, targetSig);
             if (similarity >= minSimilarity) {
-                Candidate cand = new Candidate(targetPath, targetFunc.getName(), targetFunc.getEntryPoint());
-                scored.add(new Candidate.Scored(cand, similarity));
+                scored.add(new Candidate.Scored(indexedFunc.candidate(), similarity));
             }
+        }
+
+        // If we found a perfect match, return it immediately
+        if (perfectMatch != null) {
+            return List.of(perfectMatch);
         }
 
         // Sort by similarity (highest first), then by address for determinism
@@ -320,6 +396,72 @@ public final class FunctionFingerprintUtil {
             return scored;
         }
         return scored.subList(0, maxResults);
+    }
+
+    /**
+     * Get or build a signature index for a program (cached for performance).
+     * This pre-computes all function signatures to avoid recomputation during fuzzy matching.
+     *
+     * @param program Program to index
+     * @param maxInstructions Instruction sampling size
+     * @return cached signature index
+     */
+    private static CachedSignatureIndex getOrBuildSignatureIndex(Program program, int maxInstructions) {
+        String programPath = program.getDomainFile().getPathname();
+        long mod = program.getModificationNumber();
+
+        CachedSignatureIndex cached = SIGNATURE_INDEX_CACHE.get(programPath);
+        if (cached != null && cached.programModificationNumber == mod && 
+            cached.maxInstructions == maxInstructions) {
+            return cached;
+        }
+
+        List<CachedSignatureIndex.IndexedFunction> indexed = new ArrayList<>();
+        FunctionIterator it = program.getFunctionManager().getFunctions(true);
+        String targetPath = program.getDomainFile().getPathname();
+
+        while (it.hasNext()) {
+            Function f = it.next();
+            if (f == null || f.isExternal()) {
+                continue;
+            }
+
+            String sig = computeCanonicalSignature(program, f, maxInstructions);
+            if (sig == null || sig.isEmpty()) {
+                continue;
+            }
+
+            long bodySize = 0;
+            int instructionCount = 0;
+            try {
+                bodySize = f.getBody().getNumAddresses();
+                // Extract instruction count from signature
+                int cIdx = sig.indexOf("C=");
+                if (cIdx >= 0) {
+                    int endIdx = sig.indexOf(';', cIdx);
+                    if (endIdx > cIdx) {
+                        try {
+                            instructionCount = Integer.parseInt(sig.substring(cIdx + 2, endIdx));
+                        } catch (NumberFormatException e) {
+                            // Ignore
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore size extraction errors
+            }
+
+            Candidate cand = new Candidate(targetPath, f.getName(), f.getEntryPoint());
+            indexed.add(new CachedSignatureIndex.IndexedFunction(cand, sig, bodySize, instructionCount));
+        }
+
+        // Sort by address for determinism
+        indexed.sort((a, b) -> a.candidate().entryPoint().compareTo(b.candidate().entryPoint()));
+
+        CachedSignatureIndex built = new CachedSignatureIndex(mod, maxInstructions,
+            Collections.unmodifiableList(indexed));
+        SIGNATURE_INDEX_CACHE.put(programPath, built);
+        return built;
     }
 
     /**
@@ -350,30 +492,57 @@ public final class FunctionFingerprintUtil {
 
     /**
      * Compute Levenshtein (edit) distance between two strings.
+     * Optimized with early termination for large differences.
      */
     private static int levenshteinDistance(String s1, String s2) {
         int m = s1.length();
         int n = s2.length();
-        int[][] dp = new int[m + 1][n + 1];
-
-        for (int i = 0; i <= m; i++) {
-            dp[i][0] = i;
+        
+        // Early termination: if length difference is too large, skip expensive calculation
+        int lenDiff = Math.abs(m - n);
+        int maxLen = Math.max(m, n);
+        if (maxLen > 0 && lenDiff > maxLen * 0.5) {
+            // Return approximate distance for very different lengths
+            return lenDiff + Math.min(m, n);
         }
+        
+        // Use space-optimized version for large strings (O(min(m,n)) space instead of O(m*n))
+        if (m < n) {
+            // Swap to ensure m >= n for space optimization
+            String temp = s1;
+            s1 = s2;
+            s2 = temp;
+            int tempLen = m;
+            m = n;
+            n = tempLen;
+        }
+        
+        // Space-optimized: only keep two rows
+        int[] prev = new int[n + 1];
+        int[] curr = new int[n + 1];
+        
+        // Initialize first row
         for (int j = 0; j <= n; j++) {
-            dp[0][j] = j;
+            prev[j] = j;
         }
-
+        
+        // Compute distance row by row
         for (int i = 1; i <= m; i++) {
+            curr[0] = i;
             for (int j = 1; j <= n; j++) {
                 if (s1.charAt(i - 1) == s2.charAt(j - 1)) {
-                    dp[i][j] = dp[i - 1][j - 1];
+                    curr[j] = prev[j - 1];
                 } else {
-                    dp[i][j] = 1 + Math.min(Math.min(dp[i - 1][j], dp[i][j - 1]), dp[i - 1][j - 1]);
+                    curr[j] = 1 + Math.min(Math.min(prev[j], curr[j - 1]), prev[j - 1]);
                 }
             }
+            // Swap arrays for next iteration
+            int[] temp = prev;
+            prev = curr;
+            curr = temp;
         }
-
-        return dp[m][n];
+        
+        return prev[n];
     }
 
     private static String sha256Hex(String input) throws Exception {

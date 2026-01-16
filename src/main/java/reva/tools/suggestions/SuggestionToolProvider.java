@@ -53,7 +53,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
 
     private void registerSuggestTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
         properties.put("suggestion_type", Map.of(
             "type", "string",
             "description", "Type of suggestion to get: 'comment_type', 'comment_text', 'function_name', 'function_tags', 'variable_name', 'data_type'",
@@ -64,7 +64,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         properties.put("data_type", SchemaUtil.stringProperty("Data type string (required for variable_name suggestion)"));
         properties.put("variable_address", SchemaUtil.stringProperty("Address of variable/data (required for data_type suggestion)"));
 
-        List<String> required = List.of("programPath", "suggestion_type");
+        List<String> required = List.of("program_path", "suggestion_type");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("suggest")
@@ -184,7 +184,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         result.put("suggestion_type", "function_tags");
         result.put("function", function.getName());
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-        result.put("currentTags", function.getTags().stream().map(FunctionTag::getName).sorted().toList());
+        result.put("current_tags", function.getTags().stream().map(FunctionTag::getName).sorted().toList());
         result.put("suggestions", suggestions);
 
         return createJsonResult(result);

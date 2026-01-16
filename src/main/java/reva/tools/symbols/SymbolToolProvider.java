@@ -75,7 +75,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
     private void registerManageSymbolsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
+        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("mode", Map.of(
             "type", "string",
             "description", "Operation mode: 'classes', 'namespaces', 'imports', 'exports', 'create_label', 'symbols', 'count', 'rename_data', 'demangle'",
@@ -204,9 +204,9 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("namespaces", paginated);
-        result.put("startIndex", startIndex);
+        result.put("start_index", startIndex);
         result.put("limit", limit);
-        result.put("totalCount", sortedNamespaces.size());
+        result.put("total_count", sortedNamespaces.size());
         result.put("hasMore", endIndex < sortedNamespaces.size());
         return createJsonResult(result);
     }
@@ -256,19 +256,20 @@ public class SymbolToolProvider extends AbstractToolProvider {
         List<Map<String, Object>> paginated = importExportHelper.paginate(allExports, startIndex, maxResults);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("totalCount", allExports.size());
-        result.put("startIndex", startIndex);
-        result.put("returnedCount", paginated.size());
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("total_count", allExports.size());
+        result.put("start_index", startIndex);
+        result.put("returned_count", paginated.size());
         result.put("exports", paginated);
 
         return createJsonResult(result);
     }
 
     private McpSchema.CallToolResult handleCreateLabelMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        // Check if address is an array (batch mode)
-        Object addressValue = request.arguments().get("address");
-        if (addressValue instanceof List) {
+        // Check if address is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> addressList = getParameterAsList(request.arguments(), "address");
+        if (addressList.size() > 1 || (!addressList.isEmpty() && addressList.get(0) instanceof List)) {
+            List<?> batchList = addressList.size() > 1 ? addressList : (List<?>) addressList.get(0);
             return handleBatchCreateLabels(program, request, (List<?>) addressValue);
         }
 
@@ -325,11 +326,14 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleBatchCreateLabels(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, List<?> addressList) {
-        Object labelNameValue = request.arguments().get("label_name");
-        if (labelNameValue == null) {
-            labelNameValue = request.arguments().get("labelName");
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> labelNameListObj = getParameterAsList(request.arguments(), "label_name");
+        if (labelNameListObj.isEmpty()) {
+            labelNameListObj = getParameterAsList(request.arguments(), "labelName");
         }
-        List<?> labelNameList = (labelNameValue instanceof List) ? (List<?>) labelNameValue : null;
+        List<?> labelNameList = labelNameListObj.size() > 1 || (!labelNameListObj.isEmpty() && labelNameListObj.get(0) instanceof List)
+            ? (labelNameListObj.size() > 1 ? labelNameListObj : (List<?>) labelNameListObj.get(0))
+            : null;
 
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
 
@@ -397,8 +401,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleSymbolsMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        boolean includeExternal = getOptionalBoolean(request, "include_external",
-            getOptionalBoolean(request, "includeExternal", false));
+        boolean includeExternal = getOptionalBoolean(request, "include_external", false);
 
         // Handle pagination
         int startIndexValue = getOptionalInt(request, "start_index",
@@ -411,8 +414,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         final int startIndex = startIndexValue;
         final int maxCount = maxCountValue;
 
-        boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names",
-            getOptionalBoolean(request, "filterDefaultNames", true));
+        boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
 
         List<Map<String, Object>> symbolData = new ArrayList<>();
         SymbolTable symbolTable = program.getSymbolTable();
@@ -443,13 +445,13 @@ public class SymbolToolProvider extends AbstractToolProvider {
         });
 
         Map<String, Object> paginationInfo = new HashMap<>();
-        paginationInfo.put("startIndex", startIndex);
-        paginationInfo.put("requestedCount", maxCount);
-        paginationInfo.put("actualCount", symbolData.size());
-        paginationInfo.put("nextStartIndex", startIndex + symbolData.size());
-        paginationInfo.put("totalProcessed", currentIndex.get());
-        paginationInfo.put("includeExternal", includeExternal);
-        paginationInfo.put("filterDefaultNames", filterDefaultNames);
+        paginationInfo.put("start_index", startIndex);
+        paginationInfo.put("requested_count", maxCount);
+        paginationInfo.put("actual_count", symbolData.size());
+        paginationInfo.put("next_start_index", startIndex + symbolData.size());
+        paginationInfo.put("total_processed", currentIndex.get());
+        paginationInfo.put("include_external", includeExternal);
+        paginationInfo.put("filter_default_names", filterDefaultNames);
 
         Map<String, Object> result = new HashMap<>();
         result.put("pagination", paginationInfo);
@@ -458,10 +460,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleCountMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        boolean includeExternal = getOptionalBoolean(request, "include_external",
-            getOptionalBoolean(request, "includeExternal", false));
-        boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names",
-            getOptionalBoolean(request, "filterDefaultNames", true));
+        boolean includeExternal = getOptionalBoolean(request, "include_external", false);
+        boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
 
         SymbolTable symbolTable = program.getSymbolTable();
         SymbolIterator symbolIterator = symbolTable.getAllSymbols(true);
@@ -486,10 +486,11 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleRenameDataMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        // Check if address is an array (batch mode)
-        Object addressValue = request.arguments().get("address");
-        if (addressValue instanceof List) {
-            return handleBatchRenameData(program, request, (List<?>) addressValue);
+        // Check if address is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> addressList = getParameterAsList(request.arguments(), "address");
+        if (addressList.size() > 1 || (!addressList.isEmpty() && addressList.get(0) instanceof List)) {
+            List<?> batchList = addressList.size() > 1 ? addressList : (List<?>) addressList.get(0);
+            return handleBatchRenameData(program, request, batchList);
         }
 
         // Single rename mode
@@ -555,11 +556,14 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleBatchRenameData(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, List<?> addressList) {
-        Object newNameValue = request.arguments().get("new_name");
-        if (newNameValue == null) {
-            newNameValue = request.arguments().get("newName");
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> newNameListObj = getParameterAsList(request.arguments(), "new_name");
+        if (newNameListObj.isEmpty()) {
+            newNameListObj = getParameterAsList(request.arguments(), "newName");
         }
-        List<?> newNameList = (newNameValue instanceof List) ? (List<?>) newNameValue : null;
+        List<?> newNameList = newNameListObj.size() > 1 || (!newNameListObj.isEmpty() && newNameListObj.get(0) instanceof List)
+            ? (newNameListObj.size() > 1 ? newNameListObj : (List<?>) newNameListObj.get(0))
+            : null;
 
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
 

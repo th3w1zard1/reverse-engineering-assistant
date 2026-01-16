@@ -81,86 +81,116 @@ import ghidra.program.model.pcode.HighFunctionDBUtil;
 import ghidra.program.model.pcode.HighSymbol;
 import ghidra.program.model.data.DataType;
 import ghidra.util.task.TimeoutTaskMonitor;
+
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ConcurrentHashMap;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+
+import ghidra.program.database.function.OverlappingFunctionException;
+import reva.tools.ProgramValidationException;
 
 /**
  * Tool provider for function-related operations.
  */
 public class FunctionToolProvider extends AbstractToolProvider {
 
-    /** Maximum number of cached similarity search results */
+    /**
+     * Maximum number of cached similarity search results
+     */
     private static final int MAX_CACHE_ENTRIES = 50;
 
-    /** Cache expiration time in milliseconds (10 minutes) */
+    /**
+     * Cache expiration time in milliseconds (10 minutes)
+     */
     private static final long CACHE_EXPIRATION_MS = 10 * 60 * 1000;
 
-    /** Timeout for similarity search operations in seconds */
-    private static final int SIMILARITY_SEARCH_TIMEOUT_SECONDS = 120;
-
-    /** Maximum number of results to cache per search (prevents memory bloat) */
+    /**
+     * Maximum number of results to cache per search (prevents memory bloat)
+     */
     private static final int MAX_CACHED_RESULTS_PER_SEARCH = 2000;
 
-    /** Log a warning if similarity search takes longer than this (milliseconds) */
+    /**
+     * Log a warning if similarity search takes longer than this (milliseconds)
+     */
     private static final long SLOW_SEARCH_THRESHOLD_MS = 5000;
 
-    /** Maximum function info cache entries (one per program/filter combination) */
+    /**
+     * Maximum function info cache entries (one per program/filter combination)
+     */
     private static final int MAX_FUNCTION_INFO_CACHE_ENTRIES = 10;
 
-    /** Timeout for building function info cache in seconds */
+    /**
+     * Timeout for building function info cache in seconds
+     */
     private static final int FUNCTION_INFO_CACHE_TIMEOUT_SECONDS = 300;
 
-    /** Maximum unique candidates to track before early termination (memory protection) */
+    /**
+     * Maximum unique candidates to track before early termination (memory
+     * protection)
+     */
     private static final int MAX_UNIQUE_CANDIDATES = 10000;
 
-    /** Memory block patterns to exclude from undefined function candidates (PLT, GOT, imports) */
+    /**
+     * Memory block patterns to exclude from undefined function candidates (PLT,
+     * GOT, imports)
+     */
     private static final Set<String> EXCLUDED_BLOCK_PATTERNS = Set.of(
-        ".plt", ".got", ".idata", ".edata", "extern", "external"
+            ".plt", ".got", ".idata", ".edata", "extern", "external"
     );
 
-    /** Valid modes for the function-tags tool */
+    /**
+     * Valid modes for the function-tags tool
+     */
     private static final Set<String> VALID_TAG_MODES = Set.of("get", "set", "add", "remove", "list");
 
     /**
      * Cache key for similarity search results.
      */
-    private record SimilarityCacheKey(String programPath, String searchString, boolean filterDefaultNames) {}
+    private record SimilarityCacheKey(String programPath, String searchString, boolean filterDefaultNames) {
+
+    }
 
     /**
      * Cached similarity search result with metadata.
      */
     private record CachedSearchResult(
-        List<Map<String, Object>> sortedFunctions,
-        long timestamp,
-        int totalCount,
-        long programModificationNumber
-    ) {
+            List<Map<String, Object>> sortedFunctions,
+            long timestamp,
+            int totalCount,
+            long programModificationNumber
+            ) {
+
         boolean isExpired() {
             return System.currentTimeMillis() - timestamp > CACHE_EXPIRATION_MS;
         }
     }
 
     /**
-     * Thread-safe cache for similarity search results.
-     * Uses ConcurrentHashMap for safe concurrent access.
-     * Eviction is handled manually to respect MAX_CACHE_ENTRIES.
+     * Thread-safe cache for similarity search results. Uses ConcurrentHashMap
+     * for safe concurrent access. Eviction is handled manually to respect
+     * MAX_CACHE_ENTRIES.
      */
-    private final ConcurrentHashMap<SimilarityCacheKey, CachedSearchResult> similarityCache =
-        new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<SimilarityCacheKey, CachedSearchResult> similarityCache
+            = new ConcurrentHashMap<>();
 
     /**
-     * Cache key for raw function info (shared between get-functions and get-functions-by-similarity).
+     * Cache key for raw function info (shared between get-functions and
+     * get-functions-by-similarity).
      */
-    private record FunctionInfoCacheKey(String programPath, boolean filterDefaultNames) {}
+    private record FunctionInfoCacheKey(String programPath, boolean filterDefaultNames) {
+
+    }
 
     /**
      * Cached function info list with metadata.
      */
     private record CachedFunctionInfo(
-        List<Map<String, Object>> functions,
-        long timestamp,
-        long programModificationNumber
-    ) {
+            List<Map<String, Object>> functions,
+            long timestamp,
+            long programModificationNumber
+            ) {
+
         boolean isExpired() {
             return System.currentTimeMillis() - timestamp > CACHE_EXPIRATION_MS;
         }
@@ -170,31 +200,49 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Thread-safe cache for raw function info (shared between listing tools).
      * Computing function info is expensive due to caller/callee counts.
      */
-    private final ConcurrentHashMap<FunctionInfoCacheKey, CachedFunctionInfo> functionInfoCache =
-        new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<FunctionInfoCacheKey, CachedFunctionInfo> functionInfoCache
+            = new ConcurrentHashMap<>();
 
     /**
-     * Helper class to track undefined function candidate info including reference types.
+     * Helper class to track undefined function candidate info including
+     * reference types.
      */
     private static class CandidateInfo {
+
         private final List<Address> references = new ArrayList<>();
         private boolean hasCallRef = false;
         private boolean hasDataRef = false;
 
         void addReference(Address fromAddr, boolean isCall, boolean isData) {
             references.add(fromAddr);
-            if (isCall) hasCallRef = true;
-            if (isData) hasDataRef = true;
+            if (isCall) {
+                hasCallRef = true;
+            }
+            if (isData) {
+                hasDataRef = true;
+            }
         }
 
-        int referenceCount() { return references.size(); }
-        List<Address> references() { return references; }
-        boolean hasCallRef() { return hasCallRef; }
-        boolean hasDataRef() { return hasDataRef; }
+        int referenceCount() {
+            return references.size();
+        }
+
+        List<Address> references() {
+            return references;
+        }
+
+        boolean hasCallRef() {
+            return hasCallRef;
+        }
+
+        boolean hasDataRef() {
+            return hasDataRef;
+        }
     }
 
     /**
      * Constructor
+     *
      * @param server The MCP server
      */
     public FunctionToolProvider(McpSyncServer server) {
@@ -202,9 +250,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Invalidate function caches for a specific program.
-     * Called after modifications that change function metadata (e.g., tags).
-     * Clears both functionInfoCache and similarityCache since both contain function data with tags.
+     * Invalidate function caches for a specific program. Called after
+     * modifications that change function metadata (e.g., tags). Clears both
+     * functionInfoCache and similarityCache since both contain function data
+     * with tags.
      */
     private void invalidateFunctionCaches(String programPath) {
         functionInfoCache.entrySet().removeIf(entry -> entry.getKey().programPath().equals(programPath));
@@ -231,19 +280,20 @@ public class FunctionToolProvider extends AbstractToolProvider {
         int removedFunctionInfo = beforeFunctionInfo - functionInfoCache.size();
 
         if (removedSimilarity > 0 || removedFunctionInfo > 0) {
-            logInfo("FunctionToolProvider: Cleared " + removedSimilarity +
-                " similarity cache entries and " + removedFunctionInfo +
-                " function info cache entries for closed program: " + programPath);
+            logInfo("FunctionToolProvider: Cleared " + removedSimilarity
+                    + " similarity cache entries and " + removedFunctionInfo
+                    + " function info cache entries for closed program: " + programPath);
         }
     }
 
     /**
-     * Get function info list from cache or build it.
-     * This is the shared cache used by both get-functions and get-functions-by-similarity.
+     * Get function info list from cache or build it. This is the shared cache
+     * used by both get-functions and get-functions-by-similarity.
      *
      * @param program The program to get function info from
      * @param filterDefaultNames Whether to filter out default Ghidra names
-     * @return List of function info maps (never null, but may be empty if timeout)
+     * @return List of function info maps (never null, but may be empty if
+     * timeout)
      */
     private List<Map<String, Object>> getOrBuildFunctionInfoCache(Program program, boolean filterDefaultNames) {
         String programPath = program.getDomainFile().getPathname();
@@ -297,16 +347,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             // Cache the results
             CachedFunctionInfo newCached = new CachedFunctionInfo(
-                List.copyOf(functionList),
-                System.currentTimeMillis(),
-                currentModNumber
+                    List.copyOf(functionList),
+                    System.currentTimeMillis(),
+                    currentModNumber
             );
             functionInfoCache.put(cacheKey, newCached);
 
             long elapsed = System.currentTimeMillis() - startTime;
             if (elapsed > SLOW_SEARCH_THRESHOLD_MS) {
-                logInfo("FunctionToolProvider: Building function info cache took " +
-                    (elapsed / 1000) + "s (" + functionList.size() + " functions)");
+                logInfo("FunctionToolProvider: Building function info cache took "
+                        + (elapsed / 1000) + "s (" + functionList.size() + " functions)");
             }
 
             return functionList;
@@ -314,8 +364,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Evict oldest function info cache entries if cache is at capacity.
-     * Must be called while holding functionInfoCache lock.
+     * Evict oldest function info cache entries if cache is at capacity. Must be
+     * called while holding functionInfoCache lock.
      */
     private void evictFunctionInfoCacheIfNeeded() {
         // Remove expired entries first
@@ -341,8 +391,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Evict expired similarity cache entries.
-     * Must be called while holding similarityCache lock.
+     * Evict expired similarity cache entries. Must be called while holding
+     * similarityCache lock.
      */
     private void evictExpiredCacheEntries() {
         similarityCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
@@ -406,7 +456,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 if (!monitor.isCancelled()) {
                     Set<Address> calleeAddresses = new HashSet<>();
                     for (Instruction instr : function.getProgram().getListing().getInstructions(body, true)) {
-                        if (monitor.isCancelled()) break;
+                        if (monitor.isCancelled()) {
+                            break;
+                        }
                         Reference[] refsFrom = instr.getReferencesFrom();
                         for (Reference ref : refsFrom) {
                             if (ref.getReferenceType().isCall()) {
@@ -432,8 +484,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
         for (int i = 0; i < function.getParameterCount(); i++) {
             Parameter param = function.getParameter(i);
             parametersList.add(Map.of(
-                "name", param.getName(),
-                "dataType", param.getDataType().toString()
+                    "name", param.getName(),
+                    "dataType", param.getDataType().toString()
             ));
         }
 
@@ -448,15 +500,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> functionData = new HashMap<>();
         functionData.put("name", function.getName());
         functionData.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-        functionData.put("endAddress", AddressUtil.formatAddress(body.getMaxAddress()));
-        functionData.put("sizeInBytes", body.getNumAddresses());
+        functionData.put("end_address", AddressUtil.formatAddress(body.getMaxAddress()));
+        functionData.put("size_in_bytes", body.getNumAddresses());
         functionData.put("signature", function.getSignature().toString());
-        functionData.put("returnType", function.getReturnType().toString());
-        functionData.put("isExternal", function.isExternal());
-        functionData.put("isThunk", function.isThunk());
-        functionData.put("isDefaultName", SymbolUtil.isDefaultSymbolName(function.getName()));
-        functionData.put("callerCount", callerCount);
-        functionData.put("calleeCount", calleeCount);
+        functionData.put("return_type", function.getReturnType().toString());
+        functionData.put("is_external", function.isExternal());
+        functionData.put("is_thunk", function.isThunk());
+        functionData.put("is_default_name", SymbolUtil.isDefaultSymbolName(function.getName()));
+        functionData.put("caller_count", callerCount);
         functionData.put("parameters", parametersList);
         functionData.put("tags", tagNames);
 
@@ -477,19 +528,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Check if a function needs custom variable storage for the given signature.
+     * Check if a function needs custom variable storage for the given
+     * signature.
      *
      * @param function The existing function (may be null)
-     * @param functionDef The new function definition
      * @return true if custom storage is needed
      */
-    private boolean needsCustomStorageForSignature(Function function, FunctionDefinitionDataType functionDef) {
+    private boolean needsCustomStorageForSignature(Function function) {
         // If function already has custom storage, keep it
-        if (function != null && function.hasCustomVariableStorage()) {
-            return true;
-        }
         // Otherwise, use default storage (Ghidra will handle it)
-        return false;
+        return function != null && function.hasCustomVariableStorage();
     }
 
     @Override
@@ -498,231 +546,128 @@ public class FunctionToolProvider extends AbstractToolProvider {
         registerManageFunctionTool();
         registerFunctionTagsTool();
         registerMatchFunctionTool();
-        registerPropagateFunctionNamesTool();
     }
 
     /**
-     * Register a tool to match a function across other open programs using fingerprints.
+     * Register a tool to match functions across programs and transfer function
+     * names, tags, and comments.
      */
     private void registerMatchFunctionTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
+        properties.put("program_path", Map.of(
+                "type", "string",
+                "description", "Path in the Ghidra Project to the source program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
         properties.put("function_identifier", Map.of(
-            "type", "string",
-            "description", "Function name or address in the source program"
-        ));
-        properties.put("max_instructions", Map.of(
-            "type", "integer",
-            "description", "Number of instructions to fingerprint (default: 64; higher improves uniqueness but costs more)",
-            "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
+                "type", "string",
+                "description", "Function name or address to match. If provided, only matches and transfers metadata for this specific function. If omitted, matches and transfers all functions from the source program."
         ));
         properties.put("target_program_paths", Map.of(
-            "type", "array",
-            "description", "Optional list of programPath values to search. If omitted, searches all open programs.",
-            "items", Map.of("type", "string")
+                "type", "array",
+                "description", "List of programPath values to search/transfer to. If omitted, searches/transfers to all open programs except source.",
+                "items", Map.of("type", "string")
         ));
-        properties.put("max_candidates", Map.of(
-            "type", "integer",
-            "description", "Maximum candidates to return per program when ambiguous (default: 10)",
-            "default", 10
+        properties.put("max_instructions", Map.of(
+                "type", "integer",
+                "description", "Number of instructions to fingerprint/compare (default: 64; higher improves uniqueness/accuracy but costs more).",
+                "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
         ));
-
-        List<String> required = List.of("function_identifier");
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("match-function")
-            .title("Match Function Across Programs")
-            .description("Find the best match for a function in other open programs using a code fingerprint (address/name independent).")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program sourceProgram = getProgramFromArgs(request);
-            String functionIdentifier = getString(request, "function_identifier");
-            int maxInstructions = getOptionalInt(request, "max_instructions", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
-            int maxCandidates = getOptionalInt(request, "max_candidates", 10);
-            if (maxCandidates <= 0) {
-                maxCandidates = 10;
-            }
-            if (maxCandidates > 50) {
-                maxCandidates = 50;
-            }
-
-            // Resolve source function
-            Address address = getAddressFromArgs(request, sourceProgram, "function_identifier");
-            Function sourceFunction = sourceProgram.getFunctionManager().getFunctionAt(address);
-            if (sourceFunction == null) {
-                sourceFunction = sourceProgram.getFunctionManager().getFunctionContaining(address);
-            }
-            if (sourceFunction == null) {
-                return createErrorResult("No function found at: " + AddressUtil.formatAddress(address));
-            }
-
-            String fingerprint = FunctionFingerprintUtil.computeFingerprint(sourceProgram, sourceFunction, maxInstructions);
-            if (fingerprint == null) {
-                return createErrorResult("Failed to compute function fingerprint");
-            }
-
-            List<String> targetProgramPaths = getOptionalStringList(request.arguments(), "target_program_paths", null);
-            List<Program> targets = resolveTargetProgramsForMatching(sourceProgram, targetProgramPaths);
-
-            List<Map<String, Object>> perProgram = new ArrayList<>();
-            for (Program target : targets) {
-                String targetPath = target.getDomainFile().getPathname();
-                if (targetPath.equals(sourceProgram.getDomainFile().getPathname())) {
-                    continue;
-                }
-                List<FunctionFingerprintUtil.Candidate> matches =
-                    FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
-
-                Map<String, Object> entry = new HashMap<>();
-                entry.put("programPath", targetPath);
-                entry.put("programName", target.getName());
-                entry.put("matchCount", matches.size());
-
-                List<Map<String, Object>> candidates = new ArrayList<>();
-                int limit = Math.min(matches.size(), maxCandidates);
-                for (int i = 0; i < limit; i++) {
-                    FunctionFingerprintUtil.Candidate c = matches.get(i);
-                    candidates.add(Map.of(
-                        "function", c.functionName(),
-                        "address", AddressUtil.formatAddress(c.entryPoint())
-                    ));
-                }
-                entry.put("candidates", candidates);
-                entry.put("truncated", matches.size() > limit);
-                perProgram.add(entry);
-            }
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("sourceProgramPath", sourceProgram.getDomainFile().getPathname());
-            result.put("sourceFunction", sourceFunction.getName());
-            result.put("sourceAddress", AddressUtil.formatAddress(sourceFunction.getEntryPoint()));
-            result.put("fingerprint", fingerprint);
-            result.put("maxInstructions", maxInstructions);
-            result.put("matches", perProgram);
-            return createJsonResult(result);
-        });
-    }
-
-    /**
-     * Register a tool to batch-propagate function names, tags, and comments from one program to others
-     * using fuzzy similarity matching. Perfect for propagating 60k+ labeled functions across similar binaries.
-     */
-    private void registerPropagateFunctionNamesTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("sourceProgramPath", Map.of(
-            "type", "string",
-            "description", "Path to the source program (e.g., '/swkotor.exe') with labeled functions to propagate"
+        properties.put("min_similarity", Map.of(
+                "type", "number",
+                "description", "Minimum similarity score (0.0-1.0) required to match and transfer. 0.85 = 85% similar, 0.90 = 90% similar. Higher = more strict matching (default: 0.85)",
+                "default", 0.85
         ));
-        properties.put("targetProgramPaths", Map.of(
-            "type", "array",
-            "description", "List of target program paths to propagate to (e.g., ['/swkotor2.exe', '/swkotor2_aspyr.exe']). If omitted, propagates to all open programs except source.",
-            "items", Map.of("type", "string")
+        properties.put("propagate_names", Map.of(
+                "type", "boolean",
+                "description", "Transfer function names (default: true)",
+                "default", true
         ));
-        properties.put("minSimilarity", Map.of(
-            "type", "number",
-            "description", "Minimum similarity score (0.0-1.0) required to propagate. 0.85 = 85% similar, 0.90 = 90% similar. Higher = more strict matching.",
-            "default", 0.85
+        properties.put("propagate_tags", Map.of(
+                "type", "boolean",
+                "description", "Transfer function tags (default: true)",
+                "default", true
         ));
-        properties.put("maxInstructions", Map.of(
-            "type", "integer",
-            "description", "Number of instructions to use for similarity comparison (default: 64). More = more accurate but slower.",
-            "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
+        properties.put("propagate_comments", Map.of(
+                "type", "boolean",
+                "description", "Transfer function comments (default: false)",
+                "default", false
         ));
-        properties.put("propagateNames", Map.of(
-            "type", "boolean",
-            "description", "Propagate function names (default: true)",
-            "default", true
+        properties.put("filter_default_names", Map.of(
+                "type", "boolean",
+                "description", "Only process functions that don't have default Ghidra names (FUN_*, etc.) in source (default: true)",
+                "default", true
         ));
-        properties.put("propagateTags", Map.of(
-            "type", "boolean",
-            "description", "Propagate function tags (default: true)",
-            "default", true
+        properties.put("filter_by_tag", Map.of(
+                "type", "string",
+                "description", "Only process functions with this tag in source program (optional)"
         ));
-        properties.put("propagateComments", Map.of(
-            "type", "boolean",
-            "description", "Propagate function comments (default: false)",
-            "default", false
+        properties.put("dry_run", Map.of(
+                "type", "boolean",
+                "description", "Preview what would be transferred without making changes (default: false)",
+                "default", false
         ));
-        properties.put("filterDefaultNames", Map.of(
-            "type", "boolean",
-            "description", "Only propagate functions that don't have default Ghidra names (FUN_*, etc.) in source (default: true)",
-            "default", true
+        properties.put("max_functions", Map.of(
+                "type", "integer",
+                "description", "Maximum number of functions to process (for testing/debugging, 0 = unlimited, default: 0)",
+                "default", 0
         ));
-        properties.put("filterByTag", Map.of(
-            "type", "string",
-            "description", "Only propagate functions with this tag in source program (optional)"
-        ));
-        properties.put("dryRun", Map.of(
-            "type", "boolean",
-            "description", "Preview what would be propagated without making changes (default: false)",
-            "default", false
-        ));
-        properties.put("maxFunctions", Map.of(
-            "type", "integer",
-            "description", "Maximum number of functions to process (for testing/debugging, 0 = unlimited, default: 0)",
-            "default", 0
-        ));
-        properties.put("batchSize", Map.of(
-            "type", "integer",
-            "description", "Number of functions to process per transaction (default: 100). Larger = faster but less granular progress.",
-            "default", 100
+        properties.put("batch_size", Map.of(
+                "type", "integer",
+                "description", "Number of functions to process per transaction (default: 100). Larger = faster but less granular progress.",
+                "default", 100
         ));
 
-        List<String> required = List.of("sourceProgramPath");
+        List<String> required = List.of(); // All parameters are optional
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("propagate-function-names")
-            .title("Batch Propagate Function Names")
-            .description("Propagate function names, tags, and comments from one program to others using fuzzy similarity matching. Perfect for propagating labeled functions across similar binaries (e.g., swkotor.exe -> swkotor2.exe).")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("match-function")
+                .title("Match Function Across Programs")
+                .description("Match functions across programs using code fingerprints and transfer function names, tags, and comments from a source program to matching functions in target programs. Supports both single-function matching and batch transfer of labeled functions across similar binaries (e.g., swkotor.exe -> swkotor2.exe).")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
-                String sourcePath = getString(request, "sourceProgramPath");
-                Program sourceProgram = getValidatedProgram(sourcePath);
+                Program sourceProgram = getProgramFromArgs(request);
                 if (sourceProgram == null || sourceProgram.isClosed()) {
-                    return createErrorResult("Source program not found or closed: " + sourcePath);
+                    return createErrorResult("Source program not found or closed");
                 }
 
-                List<String> targetPaths = getOptionalStringList(request.arguments(), "targetProgramPaths", null);
-                List<Program> targets = resolveTargetProgramsForMatching(sourceProgram, targetPaths);
+                String functionIdentifier = getOptionalString(request, "function_identifier", null);
+                List<String> targetProgramPaths = getOptionalStringList(request.arguments(), "target_program_paths", null);
+                List<Program> targets = resolveTargetProgramsForMatching(targetProgramPaths);
                 if (targets.isEmpty()) {
-                    return createErrorResult("No target programs found. Open target programs first or specify targetProgramPaths.");
+                    return createErrorResult("No target programs found. Open target programs first or specify target_program_paths.");
                 }
 
-                double minSimilarity = getOptionalDouble(request, "minSimilarity", 0.85);
+                double minSimilarity = getOptionalDouble(request, "min_similarity", 0.85);
                 if (minSimilarity < 0.0 || minSimilarity > 1.0) {
-                    return createErrorResult("minSimilarity must be between 0.0 and 1.0");
+                    return createErrorResult("min_similarity must be between 0.0 and 1.0");
                 }
 
-                int maxInstructions = getOptionalInt(request, "maxInstructions", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
-                boolean propagateNames = getOptionalBoolean(request, "propagateNames", true);
-                boolean propagateTags = getOptionalBoolean(request, "propagateTags", true);
-                boolean propagateComments = getOptionalBoolean(request, "propagateComments", false);
-                boolean filterDefaultNames = getOptionalBoolean(request, "filterDefaultNames", true);
-                String filterByTag = getOptionalString(request, "filterByTag", null);
-                boolean dryRun = getOptionalBoolean(request, "dryRun", false);
-                int maxFunctions = getOptionalInt(request, "maxFunctions", 0);
-                int batchSize = getOptionalInt(request, "batchSize", 100);
+                int maxInstructions = getOptionalInt(request, "max_instructions", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
+                boolean propagateNames = getOptionalBoolean(request, "propagate_names", true);
+                boolean propagateTags = getOptionalBoolean(request, "propagate_tags", true);
+                boolean propagateComments = getOptionalBoolean(request, "propagate_comments", false);
+                boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
+                String filterByTag = getOptionalString(request, "filter_by_tag", null);
+                boolean dryRun = getOptionalBoolean(request, "dry_run", false);
+                int maxFunctions = getOptionalInt(request, "max_functions", 0);
+                int batchSize = getOptionalInt(request, "batch_size", 100);
                 if (batchSize <= 0) {
                     batchSize = 100;
                 }
 
+                // If functionIdentifier is provided, add it as a filter
+                // We'll pass it to the handler which will filter to just that function
                 return handleBatchPropagateFunctionNames(sourceProgram, targets, minSimilarity, maxInstructions,
-                    propagateNames, propagateTags, propagateComments, filterDefaultNames, filterByTag,
-                    dryRun, maxFunctions, batchSize);
+                        propagateNames, propagateTags, propagateComments, filterDefaultNames, filterByTag,
+                        dryRun, maxFunctions, batchSize, functionIdentifier);
 
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
-            } catch (Exception e) {
-                logError("Error in propagate-function-names", e);
+            } catch (ProgramValidationException e) {
+                logError("Error in match-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
         });
@@ -731,17 +676,42 @@ public class FunctionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleBatchPropagateFunctionNames(Program sourceProgram, List<Program> targets,
             double minSimilarity, int maxInstructions, boolean propagateNames, boolean propagateTags,
             boolean propagateComments, boolean filterDefaultNames, String filterByTag,
-            boolean dryRun, int maxFunctions, int batchSize) {
+            boolean dryRun, int maxFunctions, int batchSize, String functionIdentifier) {
 
         // Collect source functions to propagate
         List<Function> sourceFunctions = new ArrayList<>();
         FunctionIterator it = sourceProgram.getFunctionManager().getFunctions(true);
-        FunctionTagManager tagManager = sourceProgram.getFunctionManager().getFunctionTagManager();
+        // If functionIdentifier is provided, resolve that specific function first
+        Function targetFunction = null;
+        if (functionIdentifier != null && !functionIdentifier.isEmpty()) {
+            try {
+                Address address = AddressUtil.resolveAddressOrSymbol(sourceProgram, functionIdentifier);
+                if (address == null) {
+                    return createErrorResult("Invalid address or symbol: " + functionIdentifier);
+                }
+                targetFunction = sourceProgram.getFunctionManager().getFunctionAt(address);
+                if (targetFunction == null) {
+                    targetFunction = sourceProgram.getFunctionManager().getFunctionContaining(address);
+                }
+                if (targetFunction == null) {
+                    return createErrorResult("No function found: " + functionIdentifier);
+                }
+            } catch (Exception e) {
+                return createErrorResult("Failed to resolve function identifier: " + functionIdentifier + " - " + e.getMessage());
+            }
+        }
 
         while (it.hasNext()) {
             Function f = it.next();
             if (f == null || f.isExternal()) {
                 continue;
+            }
+
+            // Filter to specific function if functionIdentifier provided
+            if (functionIdentifier != null && !functionIdentifier.isEmpty()) {
+                if (!f.equals(targetFunction)) {
+                    continue;
+                }
             }
 
             // Filter by default names
@@ -772,11 +742,11 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("sourceProgramPath", sourceProgram.getDomainFile().getPathname());
-        result.put("sourceFunctionsCount", sourceFunctions.size());
-        result.put("targetProgramsCount", targets.size());
-        result.put("minSimilarity", minSimilarity);
-        result.put("dryRun", dryRun);
+        result.put("source_program_path", sourceProgram.getDomainFile().getPathname());
+        result.put("source_functions_count", sourceFunctions.size());
+        result.put("target_programs_count", targets.size());
+        result.put("min_similarity", minSimilarity);
+        result.put("dry_run", dryRun);
 
         List<Map<String, Object>> perTargetResults = new ArrayList<>();
         int totalProcessed = 0;
@@ -792,8 +762,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
             }
 
             Map<String, Object> targetResult = new HashMap<>();
-            targetResult.put("programPath", targetPath);
-            targetResult.put("programName", target.getName());
+            targetResult.put("program_path", targetPath);
+            targetResult.put("program_name", target.getName());
 
             List<Map<String, Object>> propagated = new ArrayList<>();
             List<Map<String, Object>> ambiguous = new ArrayList<>();
@@ -815,15 +785,35 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         autoSaveProgram(target, "Batch propagate progress");
                     }
 
-                    List<FunctionFingerprintUtil.Candidate.Scored> matches = FunctionFingerprintUtil.findFuzzyMatches(
-                        sourceProgram, sourceFunc, target, maxInstructions, minSimilarity, 5);
+                    // Fast path: Try exact fingerprint matching first (like match-function)
+                    // This is O(1) hash lookup vs O(n) brute force fuzzy matching
+                    String fingerprint = FunctionFingerprintUtil.computeFingerprint(sourceProgram, sourceFunc, maxInstructions);
+                    List<FunctionFingerprintUtil.Candidate.Scored> matches = new ArrayList<>();
+
+                    if (fingerprint != null) {
+                        List<FunctionFingerprintUtil.Candidate> exactMatches
+                                = FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
+                        // Convert exact matches to scored candidates (similarity = 1.0)
+                        for (FunctionFingerprintUtil.Candidate candidate : exactMatches) {
+                            matches.add(new FunctionFingerprintUtil.Candidate.Scored(candidate, 1.0));
+                        }
+                    }
+
+                    // Fall back to fuzzy matching only if no exact match found
+                    // Exact matches are perfect (similarity = 1.0), so no need for fuzzy matching
+                    if (matches.isEmpty()) {
+                        List<FunctionFingerprintUtil.Candidate.Scored> fuzzyMatches
+                                = FunctionFingerprintUtil.findFuzzyMatches(
+                                        sourceProgram, sourceFunc, target, maxInstructions, minSimilarity, 5);
+                        matches.addAll(fuzzyMatches);
+                    }
 
                     if (matches.isEmpty()) {
                         noMatchCount++;
                         if (noMatchCount <= 10) { // Only report first 10 for brevity
                             noMatch.add(Map.of(
-                                "sourceFunction", sourceFunc.getName(),
-                                "sourceAddress", AddressUtil.formatAddress(sourceFunc.getEntryPoint())
+                                    "sourceFunction", sourceFunc.getName(),
+                                    "sourceAddress", AddressUtil.formatAddress(sourceFunc.getEntryPoint())
                             ));
                         }
                         continue;
@@ -833,23 +823,23 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                     // Check if unambiguous (single best match with clear winner)
                     FunctionFingerprintUtil.Candidate.Scored best = matches.get(0);
-                    boolean isUnambiguous = matches.size() == 1 ||
-                        (matches.size() > 1 && best.similarityScore() - matches.get(1).similarityScore() > 0.05);
+                    boolean isUnambiguous = matches.size() == 1
+                            || (matches.size() > 1 && best.similarityScore() - matches.get(1).similarityScore() > 0.05);
 
                     if (!isUnambiguous) {
                         ambiguousCount++;
                         List<Map<String, Object>> candidates = new ArrayList<>();
                         for (FunctionFingerprintUtil.Candidate.Scored scored : matches) {
                             candidates.add(Map.of(
-                                "function", scored.candidate().functionName(),
-                                "address", AddressUtil.formatAddress(scored.candidate().entryPoint()),
-                                "similarity", String.format("%.2f", scored.similarityScore())
+                                    "function", scored.candidate().functionName(),
+                                    "address", AddressUtil.formatAddress(scored.candidate().entryPoint()),
+                                    "similarity", String.format("%.2f", scored.similarityScore())
                             ));
                         }
                         ambiguous.add(Map.of(
-                            "sourceFunction", sourceFunc.getName(),
-                            "sourceAddress", AddressUtil.formatAddress(sourceFunc.getEntryPoint()),
-                            "candidates", candidates
+                                "sourceFunction", sourceFunc.getName(),
+                                "sourceAddress", AddressUtil.formatAddress(sourceFunc.getEntryPoint()),
+                                "candidates", candidates
                         ));
                         continue;
                     }
@@ -868,8 +858,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
                             if (propagateNames && !sourceFunc.getName().equals(targetFunc.getName())) {
                                 String oldName = targetFunc.getName();
                                 targetFunc.setName(sourceFunc.getName(), SourceType.USER_DEFINED);
-                                logInfo("Propagated name: " + oldName + " -> " + sourceFunc.getName() + " at " +
-                                    AddressUtil.formatAddress(targetFunc.getEntryPoint()));
+                                logInfo("Propagated name: " + oldName + " -> " + sourceFunc.getName() + " at "
+                                        + AddressUtil.formatAddress(targetFunc.getEntryPoint()));
                             }
 
                             if (propagateTags) {
@@ -888,7 +878,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                                     targetFunc.setComment(comment);
                                 }
                             }
-                        } catch (Exception e) {
+                        } catch (DuplicateNameException | InvalidInputException e) {
                             logError("Error propagating function " + sourceFunc.getName(), e);
                             continue;
                         }
@@ -896,11 +886,11 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                     propagatedCount++;
                     propagated.add(Map.of(
-                        "sourceFunction", sourceFunc.getName(),
-                        "sourceAddress", AddressUtil.formatAddress(sourceFunc.getEntryPoint()),
-                        "targetFunction", targetFunc.getName(),
-                        "targetAddress", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
-                        "similarity", String.format("%.2f", best.similarityScore())
+                            "sourceFunction", sourceFunc.getName(),
+                            "sourceAddress", AddressUtil.formatAddress(sourceFunc.getEntryPoint()),
+                            "targetFunction", targetFunc.getName(),
+                            "targetAddress", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
+                            "similarity", String.format("%.2f", best.similarityScore())
                     ));
                 }
 
@@ -916,10 +906,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 targetResult.put("matched", matched);
                 targetResult.put("propagated", propagatedCount);
                 targetResult.put("ambiguous", ambiguousCount);
-                targetResult.put("noMatch", noMatchCount);
-                targetResult.put("propagatedDetails", propagated.subList(0, Math.min(propagated.size(), 100))); // Limit details
-                targetResult.put("ambiguousDetails", ambiguous.subList(0, Math.min(ambiguous.size(), 50)));
-                targetResult.put("noMatchSample", noMatch); // First 10 only
+                targetResult.put("no_match", noMatchCount);
+                targetResult.put("propagated_details", propagated.subList(0, Math.min(propagated.size(), 100))); // Limit details
+                targetResult.put("ambiguous_details", ambiguous.subList(0, Math.min(ambiguous.size(), 50)));
+                targetResult.put("no_match_sample", noMatch); // First 10 only
 
                 totalProcessed += processed;
                 totalMatched += matched;
@@ -937,26 +927,27 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         result.put("summary", Map.of(
-            "totalProcessed", totalProcessed,
-            "totalMatched", totalMatched,
-            "totalPropagated", totalPropagated,
-            "totalAmbiguous", totalAmbiguous,
-            "totalNoMatch", totalNoMatch,
-            "successRate", totalProcessed > 0 ? String.format("%.1f%%", (100.0 * totalPropagated / totalProcessed)) : "0%"
+                "totalProcessed", totalProcessed,
+                "totalMatched", totalMatched,
+                "totalPropagated", totalPropagated,
+                "totalAmbiguous", totalAmbiguous,
+                "totalNoMatch", totalNoMatch,
+                "successRate", totalProcessed > 0 ? String.format("%.1f%%", (100.0 * totalPropagated / totalProcessed)) : "0%"
         ));
-        result.put("targetResults", perTargetResults);
+        result.put("target_results", perTargetResults);
         result.put("success", true);
 
         return createJsonResult(result);
     }
 
     private double getOptionalDouble(CallToolRequest request, String key, double defaultValue) {
-        Object value = request.arguments().get(key);
+        // Use getParameterValue to support both camelCase and snake_case parameter names
+        Object value = getParameterValue(request.arguments(), key);
         if (value == null) {
             return defaultValue;
         }
-        if (value instanceof Number) {
-            return ((Number) value).doubleValue();
+        if (value instanceof Number number) {
+            return number.doubleValue();
         }
         try {
             return Double.parseDouble(value.toString());
@@ -965,7 +956,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
     }
 
-    private List<Program> resolveTargetProgramsForMatching(Program sourceProgram, List<String> targetProgramPaths) {
+    private List<Program> resolveTargetProgramsForMatching(List<String> targetProgramPaths) {
         if (targetProgramPaths == null || targetProgramPaths.isEmpty()) {
             return RevaProgramManager.getOpenPrograms();
         }
@@ -976,7 +967,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 if (p != null && !p.isClosed()) {
                     programs.add(p);
                 }
-            } catch (Exception e) {
+            } catch (ProgramValidationException e) {
                 // Ignore invalid targets; callers can use list-open-programs to find valid paths
             }
         }
@@ -984,86 +975,104 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register the list-functions tool: List, search, or count functions in the program with various filtering and search modes.
+     * Register the list-functions tool: List, search, or count functions in the
+     * program with various filtering and search modes.
      */
     private void registerListFunctionsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
+        properties.put("program_path", Map.of(
+                "type", "string",
+                "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
         properties.put("mode", Map.of(
-            "type", "string",
-            "description", "Operation mode: 'all' (list all functions), 'search' (substring search), 'similarity' (similarity search), 'undefined' (undefined candidates), 'count' (count only)",
-            "enum", List.of("all", "search", "similarity", "undefined", "count"),
-            "default", "all"
+                "type", "string",
+                "description", "Operation mode: 'all' (list all functions), 'search' (substring search), 'similarity' (similarity search), 'undefined' (undefined candidates), 'count' (count only), 'by_identifiers' (get specific functions by identifier(s))",
+                "enum", List.of("all", "search", "similarity", "undefined", "count", "by_identifiers"),
+                "default", "all"
         ));
         properties.put("query", Map.of(
-            "type", "string",
-            "description", "Substring to search for when mode='search' (required for search mode)"
+                "type", "string",
+                "description", "Substring to search for when mode='search' (required for search mode)"
         ));
         properties.put("search_string", Map.of(
-            "type", "string",
-            "description", "Function name to compare against for similarity when mode='similarity' (required for similarity mode)"
+                "type", "string",
+                "description", "Function name to compare against for similarity when mode='similarity' (required for similarity mode)"
         ));
         properties.put("min_reference_count", Map.of(
-            "type", "integer",
-            "description", "Minimum number of references required when mode='undefined' (default: 1)",
-            "default", 1
+                "type", "integer",
+                "description", "Minimum number of references required when mode='undefined' (default: 1)",
+                "default", 1
         ));
         properties.put("start_index", Map.of(
-            "type", "integer",
-            "description", "Starting index for pagination (0-based, default: 0)",
-            "default", 0
+                "type", "integer",
+                "description", "Starting index for pagination (0-based, default: 0)",
+                "default", 0
         ));
         properties.put("max_count", Map.of(
-            "type", "integer",
-            "description", "Maximum number of functions to return (default: 100)",
-            "default", 100
+                "type", "integer",
+                "description", "Maximum number of functions to return (default: 100)",
+                "default", 100
         ));
         properties.put("offset", Map.of(
-            "type", "integer",
-            "description", "Alternative pagination offset parameter (default: 0)",
-            "default", 0
+                "type", "integer",
+                "description", "Alternative pagination offset parameter (default: 0)",
+                "default", 0
         ));
         properties.put("limit", Map.of(
-            "type", "integer",
-            "description", "Alternative pagination limit parameter (default: 100)",
-            "default", 100
+                "type", "integer",
+                "description", "Alternative pagination limit parameter (default: 100)",
+                "default", 100
         ));
-        properties.put("maxResults", Map.of(
-            "type", "integer",
-            "description", "Maximum number of functions to return (alternative to max_count/limit, default: 100)",
-            "default", 1000
+        properties.put("max_results", Map.of(
+                "type", "integer",
+                "description", "Maximum number of functions to return (alternative to max_count/limit, default: 100)",
+                "default", 1000
         ));
         properties.put("filter_default_names", Map.of(
-            "type", "boolean",
-            "description", "Whether to filter out default Ghidra generated names like FUN_, DAT_, etc. (default: true)",
-            "default", true
+                "type", "boolean",
+                "description", "Whether to filter out default Ghidra generated names like FUN_, DAT_, etc. (default: true)",
+                "default", true
         ));
-        properties.put("filterByTag", Map.of(
-            "type", "string",
-            "description", "Only return functions with this tag (applied after filterDefaultNames, only for mode='all')"
+        properties.put("filter_by_tag", Map.of(
+                "type", "string",
+                "description", "Only return functions with this tag (applied after filterDefaultNames, only for mode='all')"
         ));
         properties.put("untagged", Map.of(
-            "type", "boolean",
-            "description", "Only return functions with no tags (mutually exclusive with filterByTag, only for mode='all')",
-            "default", false
+                "type", "boolean",
+                "description", "Only return functions with no tags (mutually exclusive with filterByTag, only for mode='all')",
+                "default", false
+        ));
+        properties.put("has_tags", Map.of(
+                "type", "boolean",
+                "description", "Only return functions that have at least one tag (mutually exclusive with untagged, only for mode='all')",
+                "default", false
         ));
         properties.put("verbose", Map.of(
-            "type", "boolean",
-            "description", "Return full function details. When false (default), returns compact results",
-            "default", false
+                "type", "boolean",
+                "description", "Return full function details. When false (default), returns compact results",
+                "default", false
         ));
+        Map<String, Object> identifiersProperty = new HashMap<>();
+        identifiersProperty.put("type", "string");
+        identifiersProperty.put("description", "Function name or address. Can be a single string or an array of strings for batch operations (required for mode='by_identifiers').");
+        Map<String, Object> identifiersArraySchema = new HashMap<>();
+        identifiersArraySchema.put("type", "array");
+        identifiersArraySchema.put("items", Map.of("type", "string"));
+        identifiersArraySchema.put("description", "Array of function names or addresses for batch operations");
+        identifiersProperty.put("oneOf", List.of(
+                Map.of("type", "string"),
+                identifiersArraySchema
+        ));
+        properties.put("identifiers", identifiersProperty);
 
         List<String> required = new ArrayList<>();
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-functions")
-            .title("List Functions")
-            .description("List, search, or count functions in the program with various filtering and search modes.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("list-functions")
+                .title("List Functions")
+                .description("List, search, or count functions in the program with various filtering and search modes.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
@@ -1073,54 +1082,79 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 // Handle pagination
                 int startIndex;
                 int maxCount;
-                if (request.arguments() != null && request.arguments().containsKey("offset")) {
-                    int offset = getOptionalInt(request, "offset", 0);
+                // Check for legacy offset/limit parameters (supports both camelCase and snake_case)
+                Object offsetValue = getParameterAsList(request.arguments(), "offset").isEmpty() ? null : getOptionalInt(request, "offset", -1);
+                if (offsetValue != null && (Integer) offsetValue >= 0) {
+                    int offset = (Integer) offsetValue;
                     int limit = getOptionalInt(request, "limit", 100);
                     startIndex = offset;
                     maxCount = limit;
                 } else {
-                    // Use start_index/max_count (new standard)
+                    // Use start_index/max_count (new standard, supports both camelCase and snake_case)
                     // maxResults/max_results handled dynamically
                     startIndex = getOptionalInt(request, "start_index", 0);
                     maxCount = getOptionalInt(request, "max_count", 100);
                 }
 
                 boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
+                boolean verbose;
 
                 switch (mode) {
-                    case "count":
+                    case "count" -> {
                         return handleListFunctionsCount(program, filterDefaultNames);
-                    case "all":
-                        String filterByTag = getOptionalString(request, "filterByTag", null);
+                    }
+                    case "all" -> {
+                        String filterByTag = getOptionalString(request, "filter_by_tag", null);
                         boolean untagged = getOptionalBoolean(request, "untagged", false);
-                        boolean verbose = getOptionalBoolean(request, "verbose", false);
-                        return handleListFunctionsAll(program, startIndex, maxCount, filterDefaultNames, filterByTag, untagged, verbose);
-                    case "search":
+                        boolean hasTags = getOptionalBoolean(request, "has_tags", false);
+                        verbose = getOptionalBoolean(request, "verbose", false);
+                        return handleListFunctionsAll(program, startIndex, maxCount, filterDefaultNames, filterByTag, untagged, hasTags, verbose);
+                    }
+                    case "search" -> {
                         String query = getOptionalString(request, "query", null);
                         if (query == null || query.trim().isEmpty()) {
                             return createErrorResult("query parameter is required when mode='search'");
                         }
                         verbose = getOptionalBoolean(request, "verbose", false);
                         return handleListFunctionsSearch(program, query, startIndex, maxCount, filterDefaultNames, verbose);
-                    case "similarity":
+                    }
+                    case "similarity" -> {
                         String searchString = getOptionalString(request, "search_string", null);
                         if (searchString == null || searchString.trim().isEmpty()) {
                             return createErrorResult("search_string parameter is required when mode='similarity'");
                         }
                         verbose = getOptionalBoolean(request, "verbose", false);
                         return handleListFunctionsSimilarity(program, searchString, startIndex, maxCount, filterDefaultNames, verbose);
-                    case "undefined":
+                    }
+                    case "undefined" -> {
                         int minReferenceCount = getOptionalInt(request, "min_reference_count", 1);
                         if (minReferenceCount < 1) {
                             return createErrorResult("min_reference_count must be at least 1");
                         }
                         return handleListFunctionsUndefined(program, startIndex, maxCount, minReferenceCount);
-                    default:
-                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: all, search, similarity, undefined, count");
+                    }
+                    case "by_identifiers" -> {
+                        // Use getParameterAsList to support both camelCase and snake_case parameter names
+                        List<Object> identifiersList = getParameterAsList(request.arguments(), "identifiers");
+                        if (identifiersList.isEmpty()) {
+                            return createErrorResult("identifiers parameter is required when mode='by_identifiers'");
+                        }
+                        Object identifiersValue = identifiersList.size() == 1 ? identifiersList.get(0) : identifiersList;
+                        verbose = getOptionalBoolean(request, "verbose", false);
+                        // Check if identifiers is an array (batch mode)
+                        if (identifiersValue instanceof List) {
+                            return handleListFunctionsByIdentifiers(program, (List<?>) identifiersValue, verbose);
+                        }
+                        // Single identifier mode
+                        return handleListFunctionsByIdentifiers(program, List.of(identifiersValue.toString()), verbose);
+                    }
+                    default -> {
+                        return createErrorResult("Invalid mode: " + mode + ". Valid modes are: all, search, similarity, undefined, count, by_identifiers");
+                    }
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
-            } catch (Exception e) {
+            } catch (ProgramValidationException e) {
                 logError("Error in list-functions", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
@@ -1142,7 +1176,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("count", count.get());
-        result.put("filterDefaultNames", filterDefaultNames);
+        result.put("filter_default_names", filterDefaultNames);
         return createJsonResult(result);
     }
 
@@ -1150,33 +1184,46 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle list-functions mode='all' - list all functions
      */
     private McpSchema.CallToolResult handleListFunctionsAll(Program program, int startIndex, int maxCount,
-            boolean filterDefaultNames, String filterByTag, boolean untagged, boolean verbose) {
+            boolean filterDefaultNames, String filterByTag, boolean untagged, boolean hasTags, boolean verbose) {
         // Check mutual exclusivity
         if (untagged && filterByTag != null && !filterByTag.isEmpty()) {
             return createErrorResult("Cannot use both 'untagged' and 'filterByTag' - they are mutually exclusive");
+        }
+        if (untagged && hasTags) {
+            return createErrorResult("Cannot use both 'untagged' and 'hasTags' - they are mutually exclusive");
         }
 
         // Get function info from shared cache (or build it)
         List<Map<String, Object>> allFunctions = getOrBuildFunctionInfoCache(program, filterDefaultNames);
 
         // Apply tag filter if specified
+        // Priority: filterByTag (most specific) > hasTags > untagged
         List<Map<String, Object>> filteredFunctions;
         if (untagged) {
             filteredFunctions = allFunctions.stream()
-                .filter(f -> {
-                    @SuppressWarnings("unchecked")
-                    List<String> tags = (List<String>) f.get("tags");
-                    return tags == null || tags.isEmpty();
-                })
-                .toList();
+                    .filter(f -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> tags = (List<String>) f.get("tags");
+                        return tags == null || tags.isEmpty();
+                    })
+                    .toList();
         } else if (filterByTag != null && !filterByTag.isEmpty()) {
+            // filterByTag is more specific than hasTags, so it takes precedence
             filteredFunctions = allFunctions.stream()
-                .filter(f -> {
-                    @SuppressWarnings("unchecked")
-                    List<String> tags = (List<String>) f.get("tags");
-                    return tags != null && tags.contains(filterByTag);
-                })
-                .toList();
+                    .filter(f -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> tags = (List<String>) f.get("tags");
+                        return tags != null && tags.contains(filterByTag);
+                    })
+                    .toList();
+        } else if (hasTags) {
+            filteredFunctions = allFunctions.stream()
+                    .filter(f -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> tags = (List<String>) f.get("tags");
+                        return tags != null && !tags.isEmpty();
+                    })
+                    .toList();
         } else {
             filteredFunctions = allFunctions;
         }
@@ -1186,8 +1233,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
         // Apply pagination
         int endIndex = Math.min(startIndex + maxCount, totalCount);
         List<Map<String, Object>> paginatedData = startIndex < totalCount
-            ? filteredFunctions.subList(startIndex, endIndex)
-            : Collections.emptyList();
+                ? filteredFunctions.subList(startIndex, endIndex)
+                : Collections.emptyList();
 
         // Transform results based on verbose flag
         List<Map<String, Object>> functionData;
@@ -1199,28 +1246,31 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Map<String, Object> compactInfo = new HashMap<>();
                 compactInfo.put("name", funcInfo.get("name"));
                 compactInfo.put("address", funcInfo.get("address"));
-                compactInfo.put("sizeInBytes", funcInfo.get("sizeInBytes"));
+                compactInfo.put("size_in_bytes", funcInfo.get("size_in_bytes"));
                 compactInfo.put("tags", funcInfo.get("tags"));
-                compactInfo.put("callerCount", funcInfo.get("callerCount"));
-                compactInfo.put("calleeCount", funcInfo.get("calleeCount"));
+                    compactInfo.put("caller_count", funcInfo.get("caller_count"));
+                compactInfo.put("callee_count", funcInfo.get("callee_count"));
                 functionData.add(compactInfo);
             }
         }
 
         Map<String, Object> result = new HashMap<>();
         result.put("functions", functionData);
-        result.put("startIndex", startIndex);
-        result.put("requestedCount", maxCount);
-        result.put("actualCount", functionData.size());
-        result.put("nextStartIndex", startIndex + functionData.size());
-        result.put("totalCount", totalCount);
-        result.put("filterDefaultNames", filterDefaultNames);
+        result.put("start_index", startIndex);
+        result.put("requested_count", maxCount);
+        result.put("actual_count", functionData.size());
+        result.put("next_start_index", startIndex + functionData.size());
+        result.put("total_count", totalCount);
+        result.put("filter_default_names", filterDefaultNames);
         result.put("verbose", verbose);
         if (filterByTag != null && !filterByTag.isEmpty()) {
-            result.put("filterByTag", filterByTag);
+            result.put("filter_by_tag", filterByTag);
         }
         if (untagged) {
             result.put("untagged", true);
+        }
+        if (hasTags) {
+            result.put("has_tags", true);
         }
         return createJsonResult(result);
     }
@@ -1239,17 +1289,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         // Filter by substring match
         List<Map<String, Object>> matchingFunctions = allFunctions.stream()
-            .filter(f -> {
-                String name = (String) f.get("name");
-                return name != null && name.toLowerCase().contains(queryLower);
-            })
-            .toList();
+                .filter(f -> {
+                    String name = (String) f.get("name");
+                    return name != null && name.toLowerCase().contains(queryLower);
+                })
+                .toList();
 
         int totalCount = matchingFunctions.size();
         int endIndex = Math.min(startIndex + maxCount, totalCount);
         List<Map<String, Object>> paginatedData = startIndex < totalCount
-            ? matchingFunctions.subList(startIndex, endIndex)
-            : Collections.emptyList();
+                ? matchingFunctions.subList(startIndex, endIndex)
+                : Collections.emptyList();
 
         // Transform results
         List<Map<String, Object>> functionData;
@@ -1261,10 +1311,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Map<String, Object> compactInfo = new HashMap<>();
                 compactInfo.put("name", funcInfo.get("name"));
                 compactInfo.put("address", funcInfo.get("address"));
-                compactInfo.put("sizeInBytes", funcInfo.get("sizeInBytes"));
+                compactInfo.put("size_in_bytes", funcInfo.get("size_in_bytes"));
                 compactInfo.put("tags", funcInfo.get("tags"));
-                compactInfo.put("callerCount", funcInfo.get("callerCount"));
-                compactInfo.put("calleeCount", funcInfo.get("calleeCount"));
+                    compactInfo.put("caller_count", funcInfo.get("caller_count"));
+                compactInfo.put("callee_count", funcInfo.get("callee_count"));
                 functionData.add(compactInfo);
             }
         }
@@ -1272,12 +1322,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> result = new HashMap<>();
         result.put("functions", functionData);
         result.put("query", query);
-        result.put("startIndex", startIndex);
-        result.put("requestedCount", maxCount);
-        result.put("actualCount", functionData.size());
-        result.put("nextStartIndex", startIndex + functionData.size());
-        result.put("totalCount", totalCount);
-        result.put("filterDefaultNames", filterDefaultNames);
+        result.put("start_index", startIndex);
+        result.put("requested_count", maxCount);
+        result.put("actual_count", functionData.size());
+        result.put("next_start_index", startIndex + functionData.size());
+        result.put("total_count", totalCount);
+        result.put("filter_default_names", filterDefaultNames);
         result.put("verbose", verbose);
         return createJsonResult(result);
     }
@@ -1298,7 +1348,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         List<Map<String, Object>> sortedFunctions;
         boolean wasCacheHit = false;
-        int originalTotalCount = 0;
+        int originalTotalCount;
 
         if (cached != null && !cached.isExpired() && cached.programModificationNumber() == currentModNumber) {
             wasCacheHit = true;
@@ -1329,12 +1379,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     }
 
                     SimilarityComparator<Map<String, Object>> comparator = new SimilarityComparator<>(searchString,
-                        new SimilarityComparator.StringExtractor<Map<String, Object>>() {
-                            @Override
-                            public String extract(Map<String, Object> item) {
-                                return (String) item.get("name");
-                            }
-                        });
+                            new SimilarityComparator.StringExtractor<Map<String, Object>>() {
+                        @Override
+                        public String extract(Map<String, Object> item) {
+                            return (String) item.get("name");
+                        }
+                    });
 
                     Collections.sort(substringMatches, comparator);
                     if (substringMatches.size() < 1000 && !nonMatches.isEmpty()) {
@@ -1347,18 +1397,18 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     originalTotalCount = sortedFunctions.size();
 
                     List<Map<String, Object>> toCache = sortedFunctions.stream()
-                        .limit(MAX_CACHED_RESULTS_PER_SEARCH)
-                        .toList();
+                            .limit(MAX_CACHED_RESULTS_PER_SEARCH)
+                            .toList();
 
                     evictExpiredCacheEntries();
                     CachedSearchResult newCached = new CachedSearchResult(toCache, System.currentTimeMillis(),
-                        originalTotalCount, currentModNumber);
+                            originalTotalCount, currentModNumber);
                     similarityCache.put(cacheKey, newCached);
 
                     long elapsed = System.currentTimeMillis() - startTime;
                     if (elapsed > SLOW_SEARCH_THRESHOLD_MS) {
-                        logInfo("list-functions (similarity): Search for '" + searchString +
-                            "' took " + (elapsed / 1000) + "s (" + originalTotalCount + " functions)");
+                        logInfo("list-functions (similarity): Search for '" + searchString
+                                + "' took " + (elapsed / 1000) + "s (" + originalTotalCount + " functions)");
                     }
                 }
             }
@@ -1387,10 +1437,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Map<String, Object> compactInfo = new HashMap<>();
                 compactInfo.put("name", name);
                 compactInfo.put("address", funcInfo.get("address"));
-                compactInfo.put("sizeInBytes", funcInfo.get("sizeInBytes"));
+                compactInfo.put("size_in_bytes", funcInfo.get("size_in_bytes"));
                 compactInfo.put("tags", funcInfo.get("tags"));
-                compactInfo.put("callerCount", funcInfo.get("callerCount"));
-                compactInfo.put("calleeCount", funcInfo.get("calleeCount"));
+                    compactInfo.put("caller_count", funcInfo.get("caller_count"));
+                compactInfo.put("callee_count", funcInfo.get("callee_count"));
                 compactInfo.put("similarity", Math.round(similarity * 100.0) / 100.0);
                 transformedResults.add(compactInfo);
             }
@@ -1402,17 +1452,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> result = new HashMap<>();
         result.put("matches", transformedResults);
         result.put("search_string", searchString);
-        result.put("startIndex", startIndex);
-        result.put("requestedCount", maxCount);
-        result.put("actualCount", transformedResults.size());
-        result.put("nextStartIndex", startIndex + transformedResults.size());
-        result.put("totalMatchingFunctions", reportedTotal);
-        result.put("filterDefaultNames", filterDefaultNames);
+        result.put("start_index", startIndex);
+        result.put("requested_count", maxCount);
+        result.put("actual_count", transformedResults.size());
+        result.put("next_start_index", startIndex + transformedResults.size());
+        result.put("total_matching_functions", reportedTotal);
+        result.put("filter_default_names", filterDefaultNames);
         result.put("verbose", verbose);
-        result.put("cacheHit", wasCacheHit);
+        result.put("cache_hit", wasCacheHit);
         if (resultsTruncated) {
-            result.put("resultsTruncated", true);
-            result.put("maxCachedResults", MAX_CACHED_RESULTS_PER_SEARCH);
+            result.put("results_truncated", true);
+            result.put("max_cached_results", MAX_CACHED_RESULTS_PER_SEARCH);
         }
         return createJsonResult(result);
     }
@@ -1461,7 +1511,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             if (isExcluded == null) {
                 String blockNameLower = block.getName().toLowerCase();
                 isExcluded = EXCLUDED_BLOCK_PATTERNS.stream()
-                    .anyMatch(blockNameLower::contains);
+                        .anyMatch(blockNameLower::contains);
                 blockExclusionCache.put(block, isExcluded);
             }
             if (isExcluded) {
@@ -1477,16 +1527,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             if (candidates.size() >= MAX_UNIQUE_CANDIDATES) {
                 earlyTermination = true;
-                logInfo("list-functions (undefined): Early termination at " +
-                    MAX_UNIQUE_CANDIDATES + " unique candidates (memory protection)");
+                logInfo("list-functions (undefined): Early termination at "
+                        + MAX_UNIQUE_CANDIDATES + " unique candidates (memory protection)");
                 break;
             }
         }
 
         List<Map.Entry<Address, CandidateInfo>> sortedCandidates = candidates.entrySet().stream()
-            .filter(e -> e.getValue().referenceCount() >= minReferenceCount)
-            .sorted((a, b) -> Integer.compare(b.getValue().referenceCount(), a.getValue().referenceCount()))
-            .toList();
+                .filter(e -> e.getValue().referenceCount() >= minReferenceCount)
+                .sorted((a, b) -> Integer.compare(b.getValue().referenceCount(), a.getValue().referenceCount()))
+                .toList();
 
         int totalCandidates = sortedCandidates.size();
         List<Map<String, Object>> candidatesList = new ArrayList<>();
@@ -1509,8 +1559,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Address refAddr = refs.get(j);
                 Function refFunc = funcMgr.getFunctionContaining(refAddr);
                 if (refFunc != null) {
-                    sampleReferences.add(refFunc.getName() + " (" +
-                        AddressUtil.formatAddress(refAddr) + ")");
+                    sampleReferences.add(refFunc.getName() + " ("
+                            + AddressUtil.formatAddress(refAddr) + ")");
                 } else {
                     sampleReferences.add(AddressUtil.formatAddress(refAddr));
                 }
@@ -1531,21 +1581,89 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("program_path", program.getDomainFile().getPathname());
         result.put("candidates", candidatesList);
-        result.put("totalCandidates", totalCandidates);
-        result.put("referencesScanned", refsScanned);
+        result.put("total_candidates", totalCandidates);
+        result.put("references_scanned", refsScanned);
         if (earlyTermination) {
-            result.put("earlyTermination", true);
+            result.put("early_termination", true);
             result.put("note", "Scan stopped early due to memory limits. Results may be incomplete.");
         }
         result.put("pagination", Map.of(
-            "startIndex", startIndex,
-            "maxCandidates", maxCount,
-            "returnedCount", candidatesList.size(),
-            "hasMore", endIndex < totalCandidates
+                "start_index", startIndex,
+                "max_candidates", maxCount,
+                "returnedCount", candidatesList.size(),
+                "hasMore", endIndex < totalCandidates
         ));
 
+        return createJsonResult(result);
+    }
+
+    /**
+     * Handle list-functions mode='by_identifiers' - get specific functions by
+     * identifier(s)
+     */
+    private McpSchema.CallToolResult handleListFunctionsByIdentifiers(Program program, List<?> identifiers, boolean verbose) {
+        String programPath = program.getDomainFile().getPathname();
+        List<Map<String, Object>> functions = new ArrayList<>();
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        for (int i = 0; i < identifiers.size(); i++) {
+            try {
+                String identifier = identifiers.get(i).toString();
+                Function function = null;
+
+                // Try to resolve as address or symbol first
+                Address address = AddressUtil.resolveAddressOrSymbol(program, identifier);
+                if (address != null) {
+                    function = AddressUtil.getContainingFunction(program, address);
+                }
+
+                // If not found by address, try by function name
+                if (function == null) {
+                    FunctionManager functionManager = program.getFunctionManager();
+                    FunctionIterator functionsIter = functionManager.getFunctions(true);
+                    while (functionsIter.hasNext()) {
+                        Function f = functionsIter.next();
+                        if (f.getName().equals(identifier) || f.getName().equalsIgnoreCase(identifier)) {
+                            function = f;
+                            break;
+                        }
+                    }
+                }
+
+                if (function == null) {
+                    errors.add(Map.of("index", i, "identifier", identifier, "error", "Function not found"));
+                    continue;
+                }
+
+                // Create function info
+                Map<String, Object> functionInfo = createFunctionInfo(function, null);
+                if (!verbose) {
+                    // Create compact version
+                    Map<String, Object> compactInfo = new HashMap<>();
+                    compactInfo.put("name", functionInfo.get("name"));
+                    compactInfo.put("address", functionInfo.get("address"));
+                    compactInfo.put("size_in_bytes", functionInfo.get("size_in_bytes"));
+                    compactInfo.put("tags", functionInfo.get("tags"));
+                    compactInfo.put("caller_count", functionInfo.get("caller_count"));
+                    functions.add(compactInfo);
+                } else {
+                    functions.add(functionInfo);
+                }
+            } catch (Exception e) {
+                errors.add(Map.of("index", i, "identifier", identifiers.get(i).toString(), "error", e.getMessage()));
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("program_path", programPath);
+        result.put("functions", functions);
+        result.put("count", functions.size());
+        result.put("verbose", verbose);
+        if (!errors.isEmpty()) {
+            result.put("errors", errors);
+        }
         return createJsonResult(result);
     }
 
@@ -1554,9 +1672,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private void registerFunctionTagsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
+        properties.put("program_path", Map.of(
+                "type", "string",
+                "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
         Map<String, Object> functionProperty = new HashMap<>();
         functionProperty.put("type", "string");
@@ -1566,29 +1684,29 @@ public class FunctionToolProvider extends AbstractToolProvider {
         functionArraySchema.put("items", Map.of("type", "string"));
         functionArraySchema.put("description", "Array of function names or addresses for batch operations");
         functionProperty.put("oneOf", List.of(
-            Map.of("type", "string"),
-            functionArraySchema
+                Map.of("type", "string"),
+                functionArraySchema
         ));
         properties.put("function", functionProperty);
         properties.put("mode", Map.of(
-            "type", "string",
-            "description", "Operation: 'get' (tags on function), 'set' (replace), 'add', 'remove', 'list' (all tags in program)",
-            "enum", List.of("get", "set", "add", "remove", "list")
+                "type", "string",
+                "description", "Operation: 'get' (tags on function), 'set' (replace), 'add', 'remove', 'list' (all tags in program)",
+                "enum", List.of("get", "set", "add", "remove", "list")
         ));
         properties.put("tags", Map.of(
-            "type", "array",
-            "description", "Tag names (required for add; optional for set/remove). Empty/whitespace names are ignored.",
-            "items", Map.of("type", "string")
+                "type", "array",
+                "description", "Tag names (required for add; optional for set/remove). Empty/whitespace names are ignored.",
+                "items", Map.of("type", "string")
         ));
 
         List<String> required = List.of("mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage-function-tags")
-            .title("Manage Function Tags")
-            .description("Manage function tags. Tags categorize functions (e.g., 'AI', 'rendering'). Use mode='list' for all tags in program.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("manage-function-tags")
+                .title("Manage Function Tags")
+                .description("Manage function tags. Tags categorize functions (e.g., 'AI', 'rendering'). Use mode='list' for all tags in program.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         registerTool(tool, (exchange, request) -> {
             Program program = getProgramFromArgs(request);
@@ -1622,19 +1740,21 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
-                result.put("programPath", programPath);
+                result.put("program_path", programPath);
                 result.put("tags", tagInfoList);
-                result.put("totalTags", tagInfoList.size());
+                result.put("total_tags", tagInfoList.size());
 
                 return createJsonResult(result);
             }
 
             // For all other modes, function is required
-            Object functionValue = request.arguments().get("function");
+            // Use getParameterAsList to support both camelCase and snake_case parameter names
+            List<Object> functionList = getParameterAsList(request.arguments(), "function");
 
             // Check if function is an array (batch mode)
-            if (functionValue instanceof List) {
-                return handleBatchFunctionTags(program, request, mode, (List<?>) functionValue);
+            if (functionList.size() > 1 || (!functionList.isEmpty() && functionList.get(0) instanceof List)) {
+                List<?> batchList = functionList.size() > 1 ? functionList : (List<?>) functionList.get(0);
+                return handleBatchFunctionTags(program, request, mode, batchList);
             }
 
             // Single function mode
@@ -1649,13 +1769,13 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Handle get mode (no modification)
             if ("get".equals(mode)) {
                 List<String> tagNames = function.getTags().stream()
-                    .map(FunctionTag::getName)
-                    .sorted()
-                    .toList();
+                        .map(FunctionTag::getName)
+                        .sorted()
+                        .toList();
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
-                result.put("programPath", programPath);
+                result.put("program_path", programPath);
                 result.put("mode", mode);
                 result.put("function", function.getName());
                 result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
@@ -1691,7 +1811,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     // Empty set clears all tags; empty remove is a no-op
                     tagList = List.of();
                 } else {
-                    // add mode requires at least one tag
+                    // Add mode requires at least one tag
                     return createErrorResult("'tags' parameter is required for mode: " + mode);
                 }
             }
@@ -1700,28 +1820,37 @@ public class FunctionToolProvider extends AbstractToolProvider {
             int txId = program.startTransaction("Update function tags");
             boolean committed = false;
             try {
-                if ("set".equals(mode)) {
-                    // Copy to HashSet to avoid ConcurrentModificationException when removing
-                    Set<FunctionTag> existingTags = new HashSet<>(function.getTags());
-                    for (FunctionTag tag : existingTags) {
-                        function.removeTag(tag.getName());
-                    }
-                    for (String tagName : tagList) {
-                        if (tagName != null && !tagName.trim().isEmpty()) {
-                            function.addTag(tagName.trim());
+                switch (mode) {
+                    case "set" -> {
+                        // Copy to HashSet to avoid ConcurrentModificationException when removing
+                        Set<FunctionTag> existingTags = new HashSet<>(function.getTags());
+                        for (FunctionTag tag : existingTags) {
+                            function.removeTag(tag.getName());
+                        }
+                        for (String tagName : tagList) {
+                            if (tagName != null && !tagName.trim().isEmpty()) {
+                                function.addTag(tagName.trim());
+                            }
                         }
                     }
-                } else if ("add".equals(mode)) {
-                    for (String tagName : tagList) {
-                        if (tagName != null && !tagName.trim().isEmpty()) {
-                            function.addTag(tagName.trim());
+                    case "add" -> {
+                        for (String tagName : tagList) {
+                            if (tagName != null && !tagName.trim().isEmpty()) {
+                                function.addTag(tagName.trim());
+                            }
                         }
                     }
-                } else if ("remove".equals(mode)) {
-                    for (String tagName : tagList) {
-                        if (tagName != null && !tagName.trim().isEmpty()) {
-                            function.removeTag(tagName.trim());
+                    case "remove" -> {
+                        for (String tagName : tagList) {
+                            if (tagName != null && !tagName.trim().isEmpty()) {
+                                function.removeTag(tagName.trim());
+                            }
                         }
+                    }
+                    default -> {
+                        // Unknown mode, should not happen due to earlier checks, but guard anyway
+                        program.endTransaction(txId, false);
+                        return createErrorResult("Unknown mode: " + mode);
                     }
                 }
 
@@ -1742,13 +1871,13 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             // Return lean response with just identifiers and updated tags
             List<String> updatedTags = function.getTags().stream()
-                .map(FunctionTag::getName)
-                .sorted()
-                .toList();
+                    .map(FunctionTag::getName)
+                    .sorted()
+                    .toList();
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
-            result.put("programPath", programPath);
+            result.put("program_path", programPath);
             result.put("mode", mode);
             result.put("function", function.getName());
             result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
@@ -1788,12 +1917,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     functionResult.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
 
                     List<String> tagNames = function.getTags().stream()
-                        .map(FunctionTag::getName)
-                        .sorted()
-                        .toList();
+                            .map(FunctionTag::getName)
+                            .sorted()
+                            .toList();
                     functionResult.put("tags", tagNames);
                     results.add(functionResult);
-                } catch (Exception e) {
+                } catch (IllegalArgumentException e) {
                     errors.add(Map.of("index", i, "function", functionList.get(i).toString(), "error", e.getMessage()));
                 }
             }
@@ -1801,7 +1930,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Build response for get mode
             Map<String, Object> resultData = new HashMap<>();
             resultData.put("success", true);
-            resultData.put("programPath", programPath);
+            resultData.put("program_path", programPath);
             resultData.put("mode", mode);
             resultData.put("total", functionList.size());
             resultData.put("succeeded", results.size());
@@ -1863,40 +1992,48 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         }
                     }
 
-                    // Apply tag modifications
-                    if ("set".equals(mode)) {
-                        Set<FunctionTag> existingTags = new HashSet<>(function.getTags());
-                        for (FunctionTag tag : existingTags) {
-                            function.removeTag(tag.getName());
-                        }
-                        for (String tagName : tagsToUse) {
-                            if (tagName != null && !tagName.trim().isEmpty()) {
-                                function.addTag(tagName.trim());
+                    if (null != mode) // Apply tag modifications
+                    {
+                        switch (mode) {
+                            case "set" -> {
+                                Set<FunctionTag> existingTags = new HashSet<>(function.getTags());
+                                for (FunctionTag tag : existingTags) {
+                                    function.removeTag(tag.getName());
+                                }
+                                for (String tagName : tagsToUse) {
+                                    if (tagName != null && !tagName.trim().isEmpty()) {
+                                        function.addTag(tagName.trim());
+                                    }
+                                }
                             }
-                        }
-                    } else if ("add".equals(mode)) {
-                        for (String tagName : tagsToUse) {
-                            if (tagName != null && !tagName.trim().isEmpty()) {
-                                function.addTag(tagName.trim());
+                            case "add" -> {
+                                for (String tagName : tagsToUse) {
+                                    if (tagName != null && !tagName.trim().isEmpty()) {
+                                        function.addTag(tagName.trim());
+                                    }
+                                }
                             }
-                        }
-                    } else if ("remove".equals(mode)) {
-                        for (String tagName : tagsToUse) {
-                            if (tagName != null && !tagName.trim().isEmpty()) {
-                                function.removeTag(tagName.trim());
+                            case "remove" -> {
+                                for (String tagName : tagsToUse) {
+                                    if (tagName != null && !tagName.trim().isEmpty()) {
+                                        function.removeTag(tagName.trim());
+                                    }
+                                }
+                            }
+                            default -> {
                             }
                         }
                     }
 
                     // Get updated tags
                     List<String> updatedTags = function.getTags().stream()
-                        .map(FunctionTag::getName)
-                        .sorted()
-                        .toList();
+                            .map(FunctionTag::getName)
+                            .sorted()
+                            .toList();
                     functionResult.put("tags", updatedTags);
                     results.add(functionResult);
 
-                } catch (Exception e) {
+                } catch (IllegalArgumentException e) {
                     errors.add(Map.of("index", i, "function", functionList.get(i).toString(), "error", e.getMessage()));
                 }
             }
@@ -1933,21 +2070,22 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register the manage-function tool for creating, renaming, and modifying functions and their variables.
+     * Register the manage-function tool for creating, renaming, and modifying
+     * functions and their variables.
      *
-     * Variable operations (rename_variable, change_datatypes) require decompiler infrastructure
-     * which is included in this provider.
+     * Variable operations (rename_variable, change_datatypes) require
+     * decompiler infrastructure which is included in this provider.
      */
     private void registerManageFunctionTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("programPath", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
+        properties.put("program_path", Map.of(
+                "type", "string",
+                "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
         properties.put("action", Map.of(
-            "type", "string",
-            "description", "Action to perform: 'create' (create function), 'rename_function' (rename function), 'rename_variable' (rename variables), 'set_prototype' (set function prototype), 'set_variable_type' (set single variable type), 'change_datatypes' (change multiple variable data types)",
-            "enum", List.of("create", "rename_function", "rename_variable", "set_prototype", "set_variable_type", "change_datatypes")
+                "type", "string",
+                "description", "Action to perform: 'create' (create function), 'rename_function' (rename function), 'rename_variable' (rename variables), 'set_prototype' (set function prototype), 'set_variable_type' (set single variable type), 'change_datatypes' (change multiple variable data types)",
+                "enum", List.of("create", "rename_function", "rename_variable", "set_prototype", "set_variable_type", "change_datatypes")
         ));
         Map<String, Object> addressProperty = new HashMap<>();
         addressProperty.put("description", "Address(es) where the function(s) should be created when action='create'. Can be a single address string or an array of address strings for batch operations (e.g., '0x401000' or ['0x401000', '0x402000']).");
@@ -1956,17 +2094,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
         addressArraySchema.put("items", Map.of("type", "string"));
         addressArraySchema.put("description", "Array of addresses for batch function creation");
         addressProperty.put("oneOf", List.of(
-            Map.of("type", "string"),
-            addressArraySchema
+                Map.of("type", "string"),
+                addressArraySchema
         ));
         properties.put("address", addressProperty);
         properties.put("function_identifier", Map.of(
-            "type", "string",
-            "description", "Function name(s) or address(es) for rename/modify operations. Can be a single string or an array of strings for batch operations (required for rename_function, rename_variable, set_prototype, set_variable_type, change_datatypes)"
+                "type", "string",
+                "description", "Function name(s) or address(es) for rename/modify operations. Can be a single string or an array of strings for batch operations (required for rename_function, rename_variable, set_prototype, set_variable_type, change_datatypes)"
         ));
         properties.put("name", Map.of(
-            "type", "string",
-            "description", "New function name when action='rename_function' or optional name when action='create' (optional, not used in batch mode)"
+                "type", "string",
+                "description", "New function name when action='rename_function' or optional name when action='create' (optional, not used in batch mode)"
         ));
         // Batch functions array for renaming multiple functions
         Map<String, Object> functionRenameItemSchema = new HashMap<>();
@@ -1983,16 +2121,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
         functionsArraySchema.put("items", functionRenameItemSchema);
         properties.put("functions", functionsArraySchema);
         properties.put("old_name", Map.of(
-            "type", "string",
-            "description", "Old variable name when action='rename_variable' (required for single variable rename)"
+                "type", "string",
+                "description", "Old variable name when action='rename_variable' (required for single variable rename)"
         ));
         properties.put("new_name", Map.of(
-            "type", "string",
-            "description", "New variable name when action='rename_variable' (required for single variable rename)"
+                "type", "string",
+                "description", "New variable name when action='rename_variable' (required for single variable rename)"
         ));
         properties.put("variable_mappings", Map.of(
-            "type", "string",
-            "description", "Mapping of old to new variable names when action='rename_variable' (format: 'oldName1:newName1,oldName2:newName2', required for multiple variables)"
+                "type", "string",
+                "description", "Mapping of old to new variable names when action='rename_variable' (format: 'oldName1:newName1,oldName2:newName2', required for multiple variables)"
         ));
         Map<String, Object> prototypeProperty = new HashMap<>();
         prototypeProperty.put("description", "Function prototype/signature string(s) when action='set_prototype'. Can be a single string or an array of strings for batch operations (required for set_prototype). When function_identifier is an array, prototype must be an array of matching length.");
@@ -2001,61 +2139,61 @@ public class FunctionToolProvider extends AbstractToolProvider {
         prototypeArraySchema.put("items", Map.of("type", "string"));
         prototypeArraySchema.put("description", "Array of function prototypes for batch operations");
         prototypeProperty.put("oneOf", List.of(
-            Map.of("type", "string"),
-            prototypeArraySchema
+                Map.of("type", "string"),
+                prototypeArraySchema
         ));
         properties.put("prototype", prototypeProperty);
         properties.put("variable_name", Map.of(
-            "type", "string",
-            "description", "Variable name when action='set_variable_type' (required for set_variable_type)"
+                "type", "string",
+                "description", "Variable name when action='set_variable_type' (required for set_variable_type)"
         ));
         properties.put("new_type", Map.of(
-            "type", "string",
-            "description", "New data type for variable when action='set_variable_type' (required for set_variable_type)"
+                "type", "string",
+                "description", "New data type for variable when action='set_variable_type' (required for set_variable_type)"
         ));
         properties.put("datatype_mappings", Map.of(
-            "type", "string",
-            "description", "Mapping of variable names to new data type strings when action='change_datatypes' (format: 'varName1:type1,varName2:type2', required for change_datatypes)"
+                "type", "string",
+                "description", "Mapping of variable names to new data type strings when action='change_datatypes' (format: 'varName1:type1,varName2:type2', required for change_datatypes)"
         ));
         properties.put("archive_name", Map.of(
-            "type", "string",
-            "description", "Optional name of the data type archive to search for data types when action='change_datatypes' (optional, default: '')",
-            "default", ""
+                "type", "string",
+                "description", "Optional name of the data type archive to search for data types when action='change_datatypes' (optional, default: '')",
+                "default", ""
         ));
-        properties.put("createIfNotExists", Map.of(
-            "type", "boolean",
-            "description", "Create function if it doesn't exist when action='set_prototype' (default: true)",
-            "default", true
+        properties.put("create_if_not_exists", Map.of(
+                "type", "boolean",
+                "description", "Create function if it doesn't exist when action='set_prototype' (default: true)",
+                "default", true
         ));
         properties.put("propagate", Map.of(
-            "type", "boolean",
-            "description", "When true, attempts to find the matching function in other open programs (via fingerprint) and apply the same change there automatically.",
-            "default", true
+                "type", "boolean",
+                "description", "When true, attempts to find the matching function in other open programs (via fingerprint) and apply the same change there automatically.",
+                "default", true
         ));
         properties.put("propagate_program_paths", Map.of(
-            "type", "array",
-            "description", "Optional list of programPath values to propagate changes to. If omitted and propagate=true, propagates to all open programs.",
-            "items", Map.of("type", "string")
+                "type", "array",
+                "description", "Optional list of programPath values to propagate changes to. If omitted and propagate=true, propagates to all open programs.",
+                "items", Map.of("type", "string")
         ));
         properties.put("propagate_max_candidates", Map.of(
-            "type", "integer",
-            "description", "When ambiguous, include up to this many candidates in the response per target program (default: 10).",
-            "default", 10
+                "type", "integer",
+                "description", "When ambiguous, include up to this many candidates in the response per target program (default: 10).",
+                "default", 10
         ));
         properties.put("propagate_max_instructions", Map.of(
-            "type", "integer",
-            "description", "Number of instructions used for fingerprinting when propagating (default: 64).",
-            "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
+                "type", "integer",
+                "description", "Number of instructions used for fingerprinting when propagating (default: 64).",
+                "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
         ));
 
         List<String> required = List.of("action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("manage-function")
-            .title("Manage Function")
-            .description("Create, rename, or modify functions and their variables.")
-            .inputSchema(createSchema(properties, required))
-            .build();
+                .name("manage-function")
+                .title("Manage Function")
+                .description("Create, rename, or modify functions and their variables.")
+                .inputSchema(createSchema(properties, required))
+                .build();
 
         registerTool(tool, (exchange, request) -> {
             try {
@@ -2063,34 +2201,43 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 String action = getString(request, "action");
 
                 switch (action) {
-                    case "create":
-                        // Check if address is an array (batch mode)
-                        Object addressValue = request.arguments().get("address");
-                        if (addressValue instanceof List) {
-                            return handleBatchManageFunctionCreate(program, request, (List<?>) addressValue);
+                    case "create" -> {
+                        // Check if address is an array (batch mode) - supports both camelCase and snake_case
+                        List<Object> addressList = getParameterAsList(request.arguments(), "address");
+                        if (addressList.size() > 1 || (!addressList.isEmpty() && addressList.get(0) instanceof List)) {
+                            List<?> batchList = addressList.size() > 1 ? addressList : (List<?>) addressList.get(0);
+                            return handleBatchManageFunctionCreate(program, request, batchList);
                         }
                         return handleManageFunctionCreate(program, request);
-                    case "set_prototype":
-                        // Check if function_identifier is an array (batch mode)
-                        Object functionIdentifierValue = request.arguments().get("function_identifier");
-                        if (functionIdentifierValue instanceof List) {
-                            return handleBatchManageFunctionSetPrototype(program, request, (List<?>) functionIdentifierValue);
+                    }
+                    case "set_prototype" -> {
+                        // Check if function_identifier is an array (batch mode) - supports both camelCase and snake_case
+                        List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "function_identifier");
+                        if (functionIdentifierList.size() > 1 || (!functionIdentifierList.isEmpty() && functionIdentifierList.get(0) instanceof List)) {
+                            List<?> batchList = functionIdentifierList.size() > 1 ? functionIdentifierList : (List<?>) functionIdentifierList.get(0);
+                            return handleBatchManageFunctionSetPrototype(program, request, batchList);
                         }
                         return handleManageFunctionSetPrototype(program, request);
-                    case "rename_variable":
+                    }
+                    case "rename_variable" -> {
                         return handleManageFunctionRenameVariable(program, request);
-                    case "change_datatypes":
+                    }
+                    case "change_datatypes" -> {
                         return handleManageFunctionChangeDatatypes(program, request);
-                    case "rename_function":
+                    }
+                    case "rename_function" -> {
                         return handleManageFunctionRenameFunction(program, request);
-                    case "set_variable_type":
+                    }
+                    case "set_variable_type" -> {
                         return handleManageFunctionSetVariableType(program, request);
-                    default:
+                    }
+                    default -> {
                         return createErrorResult("Invalid action: " + action + ". Valid actions are: create, rename_function, set_prototype, rename_variable, set_variable_type, change_datatypes");
+                    }
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
-            } catch (Exception e) {
+            } catch (ProgramValidationException e) {
                 logError("Error in manage-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
@@ -2108,28 +2255,28 @@ public class FunctionToolProvider extends AbstractToolProvider {
         // Validate address is in executable memory
         MemoryBlock block = program.getMemory().getBlock(address);
         if (block == null) {
-            return createErrorResult("Address " + AddressUtil.formatAddress(address) +
-                " is not in any memory block");
+            return createErrorResult("Address " + AddressUtil.formatAddress(address)
+                    + " is not in any memory block");
         }
         if (!block.isExecute()) {
-            return createErrorResult("Address " + AddressUtil.formatAddress(address) +
-                " is not in executable memory (block: " + block.getName() + ")");
+            return createErrorResult("Address " + AddressUtil.formatAddress(address)
+                    + " is not in executable memory (block: " + block.getName() + ")");
         }
 
         // Check if there's already a function at this address
         FunctionManager funcMgr = program.getFunctionManager();
         Function existingFunc = funcMgr.getFunctionAt(address);
         if (existingFunc != null) {
-            return createErrorResult("Function already exists at " +
-                AddressUtil.formatAddress(address) + ": " + existingFunc.getName());
+            return createErrorResult("Function already exists at "
+                    + AddressUtil.formatAddress(address) + ": " + existingFunc.getName());
         }
 
         // Check if there's an instruction at the address
         Instruction instr = program.getListing().getInstructionAt(address);
         if (instr == null) {
-            return createErrorResult("No instruction at address " +
-                AddressUtil.formatAddress(address) +
-                ". The address may need to be disassembled first.");
+            return createErrorResult("No instruction at address "
+                    + AddressUtil.formatAddress(address)
+                    + ". The address may need to be disassembled first.");
         }
 
         // Create the function using CreateFunctionCmd
@@ -2141,9 +2288,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
             if (!success) {
                 program.endTransaction(txId, false);
                 String statusMsg = cmd.getStatusMsg();
-                return createErrorResult("Failed to create function at " +
-                    AddressUtil.formatAddress(address) +
-                    (statusMsg != null ? ": " + statusMsg : ""));
+                return createErrorResult("Failed to create function at "
+                        + AddressUtil.formatAddress(address)
+                        + (statusMsg != null ? ": " + statusMsg : ""));
             }
 
             // Get the created function
@@ -2172,10 +2319,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Build response
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
-            result.put("programPath", programPath);
+            result.put("program_path", programPath);
             result.put("function", createFunctionInfo(createdFunc, null));
             result.put("address", AddressUtil.formatAddress(address));
-            result.put("nameWasProvided", name != null && !name.isEmpty());
+            result.put("name_was_provided", name != null && !name.isEmpty());
 
             return createJsonResult(result);
 
@@ -2189,15 +2336,18 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle batch creation of multiple functions in a single transaction
      */
     private McpSchema.CallToolResult handleBatchManageFunctionCreate(Program program, CallToolRequest request, List<?> addressList) {
-        Object nameValue = request.arguments().get("name");
-        List<?> nameList = (nameValue instanceof List) ? (List<?>) nameValue : null;
-        
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> nameListObj = getParameterAsList(request.arguments(), "name");
+        List<?> nameList = nameListObj.size() > 1 || (!nameListObj.isEmpty() && nameListObj.get(0) instanceof List)
+            ? (nameListObj.size() > 1 ? nameListObj : (List<?>) nameListObj.get(0))
+            : null;
+
         String programPath = program.getDomainFile().getPathname();
         int txId = program.startTransaction("Batch Create Functions");
         List<Map<String, Object>> results = new ArrayList<>();
         List<Map<String, Object>> errors = new ArrayList<>();
         FunctionManager funcMgr = program.getFunctionManager();
-        
+
         try {
             for (int i = 0; i < addressList.size(); i++) {
                 try {
@@ -2209,7 +2359,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         errors.add(Map.of("index", i, "address", addressStr, "error", "Invalid address: " + e.getMessage()));
                         continue;
                     }
-                    
+
                     // Validate address is in executable memory
                     MemoryBlock block = program.getMemory().getBlock(address);
                     if (block == null) {
@@ -2220,45 +2370,45 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         errors.add(Map.of("index", i, "address", addressStr, "error", "Address not in executable memory"));
                         continue;
                     }
-                    
+
                     // Check if function already exists
                     Function existingFunc = funcMgr.getFunctionAt(address);
                     if (existingFunc != null) {
                         errors.add(Map.of("index", i, "address", addressStr, "error", "Function already exists: " + existingFunc.getName()));
                         continue;
                     }
-                    
+
                     // Check if there's an instruction at the address
                     Instruction instr = program.getListing().getInstructionAt(address);
                     if (instr == null) {
                         errors.add(Map.of("index", i, "address", addressStr, "error", "No instruction at address (may need disassembly)"));
                         continue;
                     }
-                    
+
                     // Create the function
                     CreateFunctionCmd cmd = new CreateFunctionCmd(address);
                     boolean success = cmd.applyTo(program);
-                    
+
                     if (!success) {
                         String statusMsg = cmd.getStatusMsg();
-                        errors.add(Map.of("index", i, "address", addressStr, "error", 
-                            "Failed to create function" + (statusMsg != null ? ": " + statusMsg : "")));
+                        errors.add(Map.of("index", i, "address", addressStr, "error",
+                                "Failed to create function" + (statusMsg != null ? ": " + statusMsg : "")));
                         continue;
                     }
-                    
+
                     // Get the created function
                     Function createdFunc = funcMgr.getFunctionAt(address);
                     if (createdFunc == null) {
                         errors.add(Map.of("index", i, "address", addressStr, "error", "Function creation reported success but function not found"));
                         continue;
                     }
-                    
+
                     // Set custom name if provided
                     String name = null;
                     if (nameList != null && i < nameList.size()) {
                         name = nameList.get(i).toString();
                     }
-                    
+
                     if (name != null && !name.isEmpty()) {
                         try {
                             createdFunc.setName(name, SourceType.USER_DEFINED);
@@ -2267,25 +2417,25 @@ public class FunctionToolProvider extends AbstractToolProvider {
                             logInfo("manage-function (batch create): Could not set name '" + name + "' for function at " + addressStr + ": " + e.getMessage());
                         }
                     }
-                    
+
                     // Record success
                     Map<String, Object> result = new HashMap<>();
                     result.put("index", i);
                     result.put("address", AddressUtil.formatAddress(address));
                     result.put("function", createFunctionInfo(createdFunc, null));
-                    result.put("nameWasProvided", name != null && !name.isEmpty());
+                    result.put("name_was_provided", name != null && !name.isEmpty());
                     results.add(result);
                 } catch (Exception e) {
                     errors.add(Map.of("index", i, "address", addressList.get(i).toString(), "error", "Exception: " + e.getMessage()));
                 }
             }
-            
+
             program.endTransaction(txId, true);
             autoSaveProgram(program, "Batch create functions");
-            
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("programPath", programPath);
+            response.put("program_path", programPath);
             response.put("total", addressList.size());
             response.put("created", results.size());
             response.put("failed", errors.size());
@@ -2293,7 +2443,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             if (!errors.isEmpty()) {
                 response.put("errors", errors);
             }
-            
+
             return createJsonResult(response);
         } catch (Exception e) {
             program.endTransaction(txId, false);
@@ -2312,7 +2462,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         String signature = getString(request, "prototype");
-        boolean createIfNotExists = getOptionalBoolean(request, "createIfNotExists", true);
+        boolean createIfNotExists = getOptionalBoolean(request, "create_if_not_exists", true);
 
         // Normalize signature to handle whitespace issues
         String normalizedSignature = normalizeFunctionSignature(signature);
@@ -2330,7 +2480,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         // Parse the function signature using Ghidra's parser
         FunctionSignatureParser parser = new FunctionSignatureParser(
-            program.getDataTypeManager(), null);
+                program.getDataTypeManager(), null);
 
         FunctionDefinitionDataType functionDef;
         try {
@@ -2344,9 +2494,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 List<ParameterDefinition> paramDefs = new ArrayList<>();
                 for (Parameter param : existingFunction.getParameters()) {
                     paramDefs.add(new ParameterDefinitionImpl(
-                        param.getName(), param.getDataType(), param.getComment()));
+                            param.getName(), param.getDataType(), param.getComment()));
                 }
-                originalSignature.setArguments(paramDefs.toArray(new ParameterDefinition[0]));
+                originalSignature.setArguments(paramDefs.toArray(ParameterDefinition[]::new));
                 originalSignature.setVarArgs(existingFunction.hasVarArgs());
             }
 
@@ -2354,8 +2504,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
         } catch (ParseException e) {
             String errorMsg = e.getMessage();
             if (errorMsg != null && errorMsg.contains("Can't resolve datatype")) {
-                return createErrorResult("Failed to parse function signature: " + errorMsg +
-                    "\n\nHint: The datatype may not be defined in the program. Consider using a basic type (e.g., 'void*' instead of 'FILE*') or import the necessary type definitions.");
+                return createErrorResult("Failed to parse function signature: " + errorMsg
+                        + "\n\nHint: The datatype may not be defined in the program. Consider using a basic type (e.g., 'void*' instead of 'FILE*') or import the necessary type definitions.");
             }
             return createErrorResult("Failed to parse function signature: " + errorMsg);
         } catch (CancelledException e) {
@@ -2369,29 +2519,29 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Create function if it doesn't exist and creation is allowed
             if (function == null) {
                 if (!createIfNotExists) {
-                    return createErrorResult("Function does not exist at " +
-                        AddressUtil.formatAddress(address) + " and createIfNotExists is false");
+                    return createErrorResult("Function does not exist at "
+                            + AddressUtil.formatAddress(address) + " and createIfNotExists is false");
                 }
 
                 // Create a new function with minimal body (just the entry point)
                 AddressSet body = new AddressSet(address, address);
                 function = functionManager.createFunction(
-                    functionDef.getName(), address, body, SourceType.USER_DEFINED);
+                        functionDef.getName(), address, body, SourceType.USER_DEFINED);
 
                 if (function == null) {
-                    return createErrorResult("Failed to create function at " +
-                        AddressUtil.formatAddress(address));
+                    return createErrorResult("Failed to create function at "
+                            + AddressUtil.formatAddress(address));
                 }
             }
 
             // Check if we need to enable custom storage to modify auto-parameters
-            boolean needsCustomStorage = needsCustomStorageForSignature(function, functionDef);
+            boolean needsCustomStorage = needsCustomStorageForSignature(function);
             boolean wasUsingCustomStorage = function.hasCustomVariableStorage();
 
             if (needsCustomStorage && !wasUsingCustomStorage) {
                 function.setCustomVariableStorage(true);
-                logInfo("Enabled custom storage for function " + function.getName() +
-                        " to allow modifying auto-parameters (e.g., 'this' in __thiscall)");
+                logInfo("Enabled custom storage for function " + function.getName()
+                        + " to allow modifying auto-parameters (e.g., 'this' in __thiscall)");
             }
 
             // Update function name if it's different
@@ -2409,15 +2559,15 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 if (function.hasCustomVariableStorage() && i < existingParams.length) {
                     parameters.add(new ParameterImpl(
-                        paramDef.getName(),
-                        paramDef.getDataType(),
-                        existingParams[i].getVariableStorage(),
-                        program));
+                            paramDef.getName(),
+                            paramDef.getDataType(),
+                            existingParams[i].getVariableStorage(),
+                            program));
                 } else {
                     parameters.add(new ParameterImpl(
-                        paramDef.getName(),
-                        paramDef.getDataType(),
-                        program));
+                            paramDef.getName(),
+                            paramDef.getDataType(),
+                            program));
                 }
             }
 
@@ -2425,8 +2575,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
             function.setReturnType(functionDef.getReturnType(), SourceType.USER_DEFINED);
 
             Function.FunctionUpdateType updateType = function.hasCustomVariableStorage()
-                ? Function.FunctionUpdateType.CUSTOM_STORAGE
-                : Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS;
+                    ? Function.FunctionUpdateType.CUSTOM_STORAGE
+                    : Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS;
 
             function.replaceParameters(parameters, updateType, true, SourceType.USER_DEFINED);
 
@@ -2446,9 +2596,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
             result.put("created", existingFunction == null);
             result.put("function", createFunctionInfo(function, null));
             result.put("address", AddressUtil.formatAddress(address));
-            result.put("parsedSignature", functionDef.toString());
-            result.put("customStorageEnabled", needsCustomStorage && !wasUsingCustomStorage);
-            result.put("usingCustomStorage", function.hasCustomVariableStorage());
+            result.put("parsed_signature", functionDef.toString());
+            result.put("custom_storage_enabled", needsCustomStorage && !wasUsingCustomStorage);
+            result.put("using_custom_storage", function.hasCustomVariableStorage());
 
             boolean propagate = getOptionalBoolean(request, "propagate", true);
             if (propagate) {
@@ -2458,62 +2608,65 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             return createJsonResult(result);
 
-        } catch (Exception e) {
+        } catch (OverlappingFunctionException | DuplicateNameException | InvalidInputException e) {
             program.endTransaction(txId, false);
             return createErrorResult("Failed to set function prototype: " + e.getMessage());
         }
     }
 
     /**
-     * Handle batch setting of function prototypes when function_identifier is an array
+     * Handle batch setting of function prototypes when function_identifier is
+     * an array
      */
     private McpSchema.CallToolResult handleBatchManageFunctionSetPrototype(Program program, CallToolRequest request, List<?> functionIdentifierList) {
-        Object prototypeValue = request.arguments().get("prototype");
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> prototypeListObj = getParameterAsList(request.arguments(), "prototype");
+        Object prototypeValue = prototypeListObj.size() == 1 ? prototypeListObj.get(0) : prototypeListObj;
         if (!(prototypeValue instanceof List)) {
             return createErrorResult("When function_identifier is an array, prototype must also be an array of the same length");
         }
-        @SuppressWarnings("unchecked")
         List<?> prototypeList = (List<?>) prototypeValue;
-        
+
         if (functionIdentifierList.size() != prototypeList.size()) {
-            return createErrorResult("function_identifier array and prototype array must have the same length. Got " + 
-                functionIdentifierList.size() + " identifiers and " + prototypeList.size() + " prototypes");
+            return createErrorResult("function_identifier array and prototype array must have the same length. Got "
+                    + functionIdentifierList.size() + " identifiers and " + prototypeList.size() + " prototypes");
         }
-        
-        boolean createIfNotExists = getOptionalBoolean(request, "createIfNotExists", true);
+
+        boolean createIfNotExists = getOptionalBoolean(request, "create_if_not_exists", true);
         String programPath = program.getDomainFile().getPathname();
         int txId = program.startTransaction("Batch Set Function Prototypes");
         List<Map<String, Object>> results = new ArrayList<>();
         List<Map<String, Object>> errors = new ArrayList<>();
-        
+
         try {
             for (int i = 0; i < functionIdentifierList.size(); i++) {
                 try {
                     String functionIdentifier = functionIdentifierList.get(i).toString();
                     String prototypeStr = prototypeList.get(i).toString();
-                    
+
                     // Temporarily modify request arguments for single function call
                     Map<String, Object> originalArgs = request.arguments();
-                    Object originalFunctionId = originalArgs.get("function_identifier");
-                    Object originalPrototype = originalArgs.get("prototype");
-                    Object originalPropagate = originalArgs.get("propagate");
-                    
+                    // Use getParameterValue to support both camelCase and snake_case for save/restore
+                    Object originalFunctionId = getParameterValue(originalArgs, "function_identifier");
+                    Object originalPrototype = getParameterValue(originalArgs, "prototype");
+                    Object originalPropagate = getParameterValue(originalArgs, "propagate");
+
                     try {
-                        // Set single function arguments
+                        // Set single function arguments (use snake_case for consistency, handler supports both via getParameterValue)
                         originalArgs.put("function_identifier", functionIdentifier);
                         originalArgs.put("prototype", prototypeStr);
                         originalArgs.put("createIfNotExists", createIfNotExists);
                         originalArgs.put("propagate", false); // Disable propagation in batch mode
-                        
+
                         // Call the single function handler
                         McpSchema.CallToolResult singleResult = handleManageFunctionSetPrototype(program, request);
-                        
+
                         if (singleResult.isError()) {
                             String errorMsg = extractTextFromContent(singleResult.content().get(0));
                             errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", errorMsg));
                             continue;
                         }
-                        
+
                         // Extract result data
                         Map<String, Object> resultData = extractJsonDataFromResult(singleResult);
                         Map<String, Object> result = new HashMap<>();
@@ -2550,17 +2703,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         }
                     }
                 } catch (Exception e) {
-                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), 
-                        "error", "Exception: " + e.getMessage()));
+                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(),
+                            "error", "Exception: " + e.getMessage()));
                 }
             }
-            
+
             program.endTransaction(txId, true);
             autoSaveProgram(program, "Batch set function prototypes");
-            
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("programPath", programPath);
+            response.put("program_path", programPath);
             response.put("total", functionIdentifierList.size());
             response.put("succeeded", results.size());
             response.put("failed", errors.size());
@@ -2568,7 +2721,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             if (!errors.isEmpty()) {
                 response.put("errors", errors);
             }
-            
+
             return createJsonResult(response);
         } catch (Exception e) {
             program.endTransaction(txId, false);
@@ -2585,7 +2738,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         try {
             String jsonText = extractTextFromContent(result.content().get(0));
             return JSON.readValue(jsonText, Map.class);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             logError("Error extracting JSON data from result", e);
             return new HashMap<>();
         }
@@ -2595,8 +2748,11 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Helper method to extract text from Content object
      */
     private String extractTextFromContent(McpSchema.Content content) {
-        if (content instanceof io.modelcontextprotocol.spec.McpSchema.TextContent) {
-            return ((io.modelcontextprotocol.spec.McpSchema.TextContent) content).text();
+        if (content instanceof io.modelcontextprotocol.spec.McpSchema.TextContent textContent) {
+            return textContent.text();
+        }
+        if (content == null) {
+            return "";
         }
         return content.toString();
     }
@@ -2604,10 +2760,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
     private Map<String, Object> propagatePrototypeAcrossOpenPrograms(Program sourceProgram, Function sourceFunction,
             String normalizedSignature, CallToolRequest request) {
         int maxCandidates = getOptionalInt(request, "propagate_max_candidates", 10);
-        if (maxCandidates <= 0) maxCandidates = 10;
-        if (maxCandidates > 50) maxCandidates = 50;
+        if (maxCandidates <= 0) {
+            maxCandidates = 10;
+        }
+        if (maxCandidates > 50) {
+            maxCandidates = 50;
+        }
         int maxInstructions = getOptionalInt(request, "propagate_max_instructions",
-            FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
+                FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
 
         String fingerprint = FunctionFingerprintUtil.computeFingerprint(sourceProgram, sourceFunction, maxInstructions);
         if (fingerprint == null) {
@@ -2615,7 +2775,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         List<String> targetPaths = getOptionalStringList(request.arguments(), "propagate_program_paths", null);
-        List<Program> targets = resolveTargetProgramsForMatching(sourceProgram, targetPaths);
+        List<Program> targets = resolveTargetProgramsForMatching(targetPaths);
 
         List<Map<String, Object>> applied = new ArrayList<>();
         for (Program target : targets) {
@@ -2624,11 +2784,11 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 continue;
             }
 
-            List<FunctionFingerprintUtil.Candidate> matches =
-                FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
+            List<FunctionFingerprintUtil.Candidate> matches
+                    = FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
 
             if (matches.isEmpty()) {
-                applied.add(Map.of("programPath", targetPath, "status", "no_match"));
+                applied.add(Map.of("program_path", targetPath, "status", "no_match"));
                 continue;
             }
             if (matches.size() != 1) {
@@ -2637,16 +2797,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 for (int i = 0; i < limit; i++) {
                     FunctionFingerprintUtil.Candidate c = matches.get(i);
                     candidates.add(Map.of(
-                        "function", c.functionName(),
-                        "address", AddressUtil.formatAddress(c.entryPoint())
+                            "function", c.functionName(),
+                            "address", AddressUtil.formatAddress(c.entryPoint())
                     ));
                 }
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "ambiguous",
-                    "matchCount", matches.size(),
-                    "candidates", candidates,
-                    "truncated", matches.size() > limit
+                        "programPath", targetPath,
+                        "status", "ambiguous",
+                        "match_count", matches.size(),
+                        "candidates", candidates,
+                        "truncated", matches.size() > limit
                 ));
                 continue;
             }
@@ -2655,15 +2815,15 @@ public class FunctionToolProvider extends AbstractToolProvider {
             Address addr = match.entryPoint();
 
             Map<String, Object> one = applyPrototypeToFunctionAtAddress(target, addr, normalizedSignature);
-            one.put("programPath", targetPath);
+            one.put("program_path", targetPath);
             applied.add(one);
         }
 
         return Map.of(
-            "success", true,
-            "fingerprint", fingerprint,
-            "maxInstructions", maxInstructions,
-            "results", applied
+                "success", true,
+                "fingerprint", fingerprint,
+                "maxInstructions", maxInstructions,
+                "results", applied
         );
     }
 
@@ -2675,8 +2835,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
         if (existingFunction == null) {
             return Map.of(
-                "status", "error",
-                "error", "No function at matched address: " + AddressUtil.formatAddress(address)
+                    "status", "error",
+                    "error", "No function at matched address: " + AddressUtil.formatAddress(address)
             );
         }
 
@@ -2688,18 +2848,18 @@ public class FunctionToolProvider extends AbstractToolProvider {
         for (Parameter p : existingFunction.getParameters()) {
             paramDefs.add(new ParameterDefinitionImpl(p.getName(), p.getDataType(), p.getComment()));
         }
-        originalSignature.setArguments(paramDefs.toArray(new ParameterDefinition[0]));
+        originalSignature.setArguments(paramDefs.toArray(ParameterDefinition[]::new));
         originalSignature.setVarArgs(existingFunction.hasVarArgs());
 
         FunctionDefinitionDataType functionDef;
         try {
             functionDef = parser.parse(originalSignature, normalizedSignature);
-        } catch (Exception e) {
+        } catch (ParseException | CancelledException e) {
             return Map.of(
-                "status", "error",
-                "address", AddressUtil.formatAddress(existingFunction.getEntryPoint()),
-                "function", existingFunction.getName(),
-                "error", "Signature parse failed: " + e.getMessage()
+                    "status", "error",
+                    "address", AddressUtil.formatAddress(existingFunction.getEntryPoint()),
+                    "function", existingFunction.getName(),
+                    "error", "Signature parse failed: " + e.getMessage()
             );
         }
 
@@ -2707,7 +2867,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         try {
             Function function = existingFunction;
 
-            boolean needsCustomStorage = needsCustomStorageForSignature(function, functionDef);
+            boolean needsCustomStorage = needsCustomStorageForSignature(function);
             boolean wasUsingCustomStorage = function.hasCustomVariableStorage();
             if (needsCustomStorage && !wasUsingCustomStorage) {
                 function.setCustomVariableStorage(true);
@@ -2724,7 +2884,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 ParameterDefinition pd = newParamDefs[i];
                 if (function.hasCustomVariableStorage() && i < existingParams.length) {
                     parameters.add(new ParameterImpl(pd.getName(), pd.getDataType(),
-                        existingParams[i].getVariableStorage(), program));
+                            existingParams[i].getVariableStorage(), program));
                 } else {
                     parameters.add(new ParameterImpl(pd.getName(), pd.getDataType(), program));
                 }
@@ -2732,8 +2892,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             function.setReturnType(functionDef.getReturnType(), SourceType.USER_DEFINED);
             Function.FunctionUpdateType updateType = function.hasCustomVariableStorage()
-                ? Function.FunctionUpdateType.CUSTOM_STORAGE
-                : Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS;
+                    ? Function.FunctionUpdateType.CUSTOM_STORAGE
+                    : Function.FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS;
             function.replaceParameters(parameters, updateType, true, SourceType.USER_DEFINED);
 
             if (functionDef.hasVarArgs() != function.hasVarArgs()) {
@@ -2745,25 +2905,25 @@ public class FunctionToolProvider extends AbstractToolProvider {
             invalidateFunctionCaches(program.getDomainFile().getPathname());
 
             return Map.of(
-                "status", "updated",
-                "address", AddressUtil.formatAddress(function.getEntryPoint()),
-                "function", function.getName(),
-                "usingCustomStorage", function.hasCustomVariableStorage()
+                    "status", "updated",
+                    "address", AddressUtil.formatAddress(function.getEntryPoint()),
+                    "function", function.getName(),
+                    "usingCustomStorage", function.hasCustomVariableStorage()
             );
-        } catch (Exception e) {
+        } catch (DuplicateNameException | InvalidInputException e) {
             program.endTransaction(txId, false);
             return Map.of(
-                "status", "error",
-                "address", AddressUtil.formatAddress(existingFunction.getEntryPoint()),
-                "function", existingFunction.getName(),
-                "error", e.getMessage()
+                    "status", "error",
+                    "address", AddressUtil.formatAddress(existingFunction.getEntryPoint()),
+                    "function", existingFunction.getName(),
+                    "error", e.getMessage()
             );
         }
     }
 
     /**
-     * Handle manage-function action='rename_variable' - rename function variables
-     * Requires decompiler infrastructure for variable operations
+     * Handle manage-function action='rename_variable' - rename function
+     * variables Requires decompiler infrastructure for variable operations
      */
     private McpSchema.CallToolResult handleManageFunctionRenameVariable(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -2802,17 +2962,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
             function = getFunctionFromArgs(args, program);
         } catch (IllegalArgumentException e) {
             if (AddressUtil.isUndefinedFunctionAddress(program, functionIdentifier)) {
-                return createErrorResult("Cannot rename variables at " + functionIdentifier +
-                    ": this address has code but no defined function. " +
-                    "Variable modifications require a defined function. " +
-                    "Use action='create' to define it first, then retry the rename.");
+                return createErrorResult("Cannot rename variables at " + functionIdentifier
+                        + ": this address has code but no defined function. "
+                        + "Variable modifications require a defined function. "
+                        + "Use action='create' to define it first, then retry the rename.");
             }
             return createErrorResult("Function not found: " + e.getMessage() + " in program " + program.getName());
         }
 
         // Read-before-modify validation would go here if we had access to hasReadDecompilation
         // For now, we'll skip it and proceed with the rename
-
         // Initialize decompiler
         DecompInterface decompiler = createConfiguredDecompilerForFunction(program);
         if (decompiler == null) {
@@ -2838,8 +2997,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
             beforeDecompilation = results.getDecompiledFunction().getC();
             HighFunction highFunction = results.getHighFunction();
 
-        // Auto-label variable names if mappings are empty (controlled by environment variable)
-        if (autoLabel && mappings.isEmpty()) {
+            // Auto-label variable names if mappings are empty (controlled by environment variable)
+            if (autoLabel && mappings.isEmpty()) {
                 Iterator<HighSymbol> symbols = highFunction.getLocalSymbolMap().getSymbols();
                 while (symbols.hasNext()) {
                     HighSymbol symbol = symbols.next();
@@ -2876,7 +3035,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 }
 
                 program.endTransaction(transactionId, true);
-            } catch (Exception e) {
+            } catch (DuplicateNameException | InvalidInputException e) {
                 program.endTransaction(transactionId, false);
                 logError("manage-function (rename_variable): Error during variable renaming", e);
                 return createErrorResult("Failed to rename variables: " + e.getMessage());
@@ -2914,14 +3073,15 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 diffDecompiler.dispose();
             }
         } catch (Exception e) {
-            logError("manage-function (rename_variable): Error creating decompilation diff", e);
+            logError("manage-function: Error creating decompilation diff", e);
         }
 
         return createJsonResult(resultData);
     }
 
     /**
-     * Handle manage-function action='change_datatypes' - change variable data types
+     * Handle manage-function action='change_datatypes' - change variable data
+     * types
      */
     private McpSchema.CallToolResult handleManageFunctionChangeDatatypes(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -2956,10 +3116,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
             function = getFunctionFromArgs(args, program);
         } catch (IllegalArgumentException e) {
             if (AddressUtil.isUndefinedFunctionAddress(program, functionIdentifier)) {
-                return createErrorResult("Cannot change variable datatypes at " + functionIdentifier +
-                    ": this address has code but no defined function. " +
-                    "Variable modifications require a defined function. " +
-                    "Use action='create' to define it first, then retry the datatype change.");
+                return createErrorResult("Cannot change variable datatypes at " + functionIdentifier
+                        + ": this address has code but no defined function. "
+                        + "Variable modifications require a defined function. "
+                        + "Use action='create' to define it first, then retry the datatype change.");
             }
             return createErrorResult("Function not found: " + e.getMessage() + " in program " + program.getName());
         }
@@ -3002,7 +3162,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     if (typeString != null) {
                         try {
                             DataType newType = DataTypeParserUtil.parseDataTypeObjectFromString(
-                                typeString, archiveName);
+                                    typeString, archiveName);
                             HighFunctionDBUtil.updateDBVariable(symbol, null, newType, SourceType.USER_DEFINED);
                             logInfo("manage-function (change_datatypes): Changed variable " + varName + " type to " + newType);
                             changedCount++;
@@ -3063,7 +3223,6 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     // Helper methods for decompiler operations (needed for variable operations)
-
     private DecompInterface createConfiguredDecompilerForFunction(Program program) {
         DecompInterface decompiler = new DecompInterface();
         decompiler.toggleCCode(true);
@@ -3093,13 +3252,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle manage-function action='rename_function' - rename a function
      */
     private McpSchema.CallToolResult handleManageFunctionRenameFunction(Program program, CallToolRequest request) {
-        // Check if function_identifier is an array (batch mode)
-        Object functionIdentifierValue = request.arguments().get("function_identifier");
-        if (functionIdentifierValue == null) {
-            functionIdentifierValue = request.arguments().get("functionIdentifier");
+        // Check if function_identifier is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "function_identifier");
+        if (functionIdentifierList.isEmpty()) {
+            functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
         }
-        if (functionIdentifierValue instanceof List) {
-            return handleBatchRenameFunctionsFromArrays(program, request, (List<?>) functionIdentifierValue);
+        if (functionIdentifierList.size() > 1 || (!functionIdentifierList.isEmpty() && functionIdentifierList.get(0) instanceof List)) {
+            List<?> batchList = functionIdentifierList.size() > 1 ? functionIdentifierList : (List<?>) functionIdentifierList.get(0);
+            return handleBatchRenameFunctionsFromArrays(program, request, batchList);
         }
 
         // Single function mode
@@ -3164,9 +3324,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
         // Build result
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);
-        result.put("programPath", program.getDomainFile().getPathname());
-        result.put("oldName", oldName);
-        result.put("newName", newName.trim());
+        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("old_name", oldName);
+        result.put("new_name", newName.trim());
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
         result.put("function", createFunctionInfo(function, null));
 
@@ -3183,21 +3343,25 @@ public class FunctionToolProvider extends AbstractToolProvider {
     private Map<String, Object> propagateRenameAcrossOpenPrograms(Program sourceProgram, Function sourceFunction,
             String newName, CallToolRequest request) {
         int maxCandidates = getOptionalInt(request, "propagate_max_candidates", 10);
-        if (maxCandidates <= 0) maxCandidates = 10;
-        if (maxCandidates > 50) maxCandidates = 50;
+        if (maxCandidates <= 0) {
+            maxCandidates = 10;
+        }
+        if (maxCandidates > 50) {
+            maxCandidates = 50;
+        }
         int maxInstructions = getOptionalInt(request, "propagate_max_instructions",
-            FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
+                FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
 
         String fingerprint = FunctionFingerprintUtil.computeFingerprint(sourceProgram, sourceFunction, maxInstructions);
         if (fingerprint == null) {
             return Map.of(
-                "success", false,
-                "error", "Failed to compute fingerprint for propagation"
+                    "success", false,
+                    "error", "Failed to compute fingerprint for propagation"
             );
         }
 
         List<String> targetPaths = getOptionalStringList(request.arguments(), "propagate_program_paths", null);
-        List<Program> targets = resolveTargetProgramsForMatching(sourceProgram, targetPaths);
+        List<Program> targets = resolveTargetProgramsForMatching(targetPaths);
 
         List<Map<String, Object>> applied = new ArrayList<>();
         for (Program target : targets) {
@@ -3206,13 +3370,13 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 continue;
             }
 
-            List<FunctionFingerprintUtil.Candidate> matches =
-                FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
+            List<FunctionFingerprintUtil.Candidate> matches
+                    = FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
 
             if (matches.isEmpty()) {
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "no_match"
+                        "programPath", targetPath,
+                        "status", "no_match"
                 ));
                 continue;
             }
@@ -3222,16 +3386,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 for (int i = 0; i < limit; i++) {
                     FunctionFingerprintUtil.Candidate c = matches.get(i);
                     candidates.add(Map.of(
-                        "function", c.functionName(),
-                        "address", AddressUtil.formatAddress(c.entryPoint())
+                            "function", c.functionName(),
+                            "address", AddressUtil.formatAddress(c.entryPoint())
                     ));
                 }
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "ambiguous",
-                    "matchCount", matches.size(),
-                    "candidates", candidates,
-                    "truncated", matches.size() > limit
+                        "programPath", targetPath,
+                        "status", "ambiguous",
+                        "match_count", matches.size(),
+                        "candidates", candidates,
+                        "truncated", matches.size() > limit
                 ));
                 continue;
             }
@@ -3244,9 +3408,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
             }
             if (targetFunc == null) {
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "error",
-                    "error", "Matched address has no defined function: " + AddressUtil.formatAddress(addr)
+                        "programPath", targetPath,
+                        "status", "error",
+                        "error", "Matched address has no defined function: " + AddressUtil.formatAddress(addr)
                 ));
                 continue;
             }
@@ -3260,70 +3424,59 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 invalidateFunctionCaches(targetPath);
 
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "renamed",
-                    "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
-                    "oldName", oldTargetName,
-                    "newName", newName
+                        "programPath", targetPath,
+                        "status", "renamed",
+                        "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
+                        "oldName", oldTargetName,
+                        "newName", newName
                 ));
             } catch (DuplicateNameException e) {
                 target.endTransaction(txId, false);
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "error",
-                    "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
-                    "error", "Name already exists in program: " + newName
+                        "programPath", targetPath,
+                        "status", "error",
+                        "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
+                        "error", "Name already exists in program: " + newName
                 ));
             } catch (InvalidInputException e) {
                 target.endTransaction(txId, false);
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "error",
-                    "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
-                    "error", "Invalid name: " + e.getMessage()
+                        "programPath", targetPath,
+                        "status", "error",
+                        "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
+                        "error", "Invalid name: " + e.getMessage()
                 ));
             } catch (Exception e) {
                 target.endTransaction(txId, false);
                 applied.add(Map.of(
-                    "programPath", targetPath,
-                    "status", "error",
-                    "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
-                    "error", e.getMessage()
+                        "programPath", targetPath,
+                        "status", "error",
+                        "address", AddressUtil.formatAddress(targetFunc.getEntryPoint()),
+                        "error", e.getMessage()
                 ));
             }
         }
 
         return Map.of(
-            "success", true,
-            "fingerprint", fingerprint,
-            "maxInstructions", maxInstructions,
-            "results", applied
+                "success", true,
+                "fingerprint", fingerprint,
+                "maxInstructions", maxInstructions,
+                "results", applied
         );
     }
 
     /**
-     * Get optional functions array from request for batch operations (legacy support)
-     */
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> getOptionalFunctionsArray(CallToolRequest request) {
-        Object value = request.arguments().get("functions");
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof List) {
-            return (List<Map<String, Object>>) value;
-        }
-        throw new IllegalArgumentException("Parameter 'functions' must be an array");
-    }
-
-    /**
-     * Handle batch renaming of multiple functions from arrays of function_identifier and name
+     * Handle batch renaming of multiple functions from arrays of
+     * function_identifier and name
      */
     private McpSchema.CallToolResult handleBatchRenameFunctionsFromArrays(Program program,
             CallToolRequest request,
             List<?> functionIdentifierList) {
-        Object nameValue = request.arguments().get("name");
-        List<?> nameList = (nameValue instanceof List) ? (List<?>) nameValue : null;
+        // Use getParameterAsList to support both camelCase and snake_case parameter names
+        List<Object> nameListObj = getParameterAsList(request.arguments(), "name");
+        List<?> nameList = nameListObj.size() > 1 || (!nameListObj.isEmpty() && nameListObj.get(0) instanceof List)
+            ? (nameListObj.size() > 1 ? nameListObj : (List<?>) nameListObj.get(0))
+            : null;
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
 
         int txId = program.startTransaction("Batch rename functions");
@@ -3370,12 +3523,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                     function.setName(newName.trim(), SourceType.USER_DEFINED);
                     results.add(Map.of(
-                        "index", i,
-                        "function_identifier", functionIdentifier,
-                        "oldName", oldName,
-                        "newName", newName,
-                        "address", AddressUtil.formatAddress(function.getEntryPoint()),
-                        "success", true
+                            "index", i,
+                            "function_identifier", functionIdentifier,
+                            "oldName", oldName,
+                            "newName", newName,
+                            "address", AddressUtil.formatAddress(function.getEntryPoint()),
+                            "success", true
                     ));
                 } catch (DuplicateNameException e) {
                     errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), "error", "Function name already exists"));
@@ -3406,119 +3559,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle batch renaming of multiple functions in a single transaction
-     */
-    private McpSchema.CallToolResult handleBatchRenameFunctions(Program program,
-            CallToolRequest request,
-            List<Map<String, Object>> functionsArray) {
-        List<Map<String, Object>> results = new ArrayList<>();
-        List<Map<String, Object>> errors = new ArrayList<>();
-
-        try {
-            int transactionId = program.startTransaction("Batch Rename Functions");
-            try {
-                for (int i = 0; i < functionsArray.size(); i++) {
-                    Map<String, Object> functionObj = functionsArray.get(i);
-
-                    // Extract function identifier
-                    Object funcIdObj = functionObj.get("function_identifier");
-                    if (funcIdObj == null) {
-                        errors.add(createErrorInfo(i, "Missing 'function_identifier' field in function object"));
-                        continue;
-                    }
-                    String functionIdentifier = funcIdObj.toString();
-
-                    // Extract new name
-                    Object nameObj = functionObj.get("name");
-                    if (nameObj == null) {
-                        errors.add(createErrorInfo(i, "Missing 'name' field in function object"));
-                        continue;
-                    }
-                    String newName = nameObj.toString().trim();
-
-                    if (newName.isEmpty()) {
-                        errors.add(createErrorInfo(i, "Function name cannot be empty"));
-                        continue;
-                    }
-
-                    // Get function
-                    Function function;
-                    try {
-                        Map<String, Object> args = new HashMap<>();
-                        args.put("functionNameOrAddress", functionIdentifier);
-                        function = getFunctionFromArgs(args, program);
-                    } catch (IllegalArgumentException e) {
-                        errors.add(createErrorInfo(i, "Function not found: " + functionIdentifier + " - " + e.getMessage()));
-                        continue;
-                    }
-
-                    String oldName = function.getName();
-                    if (oldName.equals(newName)) {
-                        errors.add(createErrorInfo(i, "Function already has name: " + newName));
-                        continue;
-                    }
-
-                    // Rename the function
-                    try {
-                        function.setName(newName, SourceType.USER_DEFINED);
-
-                        // Record success
-                        Map<String, Object> result = new HashMap<>();
-                        result.put("index", i);
-                        result.put("oldName", oldName);
-                        result.put("newName", newName);
-                        result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-                        results.add(result);
-                    } catch (DuplicateNameException e) {
-                        errors.add(createErrorInfo(i, "Function name '" + newName + "' already exists in program"));
-                    } catch (InvalidInputException e) {
-                        errors.add(createErrorInfo(i, "Invalid function name '" + newName + "': " + e.getMessage()));
-                    } catch (Exception e) {
-                        errors.add(createErrorInfo(i, "Failed to rename function: " + e.getMessage()));
-                    }
-                }
-
-                program.endTransaction(transactionId, true);
-                autoSaveProgram(program, "Batch rename functions");
-
-                // Invalidate function caches since names changed
-                invalidateFunctionCaches(program.getDomainFile().getPathname());
-
-                // Build response
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("programPath", program.getDomainFile().getPathname());
-                response.put("total", functionsArray.size());
-                response.put("succeeded", results.size());
-                response.put("failed", errors.size());
-                response.put("results", results);
-                if (!errors.isEmpty()) {
-                    response.put("errors", errors);
-                }
-
-                return createJsonResult(response);
-            } catch (Exception e) {
-                program.endTransaction(transactionId, false);
-                throw e;
-            }
-        } catch (Exception e) {
-            logError("Error in batch rename functions", e);
-            return createErrorResult("Failed to batch rename functions: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Create error info for batch operations
-     */
-    private Map<String, Object> createErrorInfo(int index, String message) {
-        Map<String, Object> error = new HashMap<>();
-        error.put("index", index);
-        error.put("error", message);
-        return error;
-    }
-
-    /**
-     * Handle manage-function action='set_variable_type' - set a single variable's data type
+     * Handle manage-function action='set_variable_type' - set a single
+     * variable's data type
      */
     private McpSchema.CallToolResult handleManageFunctionSetVariableType(Program program, CallToolRequest request) {
         String functionIdentifier = getOptionalString(request, "function_identifier", null);
@@ -3544,10 +3586,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
             function = getFunctionFromArgs(args, program);
         } catch (IllegalArgumentException e) {
             if (AddressUtil.isUndefinedFunctionAddress(program, functionIdentifier)) {
-                return createErrorResult("Cannot change variable type at " + functionIdentifier +
-                    ": this address has code but no defined function. " +
-                    "Variable modifications require a defined function. " +
-                    "Use action='create' to define it first, then retry the type change.");
+                return createErrorResult("Cannot change variable type at " + functionIdentifier
+                        + ": this address has code but no defined function. "
+                        + "Variable modifications require a defined function. "
+                        + "Use action='create' to define it first, then retry the type change.");
             }
             return createErrorResult("Function not found: " + e.getMessage() + " in program " + program.getName());
         }
@@ -3600,7 +3642,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     if (variableName.equals(symbol.getName())) {
                         try {
                             DataType newDataType = DataTypeParserUtil.parseDataTypeObjectFromString(
-                                newType, archiveName);
+                                    newType, archiveName);
                             HighFunctionDBUtil.updateDBVariable(symbol, null, newDataType, SourceType.USER_DEFINED);
                             logInfo("manage-function (set_variable_type): Changed variable " + variableName + " type to " + newDataType);
                             typeChanged = true;
@@ -3636,7 +3678,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         resultData.put("programName", program.getName());
         resultData.put("functionName", function.getName());
         resultData.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-        resultData.put("variableName", variableName);
+        resultData.put("variable_name", variableName);
         resultData.put("newType", newType);
         resultData.put("typeChanged", true);
 

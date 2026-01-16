@@ -23,6 +23,7 @@ import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import ghidra.program.model.address.Address;
@@ -43,7 +44,7 @@ import reva.RevaIntegrationTestBase;
  */
 public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationTestBase {
 
-    private String programPath;
+    private String program_path;
     private Address mainAddr;
     private Address helperAddr;
     private Address utilityAddr;
@@ -51,7 +52,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
 
     @Before
     public void setUpTestData() throws Exception {
-        programPath = program.getDomainFile().getPathname();
+        program_path = program.getDomainFile().getPathname();
 
         // Use addresses within the existing memory block (base class creates block at 0x01000000)
         mainAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01001000);
@@ -115,7 +116,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 CallToolResult result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", "utility",
                         "mode", "to"
                     )
@@ -141,10 +142,10 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                     assertEquals("UNCONDITIONAL_CALL", ref.get("referenceType").asText());
                     assertEquals(true, ref.get("isCall").asBoolean());
 
-                    JsonNode fromFunc = ref.get("fromFunction");
+                    JsonNode fromFunc = ref.get("from_function");
                     if ("main".equals(fromFunc.get("name").asText())) {
                         foundFromMain = true;
-                        assertEquals("0x01001020", ref.get("fromAddress").asText());
+                        assertEquals("0x01001020", ref.get("from_address").asText());
                     } else if ("helper".equals(fromFunc.get("name").asText())) {
                         foundFromHelper = true;
                         assertEquals("0x01002010", ref.get("fromAddress").asText());
@@ -155,9 +156,9 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 assertTrue("Should find reference from helper", foundFromHelper);
 
                 // Check that references from is empty (direction was "to")
-                JsonNode refsFrom = jsonResult.get("referencesFrom");
+                JsonNode refsFrom = jsonResult.get("references_from");
                 assertEquals(0, refsFrom.size());
-            } catch (Exception e) {
+            } catch (JsonProcessingException e) {
                 fail("Test failed with exception: " + e.getMessage());
             }
         });
@@ -172,7 +173,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 CallToolResult result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", mainAddr.toString(),
                         "mode", "from"
                     )
@@ -200,10 +201,10 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
 
                     if ("UNCONDITIONAL_CALL".equals(ref.get("referenceType").asText())) {
                         callCount++;
-                        JsonNode toSymbol = ref.get("toSymbol");
+                        JsonNode toSymbol = ref.get("to_symbol");
                         String toName = toSymbol.get("name").asText();
                         assertTrue("helper".equals(toName) || "utility".equals(toName));
-                    } else if ("DATA".equals(ref.get("referenceType").asText())) {
+                    } else if ("DATA".equals(ref.get("reference_type").asText())) {
                         dataCount++;
                         assertEquals("0x01004000", ref.get("toAddress").asText());
                     }
@@ -229,7 +230,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 CallToolResult result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", stringAddr.toString(), // String address
                         "mode", "both"
                     )
@@ -241,7 +242,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 JsonNode jsonResult = objectMapper.readTree(content.text());
 
                 // Check references to string (from main and helper)
-                JsonNode refsTo = jsonResult.get("referencesTo");
+                JsonNode refsTo = jsonResult.get("references_to");
                 assertNotNull("Should have referencesTo", refsTo);
                 assertEquals(2, refsTo.size());
 
@@ -250,7 +251,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                     assertEquals("DATA", ref.get("referenceType").asText());
                     assertEquals(true, ref.get("isData").asBoolean());
 
-                    JsonNode fromFunc = ref.get("fromFunction");
+                    JsonNode fromFunc = ref.get("from_function");
                     if (fromFunc != null) {
                         String funcName = fromFunc.get("name").asText();
                         assertTrue("main".equals(funcName) || "helper".equals(funcName));
@@ -258,7 +259,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 }
 
                 // String has no outgoing references
-                JsonNode refsFrom = jsonResult.get("referencesFrom");
+                JsonNode refsFrom = jsonResult.get("references_from");
                 assertNotNull("Should have referencesFrom", refsFrom);
                 assertEquals(0, refsFrom.size());
             } catch (Exception e) {
@@ -277,7 +278,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 CallToolResult result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", mainAddr.toString(),
                         "mode", "from"
                     )
@@ -305,7 +306,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 }
                 assertTrue("Should have call references", hasCall);
                 assertTrue("Should have data references", hasData);
-            } catch (Exception e) {
+            } catch (JsonProcessingException e) {
                 fail("Test failed with exception: " + e.getMessage());
             }
         });
@@ -339,7 +340,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 CallToolResult result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", "utility",
                         "mode", "to",
                         "offset", 0,
@@ -358,14 +359,14 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
 
                 assertEquals(0, jsonResult.get("offset").asInt());
                 assertEquals(10, jsonResult.get("limit").asInt());
-                assertEquals(22, jsonResult.get("totalCount").asInt()); // 2 original + 20 new
-                assertEquals(true, jsonResult.get("hasMore").asBoolean());
+                assertEquals(22, jsonResult.get("total_count").asInt()); // 2 original + 20 new
+                assertEquals(true, jsonResult.get("has_more").asBoolean());
 
                 // Test last page
                 result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", "utility",
                         "mode", "to",
                         "offset", 20,
@@ -382,7 +383,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 assertEquals(2, refsTo.size()); // Only 2 remaining
 
                 assertEquals(20, jsonResult.get("offset").asInt());
-                assertEquals(false, jsonResult.get("hasMore").asBoolean());
+                assertEquals(false, jsonResult.get("has_more").asBoolean());
             } catch (Exception e) {
                 fail("Test failed with exception: " + e.getMessage());
             }
@@ -398,7 +399,7 @@ public class CrossReferencesToolProviderIntegrationTest extends RevaIntegrationT
                 CallToolResult result = client.callTool(new CallToolRequest(
                     "get-references",
                     Map.of(
-                        "programPath", programPath,
+                        "program_path", program_path,
                         "target", "nonexistent_function"
                     )
                 ));
