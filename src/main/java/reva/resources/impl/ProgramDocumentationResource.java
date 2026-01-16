@@ -174,7 +174,7 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
         doc.append("### Memory Layout\n\n");
         MemoryBlock[] blocks = memory.getBlocks();
         doc.append("**Total Blocks:** ").append(blocks.length).append("\n\n");
-        
+
         // Only show table if reasonable number of blocks (avoid huge tables)
         if (blocks.length <= 50) {
             doc.append("| Block Name | Start Address | End Address | Size | Read | Write | Execute |\n");
