@@ -18,31 +18,31 @@ Create, retrieve, search, remove bookmarks, or list bookmark categories.
 - `programPath` (required) - Path to the program in the Ghidra Project
 - `action` (required) - Action to perform: 'set', 'get', 'search', 'remove', or 'categories'
 - `address` (required for action='set'/'remove', optional for action='get') - Address where to set/get/remove the bookmark
-- `address_or_symbol` (alternative parameter name, used for remove action)
+- `addressOrSymbol` (alternative parameter name, used for remove action)
 - `type` (required for action='set'/'remove', optional for action='get'/'categories') - Bookmark type enum ('Note', 'Warning', 'TODO', 'Bug', 'Analysis')
 - `category` (required for action='set', optional for action='remove'; can be empty string)
   - Bookmark category for organization
 - `comment` (required for action='set') - Bookmark comment text
-- `search_text` (required for action='search') - Text to search for in bookmark comments
-- `max_results` (optional for action='search', default: 100) - Maximum number of results to return
+- `searchText` (required for action='search') - Text to search for in bookmark comments
+- `maxResults` (optional for action='search', default: 100) - Maximum number of results to return
 
 **Actions:**
 
 1. **action='set'** - Create or update a bookmark at a specific address
-   - **Required**: `address` (or `address_or_symbol`), `type`, `category`, `comment`
+   - **Required**: `address` (or `addressOrSymbol`), `type`, `category`, `comment`
    - **Returns**: Success message with bookmark details (id, address, type, category, comment)
 
 2. **action='get'** - Retrieve bookmarks by address, type, category, or all bookmarks
-   - **Optional**: `address` (or `address_or_symbol`), `type`, `category` (used as filters)
+   - **Optional**: `address` (or `addressOrSymbol`), `type`, `category` (used as filters)
    - **Returns**: List of bookmarks matching the filters
 
 3. **action='search'** - Search bookmarks by text in comments
-   - **Required**: `search_text`
-   - **Optional**: `type` (filter by type), `max_results` (limit results)
+   - **Required**: `searchText`
+   - **Optional**: `type` (filter by type), `maxResults` (limit results)
    - **Returns**: List of matching bookmarks with search text in comments
 
 4. **action='remove'** - Delete a specific bookmark
-   - **Required**: `address` (or `address_or_symbol`), `type`
+   - **Required**: `address` (or `addressOrSymbol`), `type`
    - **Optional**: `category` (if not provided, matches any category)
    - **Returns**: Success message with removed bookmark details
 

@@ -17,32 +17,32 @@ Analyze vtables, find vtable callers, or find vtables containing a specific func
 **Parameters:**
 - `programPath` (required) - Path to the program in the Ghidra Project
 - `mode` (required) - Analysis mode: 'analyze', 'callers', or 'containing'
-- `vtable_address` (required for mode='analyze', optional for mode='callers') - Address of the vtable to analyze
+- `vtableAddress` (required for mode='analyze', optional for mode='callers') - Address of the vtable to analyze
 - `vtableAddress` (alternative parameter name)
-- `function_address` (required for mode='callers'/'containing') - Address or name of the virtual function
+- `functionAddress` (required for mode='callers'/'containing') - Address or name of the virtual function
 - `functionAddress` (alternative parameter name)
-- `max_entries` (optional for mode='analyze', default: 200, max: 1000) - Maximum number of vtable entries to read
+- `maxEntries` (optional for mode='analyze', default: 200, max: 1000) - Maximum number of vtable entries to read
 - `maxEntries` (alternative parameter name)
-- `max_results` (optional for mode='callers', default: 500, max: 10000) - Maximum number of caller results
+- `maxResults` (optional for mode='callers', default: 500, max: 10000) - Maximum number of caller results
 - `maxResults` (alternative parameter name)
 
 **Modes:**
 
 1. **mode='analyze'** - Analyze a vtable at a given address to extract function pointers
-   - **Required**: `vtable_address`
-   - **Optional**: `max_entries` (default: 200)
+   - **Required**: `vtableAddress`
+   - **Optional**: `maxEntries` (default: 200)
    - **Returns**: JSON object with vtable structure, slot indices, offsets, function information, and structure metadata
    - **Use Case**: Understanding vtable layout and discovering virtual methods
 
 2. **mode='callers'** - Find all indirect calls that could invoke a function via its vtable slot
-   - **Required**: `function_address`
-   - **Optional**: `vtable_address` (searches all vtables if not provided), `max_results` (default: 500)
+   - **Required**: `functionAddress`
+   - **Optional**: `vtableAddress` (searches all vtables if not provided), `maxResults` (default: 500)
    - **Returns**: JSON with vtable slot information and potential caller sites
    - **Use Case**: Discovering where virtual methods are actually invoked
    - **Note**: Offset patterns optimized for x86/x64 instruction formats
 
 3. **mode='containing'** - Find all vtables that contain a pointer to a given function
-   - **Required**: `function_address`
+   - **Required**: `functionAddress`
    - **Returns**: JSON with all vtables containing the function, slot indices, offsets, and possible class names
    - **Use Case**: Identifying which classes implement a particular virtual method
 

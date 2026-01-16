@@ -271,8 +271,8 @@ public class BookmarkToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("action", "search");
-        args.put("search_text", "test");
-        args.put("max_results", 100);
+        args.put("searchText", "test");
+        args.put("maxResults", 100);
 
         // Valid search action args
         try {
@@ -282,7 +282,7 @@ public class BookmarkToolProviderTest {
         }
 
         // Missing search_text should throw
-        args.remove("search_text");
+        args.remove("searchText");
         try {
             validateSearchActionArgs(args);
             fail("Should throw exception for missing search_text in search action");
@@ -293,7 +293,7 @@ public class BookmarkToolProviderTest {
         }
 
         // Empty search_text should throw
-        args.put("search_text", "");
+        args.put("searchText", "");
         try {
             validateSearchActionArgs(args);
             fail("Should throw exception for empty search_text in search action");
@@ -304,8 +304,8 @@ public class BookmarkToolProviderTest {
         }
 
         // max_results is optional with default
-        args.put("search_text", "test");
-        args.remove("max_results");
+        args.put("searchText", "test");
+        args.remove("maxResults");
         try {
             validateSearchActionArgs(args);
             // Should not throw - max_results has default
@@ -403,7 +403,7 @@ public class BookmarkToolProviderTest {
     private void validateSetActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("set".equals(action)) {
-            if (args.get("address") == null && args.get("address_or_symbol") == null) {
+            if (args.get("address") == null && args.get("addressOrSymbol") == null) {
                 throw new IllegalArgumentException("address is required for action='set'");
             }
             if (args.get("type") == null) {
@@ -421,7 +421,7 @@ public class BookmarkToolProviderTest {
     private void validateRemoveActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("remove".equals(action)) {
-            if (args.get("address") == null && args.get("address_or_symbol") == null) {
+            if (args.get("address") == null && args.get("addressOrSymbol") == null) {
                 throw new IllegalArgumentException("address is required for action='remove'");
             }
             if (args.get("type") == null) {
@@ -434,7 +434,7 @@ public class BookmarkToolProviderTest {
     private void validateSearchActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("search".equals(action)) {
-            String searchText = (String) args.get("search_text");
+            String searchText = (String) args.get("searchText");
             if (searchText == null || searchText.trim().isEmpty()) {
                 throw new IllegalArgumentException("search_text is required for action='search'");
             }

@@ -87,7 +87,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
             arguments.put("mode", "all");
-            arguments.put("max_count", 10);
+            arguments.put("maxCount", 10);
 
             CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
@@ -147,7 +147,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
             arguments.put("mode", "similarity");
-            arguments.put("search_string", "testFunction");
+            arguments.put("searchString", "testFunction");
 
             CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
@@ -167,7 +167,7 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
             arguments.put("mode", "undefined");
-            arguments.put("min_reference_count", 1);
+            arguments.put("minReferenceCount", 1);
 
             CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
 
@@ -176,6 +176,266 @@ public class FunctionToolProviderListFunctionsIntegrationTest extends RevaIntegr
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
             assertTrue("Result should contain candidates field", json.has("candidates"));
+        });
+    }
+
+    @Test
+    public void testListFunctionsByIdentifiersMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "by_identifiers");
+            arguments.put("identifiers", java.util.Arrays.asList("testFunction", "mainFunction"));
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+            JsonNode functions = json.get("functions");
+            assertTrue("Should have at least 2 functions", functions.size() >= 2);
+        });
+    }
+
+    @Test
+    public void testListFunctionsFilterByTag() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // First add a tag to testFunction
+            Map<String, Object> tagArgs = new HashMap<>();
+            tagArgs.put("programPath", programPath);
+            tagArgs.put("mode", "add");
+            tagArgs.put("function", "testFunction");
+            tagArgs.put("tags", java.util.Arrays.asList("test_tag"));
+            client.callTool(new CallToolRequest("manage-function-tags", tagArgs));
+
+            // Now filter by tag
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "all");
+            arguments.put("filterByTag", "test_tag");
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+        });
+    }
+
+    @Test
+    public void testListFunctionsVerboseMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "all");
+            arguments.put("verbose", true);
+            arguments.put("maxCount", 10);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+            JsonNode functions = json.get("functions");
+            if (functions.size() > 0) {
+                JsonNode firstFunc = functions.get(0);
+                // Verbose mode should include more details
+                assertTrue("Verbose mode should have detailed fields", firstFunc.has("address") || firstFunc.has("entryPoint"));
+            }
+        });
+    }
+
+    @Test
+    public void testListFunctionsUntaggedMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "all");
+            arguments.put("untagged", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+        });
+    }
+
+    @Test
+    public void testListFunctionsHasTagsMode() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // First add a tag
+            Map<String, Object> tagArgs = new HashMap<>();
+            tagArgs.put("programPath", programPath);
+            tagArgs.put("mode", "add");
+            tagArgs.put("function", "testFunction");
+            tagArgs.put("tags", java.util.Arrays.asList("has_tag_test"));
+            client.callTool(new CallToolRequest("manage-function-tags", tagArgs));
+
+            // Now filter by hasTags
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "all");
+            arguments.put("hasTags", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+        });
+    }
+
+    @Test
+    public void testListFunctionsValidatesProgramState() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "all");
+            arguments.put("maxCount", 100);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            JsonNode functions = json.get("functions");
+
+            // Verify functions match actual program state
+            FunctionManager funcManager = program.getFunctionManager();
+            int actualFuncCount = funcManager.getFunctionCount();
+            assertTrue("Function count should match", functions.size() <= actualFuncCount);
+
+            // Verify testFunction is in the list
+            boolean foundTestFunction = false;
+            for (JsonNode func : functions) {
+                if ("testFunction".equals(func.get("name").asText())) {
+                    foundTestFunction = true;
+                    // Verify address matches
+                    String addrStr = func.get("address").asText();
+                    try {
+                        Address funcAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(addrStr);
+                        Function actualFunc = funcManager.getFunctionAt(funcAddr);
+                        assertNotNull("Function should exist at address", actualFunc);
+                        assertEquals("Function name should match", "testFunction", actualFunc.getName());
+                    } catch (ghidra.program.model.address.AddressFormatException e) {
+                        fail("Invalid address format: " + addrStr + ": " + e.getMessage());
+                    }
+                    break;
+                }
+            }
+            assertTrue("Should find testFunction in results", foundTestFunction);
+        });
+    }
+
+    @Test
+    public void testListFunctionsVerboseModeWithSearch() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "search");
+            arguments.put("query", "test");
+            arguments.put("verbose", true);
+            arguments.put("maxCount", 10);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+            assertTrue("Result should indicate verbose mode", json.has("verbose") && json.get("verbose").asBoolean());
+            JsonNode functions = json.get("functions");
+            if (functions.size() > 0) {
+                JsonNode firstFunc = functions.get(0);
+                // Verbose mode should include more details
+                assertTrue("Verbose mode should have detailed fields", 
+                    firstFunc.has("address") || firstFunc.has("entryPoint") || firstFunc.has("name"));
+            }
+        });
+    }
+
+    @Test
+    public void testListFunctionsVerboseModeWithSimilarity() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "similarity");
+            arguments.put("searchString", "test");
+            arguments.put("verbose", true);
+            arguments.put("maxCount", 10);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+            assertTrue("Result should indicate verbose mode", json.has("verbose") && json.get("verbose").asBoolean());
+            JsonNode functions = json.get("functions");
+            if (functions.size() > 0) {
+                JsonNode firstFunc = functions.get(0);
+                // Verbose mode should include similarity and detailed fields
+                assertTrue("Verbose mode should have detailed fields", 
+                    firstFunc.has("address") || firstFunc.has("entryPoint") || firstFunc.has("name"));
+            }
+        });
+    }
+
+    @Test
+    public void testListFunctionsVerboseModeWithByIdentifiers() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "by_identifiers");
+            arguments.put("identifiers", java.util.Arrays.asList("testFunction", "mainFunction"));
+            arguments.put("verbose", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("list-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions field", json.has("functions"));
+            assertTrue("Result should indicate verbose mode", json.has("verbose") && json.get("verbose").asBoolean());
+            JsonNode functions = json.get("functions");
+            assertTrue("Should have at least one function", functions.size() > 0);
+            JsonNode firstFunc = functions.get(0);
+            // Verbose mode should include detailed fields
+            assertTrue("Verbose mode should have detailed fields", 
+                firstFunc.has("address") || firstFunc.has("entryPoint") || firstFunc.has("name"));
         });
     }
 }

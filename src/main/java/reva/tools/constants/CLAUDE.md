@@ -18,11 +18,11 @@ Find specific constants, constants in ranges, or list the most common constants 
 - `programPath` (required) - Path to the program in Ghidra project
 - `mode` (required) - Search mode: 'specific', 'range', or 'common'
 - `value` (required for mode='specific') - Constant value to search for (supports hex with 0x, decimal, negative)
-- `min_value` (required for mode='range'; optional for mode='common') - Minimum value (inclusive, supports hex/decimal)
-- `max_value` (required for mode='range') - Maximum value (inclusive, supports hex/decimal)
-- `max_results` (optional for mode='specific'/'range') - Maximum results to return (default: 500, max: 10000)
-- `include_small_values` (optional for mode='common') - Include small values (0-255) which are often noise (default: false)
-- `top_n` (optional for mode='common') - Number of most common constants to return (default: 50)
+- `minValue` (required for mode='range'; optional for mode='common') - Minimum value (inclusive, supports hex/decimal)
+- `maxValue` (required for mode='range') - Maximum value (inclusive, supports hex/decimal)
+- `maxResults` (optional for mode='specific'/'range') - Maximum results to return (default: 500, max: 10000)
+- `includeSmallValues` (optional for mode='common') - Include small values (0-255) which are often noise (default: false)
+- `topN` (optional for mode='common') - Number of most common constants to return (default: 50)
 
 **Modes:**
 
@@ -189,7 +189,7 @@ The tool provides human-readable descriptions for well-known constants:
 private static final int DEFAULT_TIMEOUT_SECONDS = 120;
 private static final int DEFAULT_MAX_RESULTS = 500;
 private static final int MAX_RESULTS_LIMIT = 10000;  // Prevents abuse
-private static final int MAX_INSTRUCTIONS = 2_000_000;  // Prevents runaway on huge binaries
+private static final int maxInstructions = 2_000_000;  // Prevents runaway on huge binaries
 private static final int MAX_SAMPLE_LOCATIONS = 5;  // Per-constant sample limit
 ```
 
@@ -391,7 +391,7 @@ private static class ConstantInfo {
 - Test constant description accuracy
 
 ### Performance Tests
-- Verify MAX_INSTRUCTIONS limit prevents runaway
+- Verify maxInstructions limit prevents runaway
 - Check timeout behavior on large binaries
 - Validate memory usage with many unique constants
 

@@ -500,14 +500,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> functionData = new HashMap<>();
         functionData.put("name", function.getName());
         functionData.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-        functionData.put("end_address", AddressUtil.formatAddress(body.getMaxAddress()));
-        functionData.put("size_in_bytes", body.getNumAddresses());
+        functionData.put("endAddress", AddressUtil.formatAddress(body.getMaxAddress()));
+        functionData.put("sizeInBytes", body.getNumAddresses());
         functionData.put("signature", function.getSignature().toString());
-        functionData.put("return_type", function.getReturnType().toString());
-        functionData.put("is_external", function.isExternal());
-        functionData.put("is_thunk", function.isThunk());
-        functionData.put("is_default_name", SymbolUtil.isDefaultSymbolName(function.getName()));
-        functionData.put("caller_count", callerCount);
+        functionData.put("returnType", function.getReturnType().toString());
+        functionData.put("isExternal", function.isExternal());
+        functionData.put("isThunk", function.isThunk());
+        functionData.put("isDefaultName", SymbolUtil.isDefaultSymbolName(function.getName()));
+        functionData.put("callerCount", callerCount); // Do NOT duplicate this line
         functionData.put("parameters", parametersList);
         functionData.put("tags", tagNames);
 
@@ -554,64 +554,64 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private void registerMatchFunctionTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
                 "type", "string",
                 "description", "Path in the Ghidra Project to the source program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
-        properties.put("function_identifier", Map.of(
+        properties.put("functionIdentifier", Map.of(
                 "type", "string",
                 "description", "Function name or address to match. If provided, only matches and transfers metadata for this specific function. If omitted, matches and transfers all functions from the source program."
         ));
-        properties.put("target_program_paths", Map.of(
+        properties.put("targetProgramPaths", Map.of(
                 "type", "array",
                 "description", "List of programPath values to search/transfer to. If omitted, searches/transfers to all open programs except source.",
                 "items", Map.of("type", "string")
         ));
-        properties.put("max_instructions", Map.of(
+        properties.put("maxInstructions", Map.of(
                 "type", "integer",
                 "description", "Number of instructions to fingerprint/compare (default: 64; higher improves uniqueness/accuracy but costs more).",
                 "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
         ));
-        properties.put("min_similarity", Map.of(
+        properties.put("minSimilarity", Map.of(
                 "type", "number",
                 "description", "Minimum similarity score (0.0-1.0) required to match and transfer. 0.85 = 85% similar, 0.90 = 90% similar. Higher = more strict matching (default: 0.85)",
                 "default", 0.85
         ));
-        properties.put("propagate_names", Map.of(
+        properties.put("propagateNames", Map.of(
                 "type", "boolean",
                 "description", "Transfer function names (default: true)",
                 "default", true
         ));
-        properties.put("propagate_tags", Map.of(
+        properties.put("propagateTags", Map.of(
                 "type", "boolean",
                 "description", "Transfer function tags (default: true)",
                 "default", true
         ));
-        properties.put("propagate_comments", Map.of(
+        properties.put("propagateComments", Map.of(
                 "type", "boolean",
                 "description", "Transfer function comments (default: false)",
                 "default", false
         ));
-        properties.put("filter_default_names", Map.of(
+        properties.put("filterDefaultNames", Map.of(
                 "type", "boolean",
                 "description", "Only process functions that don't have default Ghidra names (FUN_*, etc.) in source (default: true)",
                 "default", true
         ));
-        properties.put("filter_by_tag", Map.of(
+        properties.put("filterByTag", Map.of(
                 "type", "string",
                 "description", "Only process functions with this tag in source program (optional)"
         ));
-        properties.put("dry_run", Map.of(
+        properties.put("dryRun", Map.of(
                 "type", "boolean",
                 "description", "Preview what would be transferred without making changes (default: false)",
                 "default", false
         ));
-        properties.put("max_functions", Map.of(
+        properties.put("maxFunctions", Map.of(
                 "type", "integer",
                 "description", "Maximum number of functions to process (for testing/debugging, 0 = unlimited, default: 0)",
                 "default", 0
         ));
-        properties.put("batch_size", Map.of(
+        properties.put("batchSize", Map.of(
                 "type", "integer",
                 "description", "Number of functions to process per transaction (default: 100). Larger = faster but less granular progress.",
                 "default", 100
@@ -633,27 +633,27 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     return createErrorResult("Source program not found or closed");
                 }
 
-                String functionIdentifier = getOptionalString(request, "function_identifier", null);
-                List<String> targetProgramPaths = getOptionalStringList(request.arguments(), "target_program_paths", null);
+                String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
+                List<String> targetProgramPaths = getOptionalStringList(request.arguments(), "targetProgramPaths", null);
                 List<Program> targets = resolveTargetProgramsForMatching(targetProgramPaths);
                 if (targets.isEmpty()) {
-                    return createErrorResult("No target programs found. Open target programs first or specify target_program_paths.");
+                    return createErrorResult("No target programs found. Open target programs first or specify targetProgramPaths.");
                 }
 
-                double minSimilarity = getOptionalDouble(request, "min_similarity", 0.85);
+                double minSimilarity = getOptionalDouble(request, "minSimilarity", 0.85);
                 if (minSimilarity < 0.0 || minSimilarity > 1.0) {
-                    return createErrorResult("min_similarity must be between 0.0 and 1.0");
+                    return createErrorResult("minSimilarity must be between 0.0 and 1.0");
                 }
 
-                int maxInstructions = getOptionalInt(request, "max_instructions", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
-                boolean propagateNames = getOptionalBoolean(request, "propagate_names", true);
-                boolean propagateTags = getOptionalBoolean(request, "propagate_tags", true);
-                boolean propagateComments = getOptionalBoolean(request, "propagate_comments", false);
-                boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
-                String filterByTag = getOptionalString(request, "filter_by_tag", null);
-                boolean dryRun = getOptionalBoolean(request, "dry_run", false);
-                int maxFunctions = getOptionalInt(request, "max_functions", 0);
-                int batchSize = getOptionalInt(request, "batch_size", 100);
+                int maxInstructions = getOptionalInt(request, "maxInstructions", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
+                boolean propagateNames = getOptionalBoolean(request, "propagateNames", true);
+                boolean propagateTags = getOptionalBoolean(request, "propagateTags", true);
+                boolean propagateComments = getOptionalBoolean(request, "propagateComments", false);
+                boolean filterDefaultNames = getOptionalBoolean(request, "filterDefaultNames", true);
+                String filterByTag = getOptionalString(request, "filterByTag", null);
+                boolean dryRun = getOptionalBoolean(request, "dryRun", false);
+                int maxFunctions = getOptionalInt(request, "maxFunctions", 0);
+                int batchSize = getOptionalInt(request, "batchSize", 100);
                 if (batchSize <= 0) {
                     batchSize = 100;
                 }
@@ -742,11 +742,11 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("source_program_path", sourceProgram.getDomainFile().getPathname());
-        result.put("source_functions_count", sourceFunctions.size());
-        result.put("target_programs_count", targets.size());
-        result.put("min_similarity", minSimilarity);
-        result.put("dry_run", dryRun);
+        result.put("sourceProgramPath", sourceProgram.getDomainFile().getPathname());
+        result.put("sourceFunctionsCount", sourceFunctions.size());
+        result.put("targetProgramsCount", targets.size());
+        result.put("minSimilarity", minSimilarity);
+        result.put("dryRun", dryRun);
 
         List<Map<String, Object>> perTargetResults = new ArrayList<>();
         int totalProcessed = 0;
@@ -762,8 +762,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
             }
 
             Map<String, Object> targetResult = new HashMap<>();
-            targetResult.put("program_path", targetPath);
-            targetResult.put("program_name", target.getName());
+            targetResult.put("programPath", targetPath);
+            targetResult.put("programName", target.getName());
 
             List<Map<String, Object>> propagated = new ArrayList<>();
             List<Map<String, Object>> ambiguous = new ArrayList<>();
@@ -906,10 +906,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 targetResult.put("matched", matched);
                 targetResult.put("propagated", propagatedCount);
                 targetResult.put("ambiguous", ambiguousCount);
-                targetResult.put("no_match", noMatchCount);
-                targetResult.put("propagated_details", propagated.subList(0, Math.min(propagated.size(), 100))); // Limit details
-                targetResult.put("ambiguous_details", ambiguous.subList(0, Math.min(ambiguous.size(), 50)));
-                targetResult.put("no_match_sample", noMatch); // First 10 only
+                targetResult.put("noMatch", noMatchCount);
+                targetResult.put("propagatedDetails", propagated.subList(0, Math.min(propagated.size(), 100))); // Limit details
+                targetResult.put("ambiguousDetails", ambiguous.subList(0, Math.min(ambiguous.size(), 50)));
+                targetResult.put("noMatchSample", noMatch); // First 10 only
 
                 totalProcessed += processed;
                 totalMatched += matched;
@@ -934,7 +934,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 "totalNoMatch", totalNoMatch,
                 "successRate", totalProcessed > 0 ? String.format("%.1f%%", (100.0 * totalPropagated / totalProcessed)) : "0%"
         ));
-        result.put("target_results", perTargetResults);
+        result.put("targetResults", perTargetResults);
         result.put("success", true);
 
         return createJsonResult(result);
@@ -980,7 +980,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private void registerListFunctionsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
                 "type", "string",
                 "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
@@ -994,21 +994,21 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 "type", "string",
                 "description", "Substring to search for when mode='search' (required for search mode)"
         ));
-        properties.put("search_string", Map.of(
+        properties.put("searchString", Map.of(
                 "type", "string",
                 "description", "Function name to compare against for similarity when mode='similarity' (required for similarity mode)"
         ));
-        properties.put("min_reference_count", Map.of(
+        properties.put("minReferenceCount", Map.of(
                 "type", "integer",
                 "description", "Minimum number of references required when mode='undefined' (default: 1)",
                 "default", 1
         ));
-        properties.put("start_index", Map.of(
+        properties.put("startIndex", Map.of(
                 "type", "integer",
                 "description", "Starting index for pagination (0-based, default: 0)",
                 "default", 0
         ));
-        properties.put("max_count", Map.of(
+        properties.put("maxCount", Map.of(
                 "type", "integer",
                 "description", "Maximum number of functions to return (default: 100)",
                 "default", 100
@@ -1023,17 +1023,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 "description", "Alternative pagination limit parameter (default: 100)",
                 "default", 100
         ));
-        properties.put("max_results", Map.of(
+        properties.put("maxResults", Map.of(
                 "type", "integer",
-                "description", "Maximum number of functions to return (alternative to max_count/limit, default: 100)",
+                "description", "Maximum number of functions to return (alternative to maxCount/limit, default: 100)",
                 "default", 1000
         ));
-        properties.put("filter_default_names", Map.of(
+        properties.put("filterDefaultNames", Map.of(
                 "type", "boolean",
                 "description", "Whether to filter out default Ghidra generated names like FUN_, DAT_, etc. (default: true)",
                 "default", true
         ));
-        properties.put("filter_by_tag", Map.of(
+        properties.put("filterByTag", Map.of(
                 "type", "string",
                 "description", "Only return functions with this tag (applied after filterDefaultNames, only for mode='all')"
         ));
@@ -1042,7 +1042,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 "description", "Only return functions with no tags (mutually exclusive with filterByTag, only for mode='all')",
                 "default", false
         ));
-        properties.put("has_tags", Map.of(
+        properties.put("hasTags", Map.of(
                 "type", "boolean",
                 "description", "Only return functions that have at least one tag (mutually exclusive with untagged, only for mode='all')",
                 "default", false
@@ -1090,13 +1090,13 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     startIndex = offset;
                     maxCount = limit;
                 } else {
-                    // Use start_index/max_count (new standard, supports both camelCase and snake_case)
-                    // maxResults/max_results handled dynamically
-                    startIndex = getOptionalInt(request, "start_index", 0);
-                    maxCount = getOptionalInt(request, "max_count", 100);
+                    // Use startIndex/maxCount (new standard, supports both camelCase and snake_case)
+                    // maxResults handled dynamically
+                    startIndex = getOptionalInt(request, "startIndex", 0);
+                    maxCount = getOptionalInt(request, "maxCount", 100);
                 }
 
-                boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
+                boolean filterDefaultNames = getOptionalBoolean(request, "filterDefaultNames", true);
                 boolean verbose;
 
                 switch (mode) {
@@ -1104,9 +1104,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         return handleListFunctionsCount(program, filterDefaultNames);
                     }
                     case "all" -> {
-                        String filterByTag = getOptionalString(request, "filter_by_tag", null);
+                        String filterByTag = getOptionalString(request, "filterByTag", null);
                         boolean untagged = getOptionalBoolean(request, "untagged", false);
-                        boolean hasTags = getOptionalBoolean(request, "has_tags", false);
+                        boolean hasTags = getOptionalBoolean(request, "hasTags", false);
                         verbose = getOptionalBoolean(request, "verbose", false);
                         return handleListFunctionsAll(program, startIndex, maxCount, filterDefaultNames, filterByTag, untagged, hasTags, verbose);
                     }
@@ -1119,17 +1119,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         return handleListFunctionsSearch(program, query, startIndex, maxCount, filterDefaultNames, verbose);
                     }
                     case "similarity" -> {
-                        String searchString = getOptionalString(request, "search_string", null);
+                        String searchString = getOptionalString(request, "searchString", null);
                         if (searchString == null || searchString.trim().isEmpty()) {
-                            return createErrorResult("search_string parameter is required when mode='similarity'");
+                            return createErrorResult("searchString parameter is required when mode='similarity'");
                         }
                         verbose = getOptionalBoolean(request, "verbose", false);
                         return handleListFunctionsSimilarity(program, searchString, startIndex, maxCount, filterDefaultNames, verbose);
                     }
                     case "undefined" -> {
-                        int minReferenceCount = getOptionalInt(request, "min_reference_count", 1);
+                        int minReferenceCount = getOptionalInt(request, "minReferenceCount", 1);
                         if (minReferenceCount < 1) {
-                            return createErrorResult("min_reference_count must be at least 1");
+                            return createErrorResult("minReferenceCount must be at least 1");
                         }
                         return handleListFunctionsUndefined(program, startIndex, maxCount, minReferenceCount);
                     }
@@ -1176,7 +1176,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("count", count.get());
-        result.put("filter_default_names", filterDefaultNames);
+        result.put("filterDefaultNames", filterDefaultNames);
         return createJsonResult(result);
     }
 
@@ -1246,31 +1246,31 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Map<String, Object> compactInfo = new HashMap<>();
                 compactInfo.put("name", funcInfo.get("name"));
                 compactInfo.put("address", funcInfo.get("address"));
-                compactInfo.put("size_in_bytes", funcInfo.get("size_in_bytes"));
+                compactInfo.put("sizeInBytes", funcInfo.get("sizeInBytes"));
                 compactInfo.put("tags", funcInfo.get("tags"));
-                    compactInfo.put("caller_count", funcInfo.get("caller_count"));
-                compactInfo.put("callee_count", funcInfo.get("callee_count"));
+                    compactInfo.put("callerCount", funcInfo.get("callerCount"));
+                compactInfo.put("calleeCount", funcInfo.get("calleeCount"));
                 functionData.add(compactInfo);
             }
         }
 
         Map<String, Object> result = new HashMap<>();
         result.put("functions", functionData);
-        result.put("start_index", startIndex);
-        result.put("requested_count", maxCount);
-        result.put("actual_count", functionData.size());
-        result.put("next_start_index", startIndex + functionData.size());
-        result.put("total_count", totalCount);
-        result.put("filter_default_names", filterDefaultNames);
+        result.put("startIndex", startIndex);
+        result.put("requestedCount", maxCount);
+        result.put("actualCount", functionData.size());
+        result.put("nextStartIndex", startIndex + functionData.size());
+        result.put("totalCount", totalCount);
+        result.put("filterDefaultNames", filterDefaultNames);
         result.put("verbose", verbose);
         if (filterByTag != null && !filterByTag.isEmpty()) {
-            result.put("filter_by_tag", filterByTag);
+            result.put("filterByTag", filterByTag);
         }
         if (untagged) {
             result.put("untagged", true);
         }
         if (hasTags) {
-            result.put("has_tags", true);
+            result.put("hasTags", true);
         }
         return createJsonResult(result);
     }
@@ -1311,10 +1311,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Map<String, Object> compactInfo = new HashMap<>();
                 compactInfo.put("name", funcInfo.get("name"));
                 compactInfo.put("address", funcInfo.get("address"));
-                compactInfo.put("size_in_bytes", funcInfo.get("size_in_bytes"));
+                compactInfo.put("sizeInBytes", funcInfo.get("sizeInBytes"));
                 compactInfo.put("tags", funcInfo.get("tags"));
-                    compactInfo.put("caller_count", funcInfo.get("caller_count"));
-                compactInfo.put("callee_count", funcInfo.get("callee_count"));
+                    compactInfo.put("callerCount", funcInfo.get("callerCount"));
+                compactInfo.put("calleeCount", funcInfo.get("calleeCount"));
                 functionData.add(compactInfo);
             }
         }
@@ -1322,12 +1322,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> result = new HashMap<>();
         result.put("functions", functionData);
         result.put("query", query);
-        result.put("start_index", startIndex);
-        result.put("requested_count", maxCount);
-        result.put("actual_count", functionData.size());
-        result.put("next_start_index", startIndex + functionData.size());
-        result.put("total_count", totalCount);
-        result.put("filter_default_names", filterDefaultNames);
+        result.put("startIndex", startIndex);
+        result.put("requestedCount", maxCount);
+        result.put("actualCount", functionData.size());
+        result.put("nextStartIndex", startIndex + functionData.size());
+        result.put("totalCount", totalCount);
+        result.put("filterDefaultNames", filterDefaultNames);
         result.put("verbose", verbose);
         return createJsonResult(result);
     }
@@ -1338,7 +1338,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleListFunctionsSimilarity(Program program, String searchString, int startIndex, int maxCount,
             boolean filterDefaultNames, boolean verbose) {
         if (searchString.trim().isEmpty()) {
-            return createErrorResult("search_string cannot be empty");
+            return createErrorResult("searchString cannot be empty");
         }
 
         String programPath = program.getDomainFile().getPathname();
@@ -1437,10 +1437,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 Map<String, Object> compactInfo = new HashMap<>();
                 compactInfo.put("name", name);
                 compactInfo.put("address", funcInfo.get("address"));
-                compactInfo.put("size_in_bytes", funcInfo.get("size_in_bytes"));
+                compactInfo.put("sizeInBytes", funcInfo.get("sizeInBytes"));
                 compactInfo.put("tags", funcInfo.get("tags"));
-                    compactInfo.put("caller_count", funcInfo.get("caller_count"));
-                compactInfo.put("callee_count", funcInfo.get("callee_count"));
+                    compactInfo.put("callerCount", funcInfo.get("callerCount"));
+                compactInfo.put("calleeCount", funcInfo.get("calleeCount"));
                 compactInfo.put("similarity", Math.round(similarity * 100.0) / 100.0);
                 transformedResults.add(compactInfo);
             }
@@ -1451,18 +1451,22 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("matches", transformedResults);
-        result.put("search_string", searchString);
-        result.put("start_index", startIndex);
-        result.put("requested_count", maxCount);
-        result.put("actual_count", transformedResults.size());
-        result.put("next_start_index", startIndex + transformedResults.size());
-        result.put("total_matching_functions", reportedTotal);
-        result.put("filter_default_names", filterDefaultNames);
+        // When verbose is true, also include "functions" field for consistency with other modes
+        if (verbose) {
+            result.put("functions", transformedResults);
+        }
+        result.put("searchString", searchString);
+        result.put("startIndex", startIndex);
+        result.put("requestedCount", maxCount);
+        result.put("actualCount", transformedResults.size());
+        result.put("nextStartIndex", startIndex + transformedResults.size());
+        result.put("totalMatchingFunctions", reportedTotal);
+        result.put("filterDefaultNames", filterDefaultNames);
         result.put("verbose", verbose);
-        result.put("cache_hit", wasCacheHit);
+        result.put("cacheHit", wasCacheHit);
         if (resultsTruncated) {
-            result.put("results_truncated", true);
-            result.put("max_cached_results", MAX_CACHED_RESULTS_PER_SEARCH);
+            result.put("resultsTruncated", true);
+            result.put("maxCachedResults", MAX_CACHED_RESULTS_PER_SEARCH);
         }
         return createJsonResult(result);
     }
@@ -1581,17 +1585,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("programPath", program.getDomainFile().getPathname());
         result.put("candidates", candidatesList);
-        result.put("total_candidates", totalCandidates);
-        result.put("references_scanned", refsScanned);
+        result.put("totalCandidates", totalCandidates);
+        result.put("referencesScanned", refsScanned);
         if (earlyTermination) {
-            result.put("early_termination", true);
+            result.put("earlyTermination", true);
             result.put("note", "Scan stopped early due to memory limits. Results may be incomplete.");
         }
         result.put("pagination", Map.of(
-                "start_index", startIndex,
-                "max_candidates", maxCount,
+                "startIndex", startIndex,
+                "maxCandidates", maxCount,
                 "returnedCount", candidatesList.size(),
                 "hasMore", endIndex < totalCandidates
         ));
@@ -1644,9 +1648,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     Map<String, Object> compactInfo = new HashMap<>();
                     compactInfo.put("name", functionInfo.get("name"));
                     compactInfo.put("address", functionInfo.get("address"));
-                    compactInfo.put("size_in_bytes", functionInfo.get("size_in_bytes"));
+                    compactInfo.put("sizeInBytes", functionInfo.get("sizeInBytes"));
                     compactInfo.put("tags", functionInfo.get("tags"));
-                    compactInfo.put("caller_count", functionInfo.get("caller_count"));
+                    compactInfo.put("callerCount", functionInfo.get("callerCount"));
                     functions.add(compactInfo);
                 } else {
                     functions.add(functionInfo);
@@ -1657,7 +1661,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", programPath);
+        result.put("programPath", programPath);
         result.put("functions", functions);
         result.put("count", functions.size());
         result.put("verbose", verbose);
@@ -1672,7 +1676,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private void registerFunctionTagsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
                 "type", "string",
                 "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
@@ -1740,9 +1744,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
-                result.put("program_path", programPath);
+                result.put("programPath", programPath);
                 result.put("tags", tagInfoList);
-                result.put("total_tags", tagInfoList.size());
+                result.put("totalTags", tagInfoList.size());
 
                 return createJsonResult(result);
             }
@@ -1775,7 +1779,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
-                result.put("program_path", programPath);
+                result.put("programPath", programPath);
                 result.put("mode", mode);
                 result.put("function", function.getName());
                 result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
@@ -1877,7 +1881,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
-            result.put("program_path", programPath);
+            result.put("programPath", programPath);
             result.put("mode", mode);
             result.put("function", function.getName());
             result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
@@ -1930,7 +1934,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Build response for get mode
             Map<String, Object> resultData = new HashMap<>();
             resultData.put("success", true);
-            resultData.put("program_path", programPath);
+            resultData.put("programPath", programPath);
             resultData.put("mode", mode);
             resultData.put("total", functionList.size());
             resultData.put("succeeded", results.size());
@@ -2078,7 +2082,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
      */
     private void registerManageFunctionTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
                 "type", "string",
                 "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
@@ -2098,7 +2102,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 addressArraySchema
         ));
         properties.put("address", addressProperty);
-        properties.put("function_identifier", Map.of(
+        properties.put("functionIdentifier", Map.of(
                 "type", "string",
                 "description", "Function name(s) or address(es) for rename/modify operations. Can be a single string or an array of strings for batch operations (required for rename_function, rename_variable, set_prototype, set_variable_type, change_datatypes)"
         ));
@@ -2110,30 +2114,30 @@ public class FunctionToolProvider extends AbstractToolProvider {
         Map<String, Object> functionRenameItemSchema = new HashMap<>();
         functionRenameItemSchema.put("type", "object");
         Map<String, Object> functionRenameItemProperties = new HashMap<>();
-        functionRenameItemProperties.put("function_identifier", SchemaUtil.stringProperty("Function name or address to rename"));
+        functionRenameItemProperties.put("functionIdentifier", SchemaUtil.stringProperty("Function name or address to rename"));
         functionRenameItemProperties.put("name", SchemaUtil.stringProperty("New function name"));
         functionRenameItemSchema.put("properties", functionRenameItemProperties);
-        functionRenameItemSchema.put("required", List.of("function_identifier", "name"));
+        functionRenameItemSchema.put("required", List.of("functionIdentifier", "name"));
 
         Map<String, Object> functionsArraySchema = new HashMap<>();
         functionsArraySchema.put("type", "array");
-        functionsArraySchema.put("description", "Array of function rename objects for batch renaming. Each object should have 'function_identifier' (required) and 'name' (required). When provided with action='rename_function', renames multiple functions in a single transaction.");
+        functionsArraySchema.put("description", "Array of function rename objects for batch renaming. Each object should have 'functionIdentifier' (required) and 'name' (required). When provided with action='rename_function', renames multiple functions in a single transaction.");
         functionsArraySchema.put("items", functionRenameItemSchema);
         properties.put("functions", functionsArraySchema);
-        properties.put("old_name", Map.of(
+        properties.put("oldName", Map.of(
                 "type", "string",
                 "description", "Old variable name when action='rename_variable' (required for single variable rename)"
         ));
-        properties.put("new_name", Map.of(
+        properties.put("newName", Map.of(
                 "type", "string",
                 "description", "New variable name when action='rename_variable' (required for single variable rename)"
         ));
-        properties.put("variable_mappings", Map.of(
+        properties.put("variableMappings", Map.of(
                 "type", "string",
                 "description", "Mapping of old to new variable names when action='rename_variable' (format: 'oldName1:newName1,oldName2:newName2', required for multiple variables)"
         ));
         Map<String, Object> prototypeProperty = new HashMap<>();
-        prototypeProperty.put("description", "Function prototype/signature string(s) when action='set_prototype'. Can be a single string or an array of strings for batch operations (required for set_prototype). When function_identifier is an array, prototype must be an array of matching length.");
+        prototypeProperty.put("description", "Function prototype/signature string(s) when action='set_prototype'. Can be a single string or an array of strings for batch operations (required for set_prototype). When functionIdentifier is an array, prototype must be an array of matching length.");
         Map<String, Object> prototypeArraySchema = new HashMap<>();
         prototypeArraySchema.put("type", "array");
         prototypeArraySchema.put("items", Map.of("type", "string"));
@@ -2143,24 +2147,24 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 prototypeArraySchema
         ));
         properties.put("prototype", prototypeProperty);
-        properties.put("variable_name", Map.of(
+        properties.put("variableName", Map.of(
                 "type", "string",
                 "description", "Variable name when action='set_variable_type' (required for set_variable_type)"
         ));
-        properties.put("new_type", Map.of(
+        properties.put("newType", Map.of(
                 "type", "string",
                 "description", "New data type for variable when action='set_variable_type' (required for set_variable_type)"
         ));
-        properties.put("datatype_mappings", Map.of(
+        properties.put("datatypeMappings", Map.of(
                 "type", "string",
                 "description", "Mapping of variable names to new data type strings when action='change_datatypes' (format: 'varName1:type1,varName2:type2', required for change_datatypes)"
         ));
-        properties.put("archive_name", Map.of(
+        properties.put("archiveName", Map.of(
                 "type", "string",
                 "description", "Optional name of the data type archive to search for data types when action='change_datatypes' (optional, default: '')",
                 "default", ""
         ));
-        properties.put("create_if_not_exists", Map.of(
+        properties.put("createIfNotExists", Map.of(
                 "type", "boolean",
                 "description", "Create function if it doesn't exist when action='set_prototype' (default: true)",
                 "default", true
@@ -2170,17 +2174,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 "description", "When true, attempts to find the matching function in other open programs (via fingerprint) and apply the same change there automatically.",
                 "default", true
         ));
-        properties.put("propagate_program_paths", Map.of(
+        properties.put("propagateProgramPaths", Map.of(
                 "type", "array",
                 "description", "Optional list of programPath values to propagate changes to. If omitted and propagate=true, propagates to all open programs.",
                 "items", Map.of("type", "string")
         ));
-        properties.put("propagate_max_candidates", Map.of(
+        properties.put("propagateMaxCandidates", Map.of(
                 "type", "integer",
                 "description", "When ambiguous, include up to this many candidates in the response per target program (default: 10).",
                 "default", 10
         ));
-        properties.put("propagate_max_instructions", Map.of(
+        properties.put("propagateMaxInstructions", Map.of(
                 "type", "integer",
                 "description", "Number of instructions used for fingerprinting when propagating (default: 64).",
                 "default", FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS
@@ -2211,8 +2215,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         return handleManageFunctionCreate(program, request);
                     }
                     case "set_prototype" -> {
-                        // Check if function_identifier is an array (batch mode) - supports both camelCase and snake_case
-                        List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "function_identifier");
+                        // Check if functionIdentifier is an array (batch mode) - supports both camelCase and snake_case
+                        List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
                         if (functionIdentifierList.size() > 1 || (!functionIdentifierList.isEmpty() && functionIdentifierList.get(0) instanceof List)) {
                             List<?> batchList = functionIdentifierList.size() > 1 ? functionIdentifierList : (List<?>) functionIdentifierList.get(0);
                             return handleBatchManageFunctionSetPrototype(program, request, batchList);
@@ -2319,10 +2323,10 @@ public class FunctionToolProvider extends AbstractToolProvider {
             // Build response
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
-            result.put("program_path", programPath);
+            result.put("programPath", programPath);
             result.put("function", createFunctionInfo(createdFunc, null));
             result.put("address", AddressUtil.formatAddress(address));
-            result.put("name_was_provided", name != null && !name.isEmpty());
+            result.put("nameWasProvided", name != null && !name.isEmpty());
 
             return createJsonResult(result);
 
@@ -2423,7 +2427,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     result.put("index", i);
                     result.put("address", AddressUtil.formatAddress(address));
                     result.put("function", createFunctionInfo(createdFunc, null));
-                    result.put("name_was_provided", name != null && !name.isEmpty());
+                    result.put("nameWasProvided", name != null && !name.isEmpty());
                     results.add(result);
                 } catch (Exception e) {
                     errors.add(Map.of("index", i, "address", addressList.get(i).toString(), "error", "Exception: " + e.getMessage()));
@@ -2435,7 +2439,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("program_path", programPath);
+            response.put("programPath", programPath);
             response.put("total", addressList.size());
             response.put("created", results.size());
             response.put("failed", errors.size());
@@ -2456,21 +2460,21 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle manage-function action='set_prototype' - set function prototype
      */
     private McpSchema.CallToolResult handleManageFunctionSetPrototype(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when action='set_prototype'");
+            return createErrorResult("functionIdentifier is required when action='set_prototype'");
         }
 
         String signature = getString(request, "prototype");
-        boolean createIfNotExists = getOptionalBoolean(request, "create_if_not_exists", true);
+        boolean createIfNotExists = getOptionalBoolean(request, "createIfNotExists", true);
 
         // Normalize signature to handle whitespace issues
         String normalizedSignature = normalizeFunctionSignature(signature);
 
-        // Resolve the address from function_identifier
+        // Resolve the address from functionIdentifier
         Address address;
         try {
-            address = getAddressFromArgs(request, program, "function_identifier");
+            address = getAddressFromArgs(request, program, "functionIdentifier");
         } catch (IllegalArgumentException e) {
             return createErrorResult("Invalid address or symbol: " + functionIdentifier + ": " + e.getMessage());
         }
@@ -2586,6 +2590,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             }
 
             program.endTransaction(txId, true);
+            txId = -1; // Mark transaction as closed to prevent double-close in catch block
 
             // Auto-save the program to persist changes
             autoSaveProgram(program, "Set function prototype");
@@ -2596,9 +2601,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
             result.put("created", existingFunction == null);
             result.put("function", createFunctionInfo(function, null));
             result.put("address", AddressUtil.formatAddress(address));
-            result.put("parsed_signature", functionDef.toString());
-            result.put("custom_storage_enabled", needsCustomStorage && !wasUsingCustomStorage);
-            result.put("using_custom_storage", function.hasCustomVariableStorage());
+            result.put("parsedSignature", functionDef.toString());
+            result.put("customStorageEnabled", needsCustomStorage && !wasUsingCustomStorage);
+            result.put("usingCustomStorage", function.hasCustomVariableStorage());
 
             boolean propagate = getOptionalBoolean(request, "propagate", true);
             if (propagate) {
@@ -2610,12 +2615,26 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
         } catch (OverlappingFunctionException | DuplicateNameException | InvalidInputException e) {
             program.endTransaction(txId, false);
-            return createErrorResult("Failed to set function prototype: " + e.getMessage());
+            String errorMsg = e.getMessage();
+            if (errorMsg == null || errorMsg.isEmpty()) {
+                errorMsg = e.getClass().getSimpleName();
+            }
+            return createErrorResult("Failed to set function prototype: " + errorMsg);
+        } catch (Exception e) {
+            if (txId >= 0) {
+                program.endTransaction(txId, false);
+            }
+            String errorMsg = e.getMessage();
+            if (errorMsg == null || errorMsg.isEmpty()) {
+                errorMsg = e.getClass().getSimpleName();
+            }
+            logError("Unexpected error in set_prototype", e);
+            return createErrorResult("Failed to set function prototype: " + errorMsg);
         }
     }
 
     /**
-     * Handle batch setting of function prototypes when function_identifier is
+     * Handle batch setting of function prototypes when functionIdentifier is
      * an array
      */
     private McpSchema.CallToolResult handleBatchManageFunctionSetPrototype(Program program, CallToolRequest request, List<?> functionIdentifierList) {
@@ -2623,16 +2642,16 @@ public class FunctionToolProvider extends AbstractToolProvider {
         List<Object> prototypeListObj = getParameterAsList(request.arguments(), "prototype");
         Object prototypeValue = prototypeListObj.size() == 1 ? prototypeListObj.get(0) : prototypeListObj;
         if (!(prototypeValue instanceof List)) {
-            return createErrorResult("When function_identifier is an array, prototype must also be an array of the same length");
+            return createErrorResult("When functionIdentifier is an array, prototype must also be an array of the same length");
         }
         List<?> prototypeList = (List<?>) prototypeValue;
 
         if (functionIdentifierList.size() != prototypeList.size()) {
-            return createErrorResult("function_identifier array and prototype array must have the same length. Got "
+            return createErrorResult("functionIdentifier array and prototype array must have the same length. Got "
                     + functionIdentifierList.size() + " identifiers and " + prototypeList.size() + " prototypes");
         }
 
-        boolean createIfNotExists = getOptionalBoolean(request, "create_if_not_exists", true);
+        boolean createIfNotExists = getOptionalBoolean(request, "createIfNotExists", true);
         String programPath = program.getDomainFile().getPathname();
         int txId = program.startTransaction("Batch Set Function Prototypes");
         List<Map<String, Object>> results = new ArrayList<>();
@@ -2647,13 +2666,13 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     // Temporarily modify request arguments for single function call
                     Map<String, Object> originalArgs = request.arguments();
                     // Use getParameterValue to support both camelCase and snake_case for save/restore
-                    Object originalFunctionId = getParameterValue(originalArgs, "function_identifier");
+                    Object originalFunctionId = getParameterValue(originalArgs, "functionIdentifier");
                     Object originalPrototype = getParameterValue(originalArgs, "prototype");
                     Object originalPropagate = getParameterValue(originalArgs, "propagate");
 
                     try {
-                        // Set single function arguments (use snake_case for consistency, handler supports both via getParameterValue)
-                        originalArgs.put("function_identifier", functionIdentifier);
+                        // Set single function arguments (use camelCase, handler supports both via getParameterValue)
+                        originalArgs.put("functionIdentifier", functionIdentifier);
                         originalArgs.put("prototype", prototypeStr);
                         originalArgs.put("createIfNotExists", createIfNotExists);
                         originalArgs.put("propagate", false); // Disable propagation in batch mode
@@ -2663,7 +2682,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
                         if (singleResult.isError()) {
                             String errorMsg = extractTextFromContent(singleResult.content().get(0));
-                            errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", errorMsg));
+                            errors.add(Map.of("index", i, "functionIdentifier", functionIdentifier, "error", errorMsg));
                             continue;
                         }
 
@@ -2671,7 +2690,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         Map<String, Object> resultData = extractJsonDataFromResult(singleResult);
                         Map<String, Object> result = new HashMap<>();
                         result.put("index", i);
-                        result.put("function_identifier", functionIdentifier);
+                        result.put("functionIdentifier", functionIdentifier);
                         if (resultData != null && !resultData.isEmpty()) {
                             if (resultData.containsKey("function")) {
                                 result.put("function", resultData.get("function"));
@@ -2687,9 +2706,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     } finally {
                         // Restore original arguments
                         if (originalFunctionId != null) {
-                            originalArgs.put("function_identifier", originalFunctionId);
+                            originalArgs.put("functionIdentifier", originalFunctionId);
                         } else {
-                            originalArgs.remove("function_identifier");
+                            originalArgs.remove("functionIdentifier");
                         }
                         if (originalPrototype != null) {
                             originalArgs.put("prototype", originalPrototype);
@@ -2703,7 +2722,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         }
                     }
                 } catch (Exception e) {
-                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(),
+                    errors.add(Map.of("index", i, "functionIdentifier", functionIdentifierList.get(i).toString(),
                             "error", "Exception: " + e.getMessage()));
                 }
             }
@@ -2713,7 +2732,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("program_path", programPath);
+            response.put("programPath", programPath);
             response.put("total", functionIdentifierList.size());
             response.put("succeeded", results.size());
             response.put("failed", errors.size());
@@ -2759,14 +2778,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
     private Map<String, Object> propagatePrototypeAcrossOpenPrograms(Program sourceProgram, Function sourceFunction,
             String normalizedSignature, CallToolRequest request) {
-        int maxCandidates = getOptionalInt(request, "propagate_max_candidates", 10);
+        int maxCandidates = getOptionalInt(request, "propagateMaxCandidates", 10);
         if (maxCandidates <= 0) {
             maxCandidates = 10;
         }
         if (maxCandidates > 50) {
             maxCandidates = 50;
         }
-        int maxInstructions = getOptionalInt(request, "propagate_max_instructions",
+        int maxInstructions = getOptionalInt(request, "propagateMaxInstructions",
                 FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
 
         String fingerprint = FunctionFingerprintUtil.computeFingerprint(sourceProgram, sourceFunction, maxInstructions);
@@ -2774,7 +2793,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             return Map.of("success", false, "error", "Failed to compute fingerprint for propagation");
         }
 
-        List<String> targetPaths = getOptionalStringList(request.arguments(), "propagate_program_paths", null);
+        List<String> targetPaths = getOptionalStringList(request.arguments(), "propagateProgramPaths", null);
         List<Program> targets = resolveTargetProgramsForMatching(targetPaths);
 
         List<Map<String, Object>> applied = new ArrayList<>();
@@ -2788,7 +2807,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     = FunctionFingerprintUtil.findMatches(target, fingerprint, maxInstructions);
 
             if (matches.isEmpty()) {
-                applied.add(Map.of("program_path", targetPath, "status", "no_match"));
+                applied.add(Map.of("programPath", targetPath, "status", "noMatch"));
                 continue;
             }
             if (matches.size() != 1) {
@@ -2804,7 +2823,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 applied.add(Map.of(
                         "programPath", targetPath,
                         "status", "ambiguous",
-                        "match_count", matches.size(),
+                        "matchCount", matches.size(),
                         "candidates", candidates,
                         "truncated", matches.size() > limit
                 ));
@@ -2814,8 +2833,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
             FunctionFingerprintUtil.Candidate match = matches.get(0);
             Address addr = match.entryPoint();
 
-            Map<String, Object> one = applyPrototypeToFunctionAtAddress(target, addr, normalizedSignature);
-            one.put("program_path", targetPath);
+            Map<String, Object> one = new HashMap<>(applyPrototypeToFunctionAtAddress(target, addr, normalizedSignature));
+            one.put("programPath", targetPath);
             applied.add(one);
         }
 
@@ -2926,17 +2945,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * variables Requires decompiler infrastructure for variable operations
      */
     private McpSchema.CallToolResult handleManageFunctionRenameVariable(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when action='rename_variable'");
+            return createErrorResult("functionIdentifier is required when action='rename_variable'");
         }
 
         // Parse variable_mappings string (format: "oldName1:newName1,oldName2:newName2")
         // or use old_name/new_name for single variable
         Map<String, String> mappings = new HashMap<>();
-        String variableMappings = getOptionalString(request, "variable_mappings", null);
-        String oldName = getOptionalString(request, "old_name", null);
-        String newName = getOptionalString(request, "new_name", null);
+        String variableMappings = getOptionalString(request, "variableMappings", null);
+        String oldName = getOptionalString(request, "oldName", null);
+        String newName = getOptionalString(request, "newName", null);
 
         if (variableMappings != null && !variableMappings.trim().isEmpty()) {
             // Parse comma-separated key:value pairs
@@ -3084,14 +3103,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * types
      */
     private McpSchema.CallToolResult handleManageFunctionChangeDatatypes(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when action='change_datatypes'");
+            return createErrorResult("functionIdentifier is required when action='change_datatypes'");
         }
 
-        // Parse datatype_mappings string (format: "varName1:type1,varName2:type2")
-        String datatypeMappings = getString(request, "datatype_mappings");
-        String archiveName = getOptionalString(request, "archive_name", "");
+        // Parse datatypeMappings string (format: "varName1:type1,varName2:type2")
+        String datatypeMappings = getString(request, "datatypeMappings");
+        String archiveName = getOptionalString(request, "archiveName", "");
 
         Map<String, String> mappings = new HashMap<>();
         if (datatypeMappings != null && !datatypeMappings.trim().isEmpty()) {
@@ -3105,7 +3124,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         if (mappings.isEmpty()) {
-            return createErrorResult("datatype_mappings (format: 'varName1:type1,varName2:type2') is required when action='change_datatypes'");
+            return createErrorResult("No datatype mappings provided. datatypeMappings (format: 'varName1:type1,varName2:type2') is required when action='change_datatypes'");
         }
 
         // Get function
@@ -3252,8 +3271,8 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * Handle manage-function action='rename_function' - rename a function
      */
     private McpSchema.CallToolResult handleManageFunctionRenameFunction(Program program, CallToolRequest request) {
-        // Check if function_identifier is an array (batch mode) - supports both camelCase and snake_case
-        List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "function_identifier");
+        // Check if functionIdentifier is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
         if (functionIdentifierList.isEmpty()) {
             functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
         }
@@ -3263,9 +3282,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
 
         // Single function mode
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when action='rename_function'");
+            return createErrorResult("functionIdentifier is required when action='rename_function'");
         }
 
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
@@ -3281,8 +3300,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
             return createErrorResult("Function not found: " + e.getMessage() + " in program " + program.getName());
         }
 
-        // Auto-label new name if not provided (controlled by environment variable)
-        if (autoLabel && (newName == null || newName.trim().isEmpty())) {
+        // Check if name is provided first - if not, return error immediately
+        // Auto-label is only used if name is explicitly provided as empty string
+        if (newName == null) {
+            return createErrorResult("name is required when action='rename_function'");
+        }
+
+        // Auto-label new name if provided but empty (controlled by environment variable)
+        if (autoLabel && newName.trim().isEmpty()) {
             List<Map<String, Object>> suggestions = reva.util.SmartSuggestionsUtil.suggestFunctionNames(program, function);
             if (!suggestions.isEmpty()) {
                 newName = (String) suggestions.get(0).get("name");
@@ -3324,9 +3349,9 @@ public class FunctionToolProvider extends AbstractToolProvider {
         // Build result
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("old_name", oldName);
-        result.put("new_name", newName.trim());
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("oldName", oldName);
+        result.put("newName", newName.trim());
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
         result.put("function", createFunctionInfo(function, null));
 
@@ -3342,14 +3367,14 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
     private Map<String, Object> propagateRenameAcrossOpenPrograms(Program sourceProgram, Function sourceFunction,
             String newName, CallToolRequest request) {
-        int maxCandidates = getOptionalInt(request, "propagate_max_candidates", 10);
+        int maxCandidates = getOptionalInt(request, "propagateMaxCandidates", 10);
         if (maxCandidates <= 0) {
             maxCandidates = 10;
         }
         if (maxCandidates > 50) {
             maxCandidates = 50;
         }
-        int maxInstructions = getOptionalInt(request, "propagate_max_instructions",
+        int maxInstructions = getOptionalInt(request, "propagateMaxInstructions",
                 FunctionFingerprintUtil.DEFAULT_MAX_INSTRUCTIONS);
 
         String fingerprint = FunctionFingerprintUtil.computeFingerprint(sourceProgram, sourceFunction, maxInstructions);
@@ -3360,7 +3385,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             );
         }
 
-        List<String> targetPaths = getOptionalStringList(request.arguments(), "propagate_program_paths", null);
+        List<String> targetPaths = getOptionalStringList(request.arguments(), "propagateProgramPaths", null);
         List<Program> targets = resolveTargetProgramsForMatching(targetPaths);
 
         List<Map<String, Object>> applied = new ArrayList<>();
@@ -3376,7 +3401,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
             if (matches.isEmpty()) {
                 applied.add(Map.of(
                         "programPath", targetPath,
-                        "status", "no_match"
+                        "status", "noMatch"
                 ));
                 continue;
             }
@@ -3393,7 +3418,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                 applied.add(Map.of(
                         "programPath", targetPath,
                         "status", "ambiguous",
-                        "match_count", matches.size(),
+                        "matchCount", matches.size(),
                         "candidates", candidates,
                         "truncated", matches.size() > limit
                 ));
@@ -3467,7 +3492,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
 
     /**
      * Handle batch renaming of multiple functions from arrays of
-     * function_identifier and name
+     * functionIdentifier and name
      */
     private McpSchema.CallToolResult handleBatchRenameFunctionsFromArrays(Program program,
             CallToolRequest request,
@@ -3493,7 +3518,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         args.put("functionNameOrAddress", functionIdentifier);
                         function = getFunctionFromArgs(args, program);
                     } catch (IllegalArgumentException e) {
-                        errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", "Function not found: " + e.getMessage()));
+                        errors.add(Map.of("index", i, "functionIdentifier", functionIdentifier, "error", "Function not found: " + e.getMessage()));
                         continue;
                     }
 
@@ -3511,31 +3536,31 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     }
 
                     if (newName == null || newName.trim().isEmpty()) {
-                        errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", "No name provided and auto-labeling failed"));
+                        errors.add(Map.of("index", i, "functionIdentifier", functionIdentifier, "error", "No name provided and auto-labeling failed"));
                         continue;
                     }
 
                     String oldName = function.getName();
                     if (oldName.equals(newName)) {
-                        errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", "Function already has name: " + newName));
+                        errors.add(Map.of("index", i, "functionIdentifier", functionIdentifier, "error", "Function already has name: " + newName));
                         continue;
                     }
 
                     function.setName(newName.trim(), SourceType.USER_DEFINED);
                     results.add(Map.of(
                             "index", i,
-                            "function_identifier", functionIdentifier,
+                            "functionIdentifier", functionIdentifier,
                             "oldName", oldName,
                             "newName", newName,
                             "address", AddressUtil.formatAddress(function.getEntryPoint()),
                             "success", true
                     ));
                 } catch (DuplicateNameException e) {
-                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), "error", "Function name already exists"));
+                    errors.add(Map.of("index", i, "functionIdentifier", functionIdentifierList.get(i).toString(), "error", "Function name already exists"));
                 } catch (InvalidInputException e) {
-                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), "error", "Invalid function name: " + e.getMessage()));
+                    errors.add(Map.of("index", i, "functionIdentifier", functionIdentifierList.get(i).toString(), "error", "Invalid function name: " + e.getMessage()));
                 } catch (Exception e) {
-                    errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), "error", e.getMessage()));
+                    errors.add(Map.of("index", i, "functionIdentifier", functionIdentifierList.get(i).toString(), "error", e.getMessage()));
                 }
             }
 
@@ -3563,20 +3588,20 @@ public class FunctionToolProvider extends AbstractToolProvider {
      * variable's data type
      */
     private McpSchema.CallToolResult handleManageFunctionSetVariableType(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when action='set_variable_type'");
+            return createErrorResult("functionIdentifier is required when action='set_variable_type'");
         }
 
-        String variableName = getOptionalString(request, "variable_name", null);
+        String variableName = getOptionalString(request, "variableName", null);
         if (variableName == null || variableName.trim().isEmpty()) {
-            return createErrorResult("variable_name is required when action='set_variable_type'");
+            return createErrorResult("variableName is required when action='set_variable_type'");
         }
 
-        String newType = getOptionalString(request, "new_type", null);
+        String newType = getOptionalString(request, "newType", null);
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
 
-        String archiveName = getOptionalString(request, "archive_name", "");
+        String archiveName = getOptionalString(request, "archiveName", "");
 
         // Get function first (needed for auto-label)
         Function function;
@@ -3599,12 +3624,12 @@ public class FunctionToolProvider extends AbstractToolProvider {
             Address varAddress = AddressUtil.resolveAddressOrSymbol(program, variableName);
             if (varAddress != null) {
                 Map<String, Object> suggestion = reva.util.SmartSuggestionsUtil.suggestDataType(program, function, varAddress);
-                newType = (String) suggestion.get("data_type");
+                newType = (String) suggestion.get("dataType");
             }
         }
 
         if (newType == null || newType.trim().isEmpty()) {
-            return createErrorResult("new_type is required when action='set_variable_type'");
+            return createErrorResult("newType is required when action='set_variable_type'");
         }
 
         // Initialize decompiler
@@ -3678,7 +3703,7 @@ public class FunctionToolProvider extends AbstractToolProvider {
         resultData.put("programName", program.getName());
         resultData.put("functionName", function.getName());
         resultData.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-        resultData.put("variable_name", variableName);
+        resultData.put("variableName", variableName);
         resultData.put("newType", newType);
         resultData.put("typeChanged", true);
 

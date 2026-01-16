@@ -156,11 +156,11 @@ public class DecompilationDiffUtil {
             int snippetEnd = Math.min(Math.max(beforeLines.length, afterLines.length), lastChangeLine + contextLines);
             
             Map<String, Object> snippet = new HashMap<>();
-            snippet.put("start_line", snippetStart);
-            snippet.put("end_line", snippetEnd);
-            snippet.put("before_content", extractLines(beforeLines, snippetStart, snippetEnd));
-            snippet.put("after_content", extractLines(afterLines, snippetStart, snippetEnd));
-            snippet.put("changed_lines", group.stream().mapToInt(ChangedLine::getLineNumber).toArray());
+            snippet.put("startLine", snippetStart);
+            snippet.put("endLine", snippetEnd);
+            snippet.put("beforeContent", extractLines(beforeLines, snippetStart, snippetEnd));
+            snippet.put("afterContent", extractLines(afterLines, snippetStart, snippetEnd));
+            snippet.put("changedLines", group.stream().mapToInt(ChangedLine::getLineNumber).toArray());
             
             snippets.add(snippet);
         }
@@ -243,9 +243,9 @@ public class DecompilationDiffUtil {
      */
     public static Map<String, Object> toMap(DiffResult diffResult) {
         Map<String, Object> result = new HashMap<>();
-        result.put("has_changes", diffResult.hasChanges());
+        result.put("hasChanges", diffResult.hasChanges());
         result.put("summary", diffResult.getDiffSummary());
-        result.put("changed_line_count", diffResult.getChangedLines().size());
+        result.put("changedLineCount", diffResult.getChangedLines().size());
         result.put("snippets", diffResult.getSnippets());
         
         return result;

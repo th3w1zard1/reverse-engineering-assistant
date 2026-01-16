@@ -54,9 +54,13 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
 
         int txId = program.startTransaction("Create Test Function");
         try {
-            testFunction = functionManager.createFunction("testFunction", functionAddr,
-                new AddressSet(functionAddr, functionAddr.add(20)),
-                SourceType.USER_DEFINED);
+            try {
+                testFunction = functionManager.createFunction("testFunction", functionAddr,
+                    new AddressSet(functionAddr, functionAddr.add(20)),
+                    SourceType.USER_DEFINED);
+            } catch (ghidra.util.exception.InvalidInputException | ghidra.program.database.function.OverlappingFunctionException e) {
+                fail("Failed to create testFunction: " + e.getMessage());
+            }
         } finally {
             program.endTransaction(txId, true);
         }
@@ -83,7 +87,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "decompile");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -108,7 +112,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "info");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -132,7 +136,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "disassemble");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -154,7 +158,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "testFunction");
             arguments.put("view", "calls");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -176,7 +180,7 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             arguments.put("identifier", "0x01000100");
             arguments.put("view", "info");
 
-            CallToolResult result = client.callTool(new CallToolRequest("get-function", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
 
             assertNotNull("Result should not be null", result);
             assertMcpResultNotError(result, "Result should not be an error");
@@ -185,6 +189,146 @@ public class GetFunctionToolProviderIntegrationTest extends RevaIntegrationTestB
             JsonNode json = parseJsonContent(content.text());
 
             assertEquals("testFunction", json.get("name").asText());
+        });
+    }
+
+    @Test
+    public void testGetFunctionsBatchOperations() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Create additional function
+            Address funcAddr2 = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000200);
+            int txId = program.startTransaction("Create second function");
+            try {
+                FunctionManager funcManager = program.getFunctionManager();
+                try {
+                    funcManager.createFunction("testFunction2", funcAddr2,
+                        new AddressSet(funcAddr2, funcAddr2.add(20)), SourceType.USER_DEFINED);
+                } catch (ghidra.util.exception.InvalidInputException | ghidra.program.database.function.OverlappingFunctionException e) {
+                    fail("Failed to create testFunction2: " + e.getMessage());
+                }
+            } finally {
+                program.endTransaction(txId, true);
+            }
+
+            // Test batch get with array of identifiers
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("identifier", java.util.Arrays.asList("testFunction", "testFunction2"));
+            arguments.put("view", "info");
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            // Batch operations return "results" not "functions"
+            assertTrue("Result should contain results or functions array", 
+                json.has("results") || json.has("functions"));
+            JsonNode results = json.has("results") ? json.get("results") : json.get("functions");
+            assertTrue("Should have at least 2 results", results.size() >= 2);
+        });
+    }
+
+    @Test
+    public void testGetFunctionsAllFunctions() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test getting all functions (identifier omitted)
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            // identifier omitted to get all functions
+            arguments.put("view", "info");
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain functions array", json.has("functions"));
+            JsonNode functions = json.get("functions");
+            assertTrue("Should have at least testFunction", functions.size() >= 1);
+        });
+    }
+
+    @Test
+    public void testGetFunctionsDecompileViewWithAllOptions() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("identifier", "testFunction");
+            arguments.put("view", "decompile");
+            arguments.put("offset", 1);
+            arguments.put("limit", 10);
+            arguments.put("includeCallers", true);
+            arguments.put("includeCallees", true);
+            arguments.put("includeComments", true);
+            arguments.put("includeIncomingReferences", true);
+            arguments.put("includeReferenceContext", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain decompiledCode or code field",
+                json.has("decompiledCode") || json.has("code"));
+        });
+    }
+
+    @Test
+    public void testGetFunctionsPagination() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test decompile view with pagination
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("identifier", "testFunction");
+            arguments.put("view", "decompile");
+            arguments.put("offset", 1);
+            arguments.put("limit", 5);
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertNotNull("Result should have valid JSON structure", json);
+        });
+    }
+
+    @Test
+    public void testGetFunctionsValidatesProgramState() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("identifier", "testFunction");
+            arguments.put("view", "info");
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-functions", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+
+            // Verify function info matches actual program state
+            FunctionManager funcManager = program.getFunctionManager();
+            Function actualFunc = funcManager.getFunctionAt(testFunction.getEntryPoint());
+            assertNotNull("Function should exist in program", actualFunc);
+            assertEquals("Function name should match", "testFunction", actualFunc.getName());
+            assertEquals("Function name in result should match", "testFunction", json.get("name").asText());
         });
     }
 }

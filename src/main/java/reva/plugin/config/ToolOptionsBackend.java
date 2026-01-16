@@ -30,7 +30,6 @@ import ghidra.util.bean.opteditor.OptionsVetoException;
  */
 public class ToolOptionsBackend implements ConfigurationBackend, OptionsChangeListener {
 
-    private final PluginTool tool;
     private final ToolOptions toolOptions;
     private final Set<ConfigurationBackendListener> listeners = ConcurrentHashMap.newKeySet();
 
@@ -40,7 +39,6 @@ public class ToolOptionsBackend implements ConfigurationBackend, OptionsChangeLi
      * @param category The options category (e.g., "ReVa Server Options")
      */
     public ToolOptionsBackend(PluginTool tool, String category) {
-        this.tool = tool;
         this.toolOptions = tool.getOptions(category);
 
         // Register as listener for Ghidra's option changes

@@ -157,11 +157,11 @@ public class GetFunctionToolProviderTest {
         // Valid optional parameters
         args.put("offset", 1);
         args.put("limit", 50);
-        args.put("include_callers", false);
-        args.put("include_callees", false);
-        args.put("include_comments", false);
-        args.put("include_incoming_references", true);
-        args.put("include_reference_context", true);
+        args.put("includeCallers", false);
+        args.put("includeCallees", false);
+        args.put("includeComments", false);
+        args.put("includeIncomingReferences", true);
+        args.put("includeReferenceContext", true);
 
         try {
             validateDecompileViewArgs(args);
@@ -172,11 +172,11 @@ public class GetFunctionToolProviderTest {
         // Test default values
         args.remove("offset");
         args.remove("limit");
-        args.remove("include_callers");
-        args.remove("include_callees");
-        args.remove("include_comments");
-        args.remove("include_incoming_references");
-        args.remove("include_reference_context");
+        args.remove("includeCallers");
+        args.remove("includeCallees");
+        args.remove("includeComments");
+        args.remove("includeIncomingReferences");
+        args.remove("includeReferenceContext");
 
         try {
             validateDecompileViewArgsWithDefaults(args);
@@ -245,16 +245,16 @@ public class GetFunctionToolProviderTest {
         if ("decompile".equals(view)) {
             int offset = args.get("offset") != null ? (Integer) args.get("offset") : 1;
             int limit = args.get("limit") != null ? (Integer) args.get("limit") : 50;
-            boolean includeCallers = args.get("include_callers") != null ?
-                (Boolean) args.get("include_callers") : false;
-            boolean includeCallees = args.get("include_callees") != null ?
-                (Boolean) args.get("include_callees") : false;
-            boolean includeComments = args.get("include_comments") != null ?
-                (Boolean) args.get("include_comments") : false;
-            boolean includeIncomingRefs = args.get("include_incoming_references") != null ?
-                (Boolean) args.get("include_incoming_references") : true;
-            boolean includeRefContext = args.get("include_reference_context") != null ?
-                (Boolean) args.get("include_reference_context") : true;
+            boolean includeCallers = args.get("includeCallers") != null ?
+                (Boolean) args.get("includeCallers") : false;
+            boolean includeCallees = args.get("includeCallees") != null ?
+                (Boolean) args.get("includeCallees") : false;
+            boolean includeComments = args.get("includeComments") != null ?
+                (Boolean) args.get("includeComments") : false;
+            boolean includeIncomingRefs = args.get("includeIncomingReferences") != null ?
+                (Boolean) args.get("includeIncomingReferences") : true;
+            boolean includeRefContext = args.get("includeReferenceContext") != null ?
+                (Boolean) args.get("includeReferenceContext") : true;
 
             // Verify defaults match spec
             assertEquals("Default offset should be 1", 1, offset);

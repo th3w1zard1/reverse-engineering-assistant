@@ -55,18 +55,18 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     private void registerManageDataTypesTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of("type", "string", "description", "Path to the program in the Ghidra Project"));
+        properties.put("programPath", Map.of("type", "string", "description", "Path to the program in the Ghidra Project"));
         properties.put("action", Map.of(
             "type", "string",
             "description", "Action to perform: 'archives', 'list', 'by_string', 'apply'",
             "enum", List.of("archives", "list", "by_string", "apply")
         ));
-        properties.put("archive_name", Map.of("type", "string", "description", "Name of the data type archive when action='list', 'by_string', or 'apply'"));
-        properties.put("category_path", Map.of("type", "string", "description", "Path to category to list data types from when action='list'", "default", "/"));
-        properties.put("include_subcategories", Map.of("type", "boolean", "description", "Whether to include data types from subcategories when action='list'", "default", false));
-        properties.put("start_index", Map.of("type", "integer", "description", "Starting index for pagination when action='list'", "default", 0));
-        properties.put("max_count", Map.of("type", "integer", "description", "Maximum number of data types to return when action='list'", "default", 100));
-        properties.put("data_type_string", Map.of("type", "string", "description", "String representation of the data type when action='by_string' or 'apply'"));
+        properties.put("archiveName", Map.of("type", "string", "description", "Name of the data type archive when action='list', 'by_string', or 'apply'"));
+        properties.put("categoryPath", Map.of("type", "string", "description", "Path to category to list data types from when action='list'", "default", "/"));
+        properties.put("includeSubcategories", Map.of("type", "boolean", "description", "Whether to include data types from subcategories when action='list'", "default", false));
+        properties.put("startIndex", Map.of("type", "integer", "description", "Starting index for pagination when action='list'", "default", 0));
+        properties.put("maxCount", Map.of("type", "integer", "description", "Maximum number of data types to return when action='list'", "default", 100));
+        properties.put("dataTypeString", Map.of("type", "string", "description", "String representation of the data type when action='by_string' or 'apply'"));
         Map<String, Object> addressOrSymbolProperty = new HashMap<>();
         addressOrSymbolProperty.put("type", "string");
         addressOrSymbolProperty.put("description", "Address or symbol name to apply the data type to. Can be a single string or an array of strings for batch operations when action='apply'.");
@@ -78,9 +78,9 @@ public class DataTypeToolProvider extends AbstractToolProvider {
             Map.of("type", "string"),
             addressOrSymbolArraySchema
         ));
-        properties.put("address_or_symbol", addressOrSymbolProperty);
+        properties.put("addressOrSymbol", addressOrSymbolProperty);
 
-        List<String> required = List.of("program_path", "action");
+        List<String> required = List.of("programPath", "action");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("manage-data-types")
@@ -129,9 +129,9 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         archiveInfo.put("name", dtm.getName());
         archiveInfo.put("type", "PROGRAM");
         archiveInfo.put("id", dtm.getUniversalID() != null ? dtm.getUniversalID().getValue() : null);
-        archiveInfo.put("data_type_count", dtm.getDataTypeCount(true));
-        archiveInfo.put("category_count", dtm.getCategoryCount());
-        archiveInfo.put("program_path", targetProgram.getDomainFile().getPathname());
+        archiveInfo.put("dataTypeCount", dtm.getDataTypeCount(true));
+        archiveInfo.put("categoryCount", dtm.getCategoryCount());
+        archiveInfo.put("programPath", targetProgram.getDomainFile().getPathname());
         archivesData.add(archiveInfo);
 
         List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
@@ -144,9 +144,9 @@ public class DataTypeToolProvider extends AbstractToolProvider {
             programArchiveInfo.put("name", programDtm.getName());
             programArchiveInfo.put("type", "PROGRAM");
             programArchiveInfo.put("id", programDtm.getUniversalID() != null ? programDtm.getUniversalID().getValue() : null);
-            programArchiveInfo.put("data_type_count", programDtm.getDataTypeCount(true));
-            programArchiveInfo.put("category_count", programDtm.getCategoryCount());
-            programArchiveInfo.put("program_path", program.getDomainFile().getPathname());
+            programArchiveInfo.put("dataTypeCount", programDtm.getDataTypeCount(true));
+            programArchiveInfo.put("categoryCount", programDtm.getCategoryCount());
+            programArchiveInfo.put("programPath", program.getDomainFile().getPathname());
             archivesData.add(programArchiveInfo);
         }
 
@@ -183,14 +183,14 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleListAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program targetProgram = getProgramFromArgs(request);
-        String archiveName = getOptionalString(request, "archive_name", null);
+        String archiveName = getOptionalString(request, "archiveName", null);
         if (archiveName == null) {
-            return createErrorResult("archive_name is required for action='list'");
+            return createErrorResult("archiveName is required for action='list'");
         }
-        String categoryPath = getOptionalString(request, "category_path", "/");
-        boolean includeSubcategories = getOptionalBoolean(request, "include_subcategories", getOptionalBoolean(request, "includeSubcategories", false));
-        int startIndex = getOptionalInt(request, "start_index", 0);
-        int maxCount = getOptionalInt(request, "max_count", 100);
+        String categoryPath = getOptionalString(request, "categoryPath", "/");
+        boolean includeSubcategories = getOptionalBoolean(request, "includeSubcategories", false);
+        int startIndex = getOptionalInt(request, "startIndex", 0);
+        int maxCount = getOptionalInt(request, "maxCount", 100);
 
         String programPath = targetProgram.getDomainFile().getPathname();
         DataTypeManager dtm = DataTypeParserUtil.findDataTypeManager(archiveName, programPath);
@@ -228,22 +228,22 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("archiveName", archiveName);
-        result.put("category_path", categoryPath);
-        result.put("include_subcategories", includeSubcategories);
-        result.put("start_index", startIndex);
-        result.put("total_count", dataTypes.size());
-        result.put("returned_count", dataTypesData.size());
+        result.put("categoryPath", categoryPath);
+        result.put("includeSubcategories", includeSubcategories);
+        result.put("startIndex", startIndex);
+        result.put("totalCount", dataTypes.size());
+        result.put("returnedCount", dataTypesData.size());
         result.put("dataTypes", dataTypesData);
         return createJsonResult(result);
     }
 
     private McpSchema.CallToolResult handleByStringAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program targetProgram = getProgramFromArgs(request);
-        String dataTypeString = getOptionalString(request, "data_type_string", null);
+        String dataTypeString = getOptionalString(request, "dataTypeString", null);
         if (dataTypeString == null) {
-            return createErrorResult("data_type_string is required for action='by_string'");
+            return createErrorResult("dataTypeString is required for action='by_string'");
         }
-        String archiveName = getOptionalString(request, "archive_name", "");
+        String archiveName = getOptionalString(request, "archiveName", "");
 
         String programPath = targetProgram.getDomainFile().getPathname();
         try {
@@ -259,14 +259,14 @@ public class DataTypeToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleApplyAction(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         Program program = getProgramFromArgs(request);
-        String dataTypeString = getOptionalString(request, "data_type_string", null);
+        String dataTypeString = getOptionalString(request, "dataTypeString", null);
         if (dataTypeString == null) {
-            return createErrorResult("data_type_string is required for action='apply'");
+            return createErrorResult("dataTypeString is required for action='apply'");
         }
-        String archiveName = getOptionalString(request, "archive_name", "");
+        String archiveName = getOptionalString(request, "archiveName", "");
 
-        // Check if address_or_symbol is an array (batch mode) - supports both camelCase and snake_case
-        List<Object> addressOrSymbolList = getParameterAsList(request.arguments(), "address_or_symbol");
+        // Check if addressOrSymbol is an array (batch mode) - supports both camelCase and snake_case
+        List<Object> addressOrSymbolList = getParameterAsList(request.arguments(), "addressOrSymbol");
         if (addressOrSymbolList.isEmpty()) {
             addressOrSymbolList = getParameterAsList(request.arguments(), "addressOrSymbol");
         }
@@ -277,9 +277,9 @@ public class DataTypeToolProvider extends AbstractToolProvider {
         }
 
         // Single address mode
-        String addressOrSymbol = getOptionalString(request, "address_or_symbol", null);
+        String addressOrSymbol = getOptionalString(request, "addressOrSymbol", null);
         if (addressOrSymbol == null) {
-            return createErrorResult("address_or_symbol is required for action='apply'");
+            return createErrorResult("addressOrSymbol is required for action='apply'");
         }
 
         ghidra.program.model.address.Address address = reva.util.AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
@@ -352,7 +352,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
                     ghidra.program.model.address.Address address = reva.util.AddressUtil.resolveAddressOrSymbol(program, addressOrSymbol);
 
                     if (address == null) {
-                        errors.add(Map.of("index", i, "address_or_symbol", addressOrSymbol, "error", "Could not resolve address or symbol"));
+                        errors.add(Map.of("index", i, "addressOrSymbol", addressOrSymbol, "error", "Could not resolve address or symbol"));
                         continue;
                     }
 
@@ -364,7 +364,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
                     // Create data with the specified type
                     ghidra.program.model.listing.Data createdData = listing.createData(address, dataType);
                     if (createdData == null) {
-                        errors.add(Map.of("index", i, "address_or_symbol", addressOrSymbol, "error", "Failed to create data at address"));
+                        errors.add(Map.of("index", i, "addressOrSymbol", addressOrSymbol, "error", "Failed to create data at address"));
                         continue;
                     }
 
@@ -377,7 +377,7 @@ public class DataTypeToolProvider extends AbstractToolProvider {
                     results.add(result);
 
                 } catch (Exception e) {
-                    errors.add(Map.of("index", i, "address_or_symbol", addressList.get(i).toString(), "error", e.getMessage()));
+                    errors.add(Map.of("index", i, "addressOrSymbol", addressList.get(i).toString(), "error", e.getMessage()));
                 }
             }
 

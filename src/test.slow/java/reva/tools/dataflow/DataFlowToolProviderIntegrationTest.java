@@ -80,8 +80,8 @@ public class DataFlowToolProviderIntegrationTest extends RevaIntegrationTestBase
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_address", "0x01000100");
-            arguments.put("start_address", "0x01000110");
+            arguments.put("functionAddress", "0x01000100");
+            arguments.put("startAddress", "0x01000110");
             arguments.put("direction", "backward");
 
             CallToolResult result = client.callTool(new CallToolRequest("analyze-data-flow", arguments));
@@ -103,8 +103,8 @@ public class DataFlowToolProviderIntegrationTest extends RevaIntegrationTestBase
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_address", "0x01000100");
-            arguments.put("start_address", "0x01000110");
+            arguments.put("functionAddress", "0x01000100");
+            arguments.put("startAddress", "0x01000110");
             arguments.put("direction", "forward");
 
             CallToolResult result = client.callTool(new CallToolRequest("analyze-data-flow", arguments));
@@ -126,8 +126,8 @@ public class DataFlowToolProviderIntegrationTest extends RevaIntegrationTestBase
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_address", "0x01000100");
-            arguments.put("variable_name", "param1");
+            arguments.put("functionAddress", "0x01000100");
+            arguments.put("variableName", "param1");
             arguments.put("direction", "variable_accesses");
 
             CallToolResult result = client.callTool(new CallToolRequest("analyze-data-flow", arguments));

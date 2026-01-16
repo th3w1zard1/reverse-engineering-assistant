@@ -81,7 +81,7 @@ public class CallGraphToolProviderTest {
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "graph");
-        validArgs.put("function_identifier", "main");
+        validArgs.put("functionIdentifier", "main");
 
         // Valid parameters should not throw
         try {
@@ -145,12 +145,12 @@ public class CallGraphToolProviderTest {
             fail("Should throw exception for missing function_identifier in graph mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Valid graph mode args
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         args.put("depth", 1);
         try {
             validateGraphModeArgs(args);
@@ -176,14 +176,14 @@ public class CallGraphToolProviderTest {
             fail("Should throw exception for missing function_identifier in tree mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Valid tree mode args
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         args.put("direction", "callers");
-        args.put("max_depth", 3);
+        args.put("maxDepth", 3);
         try {
             validateTreeModeArgs(args);
         } catch (Exception e) {
@@ -215,12 +215,12 @@ public class CallGraphToolProviderTest {
             fail("Should throw exception for missing function_identifier in callers mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Valid callers mode args
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         args.put("direction", "callers");
         try {
             validateCallersModeArgs(args);
@@ -253,12 +253,12 @@ public class CallGraphToolProviderTest {
             fail("Should throw exception for missing function_identifier in callees mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Valid callees mode args
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         args.put("direction", "callees");
         try {
             validateCalleesModeArgs(args);
@@ -291,15 +291,15 @@ public class CallGraphToolProviderTest {
             fail("Should throw exception for missing function_identifier in callers_decomp mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Valid callers_decomp mode args
-        args.put("function_identifier", "main");
-        args.put("max_callers", 10);
-        args.put("start_index", 0);
-        args.put("include_call_context", true);
+        args.put("functionIdentifier", "main");
+        args.put("maxCallers", 10);
+        args.put("startIndex", 0);
+        args.put("includeCallContext", true);
         try {
             validateCallersDecompModeArgs(args);
         } catch (Exception e) {
@@ -307,36 +307,36 @@ public class CallGraphToolProviderTest {
         }
 
         // Test max_callers validation
-        args.put("max_callers", 0);
+        args.put("maxCallers", 0);
         try {
             validateCallersDecompMaxCallers(args);
             fail("Should throw exception for max_callers <= 0");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention max_callers",
-                e.getMessage().toLowerCase().contains("max_callers"));
+            assertTrue("Error message should mention maxCallers",
+                e.getMessage().toLowerCase().contains("maxcallers"));
         }
 
-        args.put("max_callers", 100);
+        args.put("maxCallers", 100);
         try {
             validateCallersDecompMaxCallers(args);
             fail("Should throw exception for max_callers > 50");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention max_callers",
-                e.getMessage().toLowerCase().contains("max_callers"));
+            assertTrue("Error message should mention maxCallers",
+                e.getMessage().toLowerCase().contains("maxcallers"));
         }
 
         // Test start_index validation
-        args.put("max_callers", 10);
-        args.put("start_index", -1);
+        args.put("maxCallers", 10);
+        args.put("startIndex", -1);
         try {
             validateCallersDecompStartIndex(args);
             fail("Should throw exception for negative start_index");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention start_index",
-                e.getMessage().toLowerCase().contains("start_index"));
+            assertTrue("Error message should mention startIndex",
+                e.getMessage().toLowerCase().contains("startindex"));
         }
     }
 
@@ -353,23 +353,23 @@ public class CallGraphToolProviderTest {
             fail("Should throw exception for missing function_addresses in common_callers mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_addresses",
-                e.getMessage().toLowerCase().contains("function_addresses"));
+            assertTrue("Error message should mention functionAddresses",
+                e.getMessage().toLowerCase().contains("functionaddresses"));
         }
 
         // Empty function_addresses should be invalid
-        args.put("function_addresses", "");
+        args.put("functionAddresses", "");
         try {
             validateCommonCallersModeArgs(args);
             fail("Should throw exception for empty function_addresses");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_addresses",
-                e.getMessage().toLowerCase().contains("function_addresses"));
+            assertTrue("Error message should mention functionAddresses",
+                e.getMessage().toLowerCase().contains("functionaddresses"));
         }
 
         // Valid common_callers mode args
-        args.put("function_addresses", "main,func1,func2");
+        args.put("functionAddresses", "main,func1,func2");
         try {
             validateCommonCallersModeArgs(args);
         } catch (Exception e) {
@@ -438,8 +438,8 @@ public class CallGraphToolProviderTest {
     private void validateGraphModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("graph".equals(mode)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when mode='graph'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when mode='graph'");
             }
         }
     }
@@ -447,8 +447,8 @@ public class CallGraphToolProviderTest {
     private void validateTreeModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("tree".equals(mode)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when mode='tree'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when mode='tree'");
             }
         }
     }
@@ -463,8 +463,8 @@ public class CallGraphToolProviderTest {
     private void validateCallersModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("callers".equals(mode)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when mode='callers'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when mode='callers'");
             }
         }
     }
@@ -480,8 +480,8 @@ public class CallGraphToolProviderTest {
     private void validateCalleesModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("callees".equals(mode)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when mode='callees'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when mode='callees'");
             }
         }
     }
@@ -497,8 +497,8 @@ public class CallGraphToolProviderTest {
     private void validateCallersDecompModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("callers_decomp".equals(mode)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when mode='callers_decomp'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when mode='callers_decomp'");
             }
         }
     }
@@ -506,11 +506,11 @@ public class CallGraphToolProviderTest {
     private void validateCallersDecompMaxCallers(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("callers_decomp".equals(mode)) {
-            Object maxCallersObj = args.get("max_callers");
+            Object maxCallersObj = args.get("maxCallers");
             if (maxCallersObj != null) {
                 int maxCallers = ((Number) maxCallersObj).intValue();
                 if (maxCallers <= 0 || maxCallers > 50) {
-                    throw new IllegalArgumentException("max_callers must be between 1 and 50");
+                    throw new IllegalArgumentException("maxCallers must be between 1 and 50");
                 }
             }
         }
@@ -519,11 +519,11 @@ public class CallGraphToolProviderTest {
     private void validateCallersDecompStartIndex(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("callers_decomp".equals(mode)) {
-            Object startIndexObj = args.get("start_index");
+            Object startIndexObj = args.get("startIndex");
             if (startIndexObj != null) {
                 int startIndex = ((Number) startIndexObj).intValue();
                 if (startIndex < 0) {
-                    throw new IllegalArgumentException("start_index must be non-negative");
+                    throw new IllegalArgumentException("startIndex must be non-negative");
                 }
             }
         }
@@ -532,9 +532,9 @@ public class CallGraphToolProviderTest {
     private void validateCommonCallersModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("common_callers".equals(mode)) {
-            String functionAddresses = (String) args.get("function_addresses");
+            String functionAddresses = (String) args.get("functionAddresses");
             if (functionAddresses == null || functionAddresses.trim().isEmpty()) {
-                throw new IllegalArgumentException("function_addresses is required when mode='common_callers'");
+                throw new IllegalArgumentException("functionAddresses is required when mode='common_callers'");
             }
         }
     }

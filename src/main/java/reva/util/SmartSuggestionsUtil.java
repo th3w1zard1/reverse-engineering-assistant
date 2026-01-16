@@ -224,7 +224,7 @@ public class SmartSuggestionsUtil {
         Map<String, Object> suggestion = new HashMap<>();
 
         if (address == null || program == null) {
-            suggestion.put("comment_type", "eol");
+            suggestion.put("commentType", "eol");
             suggestion.put("confidence", 0.5);
             suggestion.put("reason", "Default suggestion");
             return suggestion;
@@ -236,7 +236,7 @@ public class SmartSuggestionsUtil {
         // Function entry point -> plate header
         Function function = funcManager.getFunctionContaining(address);
         if (function != null && function.getEntryPoint().equals(address)) {
-            suggestion.put("comment_type", "plate");
+            suggestion.put("commentType", "plate");
             suggestion.put("confidence", 0.9);
             suggestion.put("reason", "Address is a function entry point - plate comments are typically used for function headers");
             return suggestion;
@@ -245,7 +245,7 @@ public class SmartSuggestionsUtil {
         // Data -> pre (structure/field context)
         Data data = listing.getDataAt(address);
         if (data != null) {
-            suggestion.put("comment_type", "pre");
+            suggestion.put("commentType", "pre");
             suggestion.put("confidence", 0.8);
             suggestion.put("reason", "Address contains data - pre comments are typically used for data structures");
             return suggestion;
@@ -255,18 +255,18 @@ public class SmartSuggestionsUtil {
         Instruction instruction = listing.getInstructionAt(address);
         if (instruction != null) {
             if (instruction.getFlowType().isCall()) {
-                suggestion.put("comment_type", "eol");
+                suggestion.put("commentType", "eol");
                 suggestion.put("confidence", 0.85);
                 suggestion.put("reason", "Address is a call instruction - eol comments are typically used for inline call annotations");
             } else {
-                suggestion.put("comment_type", "eol");
+                suggestion.put("commentType", "eol");
                 suggestion.put("confidence", 0.7);
                 suggestion.put("reason", "Address is an instruction - eol comments are the most common for code annotations");
             }
             return suggestion;
         }
 
-        suggestion.put("comment_type", "eol");
+        suggestion.put("commentType", "eol");
         suggestion.put("confidence", 0.6);
         suggestion.put("reason", "Default suggestion for code addresses");
         return suggestion;
@@ -570,7 +570,7 @@ public class SmartSuggestionsUtil {
         Map<String, Object> suggestion = new HashMap<>();
 
         if (program == null || address == null) {
-            suggestion.put("data_type", "void*");
+            suggestion.put("dataType", "void*");
             suggestion.put("confidence", 0.3);
             return suggestion;
         }
@@ -579,7 +579,7 @@ public class SmartSuggestionsUtil {
         Data data = program.getListing().getDataAt(address);
         if (data != null) {
             String currentType = data.getDataType().getName();
-            suggestion.put("data_type", currentType);
+            suggestion.put("dataType", currentType);
             suggestion.put("confidence", 0.9);
             suggestion.put("reason", "Data type already defined at address");
             return suggestion;
@@ -589,7 +589,7 @@ public class SmartSuggestionsUtil {
         if (function != null) {
             List<String> nearbyStrings = findNearbyStrings(program, function);
             if (!nearbyStrings.isEmpty()) {
-                suggestion.put("data_type", "char*");
+                suggestion.put("dataType", "char*");
                 suggestion.put("confidence", 0.75);
                 suggestion.put("reason", "Nearby string references suggest char* type");
                 return suggestion;
@@ -612,20 +612,20 @@ public class SmartSuggestionsUtil {
         }
 
         if (isRead && !isWritten) {
-            suggestion.put("data_type", "const int");
+            suggestion.put("dataType", "const int");
             suggestion.put("confidence", 0.6);
             suggestion.put("reason", "Referenced as read-only; likely constant scalar");
             return suggestion;
         }
 
         if (isWritten && !isRead) {
-            suggestion.put("data_type", "int");
+            suggestion.put("dataType", "int");
             suggestion.put("confidence", 0.55);
             suggestion.put("reason", "Primarily written; likely mutable scalar");
             return suggestion;
         }
 
-        suggestion.put("data_type", "int");
+        suggestion.put("dataType", "int");
         suggestion.put("confidence", 0.5);
         suggestion.put("reason", "Default suggestion - analyze usage further for better type");
         return suggestion;

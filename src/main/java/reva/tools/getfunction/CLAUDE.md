@@ -17,11 +17,11 @@ Get function details in various formats: decompiled code, assembly, function inf
 - `view` (string, optional) - View mode: 'decompile', 'disassemble', 'info', 'calls' (default: 'decompile')
 - `offset` (integer, optional) - Line number to start reading from when view='decompile' (1-based, default: 1)
 - `limit` (integer, optional) - Number of lines to return when view='decompile' (default: 50)
-- `include_callers` (boolean, optional) - Include list of functions that call this one when view='decompile' (default: false)
-- `include_callees` (boolean, optional) - Include list of functions this one calls when view='decompile' (default: false)
-- `include_comments` (boolean, optional) - Whether to include comments in the decompilation when view='decompile' (default: false)
-- `include_incoming_references` (boolean, optional) - Whether to include incoming cross references when view='decompile' (default: true)
-- `include_reference_context` (boolean, optional) - Whether to include code context snippets from calling functions when view='decompile' (default: true)
+- `includeCallers` (boolean, optional) - Include list of functions that call this one when view='decompile' (default: false)
+- `includeCallees` (boolean, optional) - Include list of functions this one calls when view='decompile' (default: false)
+- `includeComments` (boolean, optional) - Whether to include comments in the decompilation when view='decompile' (default: false)
+- `includeIncomingReferences` (boolean, optional) - Whether to include incoming cross references when view='decompile' (default: true)
+- `includeReferenceContext` (boolean, optional) - Whether to include code context snippets from calling functions when view='decompile' (default: true)
 
 ## Function Resolution
 
@@ -80,11 +80,11 @@ Returns decompiled C code with optional enhancements.
   "offset": 1,
   "limit": 50,
   "decompSignature": "int main(int argc, char **argv)",
-  "incomingReferences": [...],  // If include_incoming_references=true
+  "incomingReferences": [...],  // If includeIncomingReferences=true
   "totalIncomingReferences": 5,
-  "comments": [...],  // If include_comments=true
-  "callers": [...],   // If include_callers=true
-  "callees": [...]    // If include_callees=true
+  "comments": [...],  // If includeComments=true
+  "callers": [...],   // If includeCallers=true
+  "callees": [...]    // If includeCallees=true
 }
 ```
 
@@ -102,11 +102,11 @@ private McpSchema.CallToolResult handleDecompileView(Program program, Function f
     // Extract parameters
     int offset = getOptionalInt(request, "offset", 1);
     int limit = getOptionalInt(request, "limit", 50);
-    boolean includeCallers = getOptionalBoolean(request, "include_callers", false);
-    boolean includeCallees = getOptionalBoolean(request, "include_callees", false);
-    boolean includeComments = getOptionalBoolean(request, "include_comments", false);
-    boolean includeIncomingReferences = getOptionalBoolean(request, "include_incoming_references", true);
-    boolean includeReferenceContext = getOptionalBoolean(request, "include_reference_context", true);
+    boolean includeCallers = getOptionalBoolean(request, "includeCallers", false);
+    boolean includeCallees = getOptionalBoolean(request, "includeCallees", false);
+    boolean includeComments = getOptionalBoolean(request, "includeComments", false);
+    boolean includeIncomingReferences = getOptionalBoolean(request, "includeIncomingReferences", true);
+    boolean includeReferenceContext = getOptionalBoolean(request, "includeReferenceContext", true);
 
     // Create decompiler and decompile
     DecompInterface decompiler = createConfiguredDecompiler(program);
@@ -481,7 +481,7 @@ if (!incomingRefs.isEmpty()) {
 
 ## Caller/Callee Lists
 
-When `include_callers=true` or `include_callees=true`, the tool includes function relationship information:
+When `includeCallers=true` or `includeCallees=true`, the tool includes function relationship information:
 
 ```java
 if (includeCallers) {
@@ -663,8 +663,8 @@ List<ClangLine> clangLines = DecompilerUtils.toLines(markup);
 - **Function Resolution**: Supports addresses, symbols, and function names with undefined function fallback
 - **Line Numbers**: Decompile view uses 1-based line numbers in output format
 - **View Modes**: Four distinct views (decompile, disassemble, info, calls) with view-specific response formats
-- **Comments**: Supports all comment types (pre, eol, post, plate, repeatable) when include_comments=true
+- **Comments**: Supports all comment types (pre, eol, post, plate, repeatable) when includeComments=true
 - **Reference Context**: Uses DecompilationContextUtil for enhanced incoming references with optional code context
-- **Caller/Callee Lists**: Optional inclusion via include_callers/include_callees parameters
+- **Caller/Callee Lists**: Optional inclusion via includeCallers/includeCallees parameters
 - **Error Messages**: Provide specific error messages for function resolution failures and decompilation errors
 - **Undefined Functions**: Supports decompilation of undefined functions (addresses with code but no defined function)

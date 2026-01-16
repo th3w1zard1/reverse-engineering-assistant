@@ -83,9 +83,9 @@ public class DataFlowToolProviderTest {
         // Test parameter validation for the analyze-data-flow tool
         Map<String, Object> validArgs = new HashMap<>();
         validArgs.put("programPath", "/test/program");
-        validArgs.put("function_address", "0x401000");
+        validArgs.put("functionAddress", "0x401000");
         validArgs.put("direction", "backward");
-        validArgs.put("start_address", "0x401234");
+        validArgs.put("startAddress", "0x401234");
 
         // Valid parameters should not throw
         try {
@@ -108,7 +108,7 @@ public class DataFlowToolProviderTest {
 
         // Missing function_address should throw
         Map<String, Object> missingFunction = new HashMap<>(validArgs);
-        missingFunction.remove("function_address");
+        missingFunction.remove("functionAddress");
         try {
             validateAnalyzeDataFlowArgs(missingFunction);
             fail("Should throw exception for missing function_address");
@@ -136,7 +136,7 @@ public class DataFlowToolProviderTest {
         // Test that all valid directions are accepted
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
-        args.put("function_address", "0x401000");
+        args.put("functionAddress", "0x401000");
 
         // Test all valid directions
         String[] validDirections = {"backward", "forward", "variable_accesses"};
@@ -166,45 +166,45 @@ public class DataFlowToolProviderTest {
         // Test backward/forward mode parameter requirements
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
-        args.put("function_address", "0x401000");
+        args.put("functionAddress", "0x401000");
 
         // Test backward mode requires start_address
         args.put("direction", "backward");
-        args.put("start_address", "0x401234");
+        args.put("startAddress", "0x401234");
         try {
             validateBackwardForwardModeArgs(args);
         } catch (Exception e) {
             fail("Valid backward mode parameters should not throw: " + e.getMessage());
         }
 
-        args.remove("start_address");
+        args.remove("startAddress");
         try {
             validateBackwardForwardModeArgs(args);
             fail("Should throw exception for missing start_address in backward mode");
         } catch (IllegalArgumentException e) {
             // Expected
             assertTrue("Error message should mention start_address",
-                e.getMessage().toLowerCase().contains("start_address") ||
+                e.getMessage().toLowerCase().contains("startAddress") ||
                 e.getMessage().toLowerCase().contains("start"));
         }
 
         // Test forward mode requires start_address
         args.put("direction", "forward");
-        args.put("start_address", "0x401234");
+        args.put("startAddress", "0x401234");
         try {
             validateBackwardForwardModeArgs(args);
         } catch (Exception e) {
             fail("Valid forward mode parameters should not throw: " + e.getMessage());
         }
 
-        args.remove("start_address");
+        args.remove("startAddress");
         try {
             validateBackwardForwardModeArgs(args);
             fail("Should throw exception for missing start_address in forward mode");
         } catch (IllegalArgumentException e) {
             // Expected
             assertTrue("Error message should mention start_address",
-                e.getMessage().toLowerCase().contains("start_address") ||
+                e.getMessage().toLowerCase().contains("startAddress") ||
                 e.getMessage().toLowerCase().contains("start"));
         }
     }
@@ -214,9 +214,9 @@ public class DataFlowToolProviderTest {
         // Test variable_accesses mode parameter requirements
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
-        args.put("function_address", "0x401000");
+        args.put("functionAddress", "0x401000");
         args.put("direction", "variable_accesses");
-        args.put("variable_name", "local_var");
+        args.put("variableName", "local_var");
 
         // Valid variable_accesses mode args
         try {
@@ -226,7 +226,7 @@ public class DataFlowToolProviderTest {
         }
 
         // Missing variable_name should throw
-        args.remove("variable_name");
+        args.remove("variableName");
         try {
             validateVariableAccessesModeArgs(args);
             fail("Should throw exception for missing variable_name in variable_accesses mode");
@@ -242,9 +242,9 @@ public class DataFlowToolProviderTest {
         // Test that start_address validation checks are in place
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
-        args.put("function_address", "0x401000");
+        args.put("functionAddress", "0x401000");
         args.put("direction", "backward");
-        args.put("start_address", "0x401234");
+        args.put("startAddress", "0x401234");
 
         // Valid start_address (would need actual program to fully validate)
         try {
@@ -254,7 +254,7 @@ public class DataFlowToolProviderTest {
         }
 
         // Invalid start_address format
-        args.put("start_address", "invalid_address");
+        args.put("startAddress", "invalid_address");
         try {
             validateStartAddressFormat(args);
             // May not throw here, but should be validated in actual implementation
@@ -268,7 +268,7 @@ public class DataFlowToolProviderTest {
         if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
-        if (args.get("function_address") == null) {
+        if (args.get("functionAddress") == null) {
             throw new IllegalArgumentException("No function address provided");
         }
         if (args.get("direction") == null) {
@@ -297,7 +297,7 @@ public class DataFlowToolProviderTest {
     private void validateBackwardForwardModeArgs(Map<String, Object> args) {
         String direction = (String) args.get("direction");
         if ("backward".equals(direction) || "forward".equals(direction)) {
-            if (args.get("start_address") == null) {
+            if (args.get("startAddress") == null) {
                 throw new IllegalArgumentException("start_address is required for backward and forward modes");
             }
         }
@@ -306,14 +306,14 @@ public class DataFlowToolProviderTest {
     private void validateVariableAccessesModeArgs(Map<String, Object> args) {
         String direction = (String) args.get("direction");
         if ("variable_accesses".equals(direction)) {
-            if (args.get("variable_name") == null) {
+            if (args.get("variableName") == null) {
                 throw new IllegalArgumentException("variable_name is required for variable_accesses mode");
             }
         }
     }
 
     private void validateStartAddressFormat(Map<String, Object> args) {
-        String startAddress = (String) args.get("start_address");
+        String startAddress = (String) args.get("startAddress");
         if (startAddress != null) {
             // Basic format check - should start with 0x or be numeric
             if (!startAddress.startsWith("0x") && !startAddress.matches("\\d+")) {

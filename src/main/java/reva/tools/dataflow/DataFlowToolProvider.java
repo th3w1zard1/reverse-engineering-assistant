@@ -62,19 +62,19 @@ public class DataFlowToolProvider extends AbstractToolProvider {
 
     private void registerAnalyzeDataFlowTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
-        properties.put("function_address", Map.of(
+        properties.put("functionAddress", Map.of(
             "type", "string",
             "description", "Address of the function to analyze"
         ));
-        properties.put("start_address", Map.of(
+        properties.put("startAddress", Map.of(
             "type", "string",
             "description", "Address within the function to trace from when direction='backward' or 'forward'"
         ));
-        properties.put("variable_name", Map.of(
+        properties.put("variableName", Map.of(
             "type", "string",
             "description", "Name of the variable to find accesses for when direction='variable_accesses'"
         ));
@@ -84,7 +84,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
             "enum", List.of("backward", "forward", "variable_accesses")
         ));
 
-        List<String> required = List.of("program_path", "function_address", "direction");
+        List<String> required = List.of("programPath", "functionAddress", "direction");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("analyze-data-flow")
@@ -98,7 +98,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
                 Program program = getProgramFromArgs(request);
                 String direction = getString(request, "direction");
 
-                Address functionAddress = getAddressFromArgs(request, program, "function_address");
+                Address functionAddress = getAddressFromArgs(request, program, "functionAddress");
                 Function function = program.getFunctionManager().getFunctionAt(functionAddress);
                 if (function == null) {
                     function = program.getFunctionManager().getFunctionContaining(functionAddress);
@@ -110,18 +110,18 @@ public class DataFlowToolProvider extends AbstractToolProvider {
                 switch (direction) {
                     case "backward":
                     case "forward":
-                        String startAddressStr = getString(request, "start_address");
+                        String startAddressStr = getString(request, "startAddress");
                         Address startAddress = AddressUtil.resolveAddressOrSymbol(program, startAddressStr);
                         if (startAddress == null) {
-                            return createErrorResult("Could not resolve start_address: " + startAddressStr);
+                            return createErrorResult("Could not resolve startAddress: " + startAddressStr);
                         }
                         if (!function.getBody().contains(startAddress)) {
-                            return createErrorResult("start_address is not within the function");
+                            return createErrorResult("startAddress is not within the function");
                         }
                         SliceDirection sliceDir = direction.equals("backward") ? SliceDirection.BACKWARD : SliceDirection.FORWARD;
                         return traceDataFlow(program, function, startAddress, sliceDir);
                     case "variable_accesses":
-                        String variableName = getString(request, "variable_name");
+                        String variableName = getString(request, "variableName");
                         return findVariableAccesses(program, function, variableName);
                     default:
                         return createErrorResult("Invalid direction: " + direction + ". Valid directions are: backward, forward, variable_accesses");
@@ -180,12 +180,12 @@ public class DataFlowToolProvider extends AbstractToolProvider {
             List<Map<String, Object>> terminators = findTerminators(sliceOps, direction);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("program_path", program.getDomainFile().getPathname());
+            result.put("programPath", program.getDomainFile().getPathname());
             result.put("function", function.getName());
-            result.put("function_address", AddressUtil.formatAddress(function.getEntryPoint()));
-            result.put("start_address", AddressUtil.formatAddress(targetAddress));
+            result.put("functionAddress", AddressUtil.formatAddress(function.getEntryPoint()));
+            result.put("startAddress", AddressUtil.formatAddress(targetAddress));
             result.put("direction", direction.toString().toLowerCase());
-            result.put("operation_count", operations.size());
+            result.put("operationCount", operations.size());
             result.put("operations", operations);
             result.put("terminators", terminators);
 
@@ -228,15 +228,15 @@ public class DataFlowToolProvider extends AbstractToolProvider {
 
             // Build response
             Map<String, Object> result = new HashMap<>();
-            result.put("program_path", program.getDomainFile().getPathname());
+            result.put("programPath", program.getDomainFile().getPathname());
             result.put("function", function.getName());
-            result.put("function_address", AddressUtil.formatAddress(function.getEntryPoint()));
-            result.put("variable_name", variableName);
-            result.put("variable_type", getVariableType(targetVar));
+            result.put("functionAddress", AddressUtil.formatAddress(function.getEntryPoint()));
+            result.put("variableName", variableName);
+            result.put("variableType", getVariableType(targetVar));
             if (targetVar.getDataType() != null) {
-                result.put("data_type", targetVar.getDataType().getDisplayName());
+                result.put("dataType", targetVar.getDataType().getDisplayName());
             }
-            result.put("access_count", accesses.size());
+            result.put("accessCount", accesses.size());
             result.put("accesses", accesses);
 
             return createJsonResult(result);
@@ -481,7 +481,7 @@ public class DataFlowToolProvider extends AbstractToolProvider {
         // Add high variable name if available
         HighVariable high = vn.getHigh();
         if (high != null && high.getName() != null) {
-                info.put("variable_name", high.getName());
+                info.put("variableName", high.getName());
         }
 
         return info;

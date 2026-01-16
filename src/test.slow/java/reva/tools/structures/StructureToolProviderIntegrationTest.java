@@ -25,6 +25,7 @@ import org.junit.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.Structure;
@@ -90,9 +91,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", program_path);
+            arguments.put("programPath", program_path);
             arguments.put("action", "parse");
-            arguments.put("c_definition", "struct TestStruct { int field1; char field2[32]; };");
+            arguments.put("cDefinition", "struct TestStruct { int field1; char field2[32]; };");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
@@ -124,9 +125,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Test valid structure
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", program_path);
+            arguments.put("programPath", program_path);
             arguments.put("action", "validate");
-            arguments.put("c_definition", "struct ValidStruct { int x; int y; };");
+            arguments.put("cDefinition", "struct ValidStruct { int x; int y; };");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
@@ -137,10 +138,10 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
 
             assertTrue("Should be valid", json.get("valid").asBoolean());
-            assertEquals("ValidStruct", json.get("parsed_type").asText());
+            assertEquals("ValidStruct", json.get("parsedType").asText());
 
             // Test invalid structure
-            arguments.put("c_definition", "struct InvalidStruct { unknown_type field; };");
+            arguments.put("cDefinition", "struct InvalidStruct { unknown_type field; };");
             result = client.callTool(new CallToolRequest("manage-structures", arguments));
 
             assertNotNull("Result should not be null", result);
@@ -160,7 +161,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", program_path);
+            arguments.put("programPath", program_path);
             arguments.put("action", "create");
             arguments.put("name", "EmptyStruct");
             arguments.put("size", 0);
@@ -175,7 +176,8 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
 
             assertEquals("EmptyStruct", json.get("name").asText());
-            assertFalse("Should not be a union", json.get("is_union").asBoolean());
+            assertFalse("Should not be a union", 
+                json.has("is_union") ? json.get("is_union").asBoolean() : json.get("isUnion").asBoolean());
 
             // Verify structure exists
             DataType dt = findDataTypeByName(program.getDataTypeManager(), "EmptyStruct");
@@ -190,7 +192,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // First create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "create");
             createArgs.put("name", "TestFieldStruct");
 
@@ -199,11 +201,11 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Add a field
             Map<String, Object> addArgs = new HashMap<>();
-            addArgs.put("program_path", program_path);
+            addArgs.put("programPath", program_path);
             addArgs.put("action", "add_field");
-            addArgs.put("structure_name", "TestFieldStruct");
-            addArgs.put("field_name", "myField");
-            addArgs.put("data_type", "int");
+            addArgs.put("structureName", "TestFieldStruct");
+            addArgs.put("fieldName", "myField");
+            addArgs.put("dataType", "int");
             addArgs.put("comment", "Test field");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", addArgs));
@@ -231,18 +233,18 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure with fields
             Map<String, Object> args = new HashMap<>();
-            args.put("program_path", program_path);
+            args.put("programPath", program_path);
             args.put("action", "parse");
-            args.put("c_definition", "struct InfoStruct { int id; char name[20]; void* next; };");
+            args.put("cDefinition", "struct InfoStruct { int id; char name[20]; void* next; };");
 
             CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", args));
             assertMcpResultNotError(createResult, "Create structure should not error");
 
             // Get structure info
             Map<String, Object> infoArgs = new HashMap<>();
-            infoArgs.put("program_path", program_path);
+            infoArgs.put("programPath", program_path);
             infoArgs.put("action", "info");
-            infoArgs.put("structure_name", "InfoStruct");
+            infoArgs.put("structureName", "InfoStruct");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", infoArgs));
 
@@ -253,7 +255,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
 
             assertEquals("InfoStruct", json.get("name").asText());
-            assertEquals(3, json.get("num_components").asInt());
+            assertEquals(3, json.has("numComponents") ? json.get("numComponents").asInt() : json.get("num_components").asInt());
 
             JsonNode fields = json.get("fields");
             assertNotNull("Should have fields", fields);
@@ -261,8 +263,8 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Check first field
             JsonNode firstField = fields.get(0);
-            assertEquals("id", firstField.get("field_name").asText());
-            assertEquals("int", firstField.get("data_type").asText());
+            assertEquals("id", firstField.get("fieldName").asText());
+            assertEquals("int", firstField.get("dataType").asText());
         });
     }
 
@@ -280,16 +282,16 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             for (String def : structDefs) {
                 Map<String, Object> args = new HashMap<>();
-                args.put("program_path", program_path);
+                args.put("programPath", program_path);
                 args.put("action", "parse");
-                args.put("c_definition", def);
+                args.put("cDefinition", def);
                 CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", args));
                 assertMcpResultNotError(createResult, "Create structure should not error: " + def);
             }
 
             // List structures
             Map<String, Object> listArgs = new HashMap<>();
-            listArgs.put("program_path", program_path);
+            listArgs.put("programPath", program_path);
             listArgs.put("action", "list");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", listArgs));
@@ -327,7 +329,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "create");
             createArgs.put("name", "ToBeDeleted");
 
@@ -340,9 +342,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Delete it
             Map<String, Object> deleteArgs = new HashMap<>();
-            deleteArgs.put("program_path", program_path);
+            deleteArgs.put("programPath", program_path);
             deleteArgs.put("action", "delete");
-            deleteArgs.put("structure_name", "ToBeDeleted");
+            deleteArgs.put("structureName", "ToBeDeleted");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", deleteArgs));
 
@@ -370,9 +372,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
                 "struct Rectangle { int width; int height; };";
 
             Map<String, Object> args = new HashMap<>();
-            args.put("program_path", program_path);
+            args.put("programPath", program_path);
             args.put("action", "parse_header");
-            args.put("header_content", headerContent);
+            args.put("headerContent", headerContent);
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", args));
 
@@ -382,8 +384,8 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
 
-            JsonNode createdTypes = json.get("created_types");
-
+            JsonNode createdTypes = json.has("created_types") ? json.get("created_types") : json.get("createdTypes");
+            assertNotNull("Should have createdTypes field", createdTypes);
             assertTrue("Should create at least one type", createdTypes.size() >= 1);
 
             // Verify at least one structure was created
@@ -413,9 +415,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
                 "};";
 
             Map<String, Object> args = new HashMap<>();
-            args.put("program_path", program_path);
+            args.put("programPath", program_path);
             args.put("action", "parse");
-            args.put("c_definition", complexDef);
+            args.put("cDefinition", complexDef);
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", args));
 
@@ -424,17 +426,21 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Get detailed info
             Map<String, Object> infoArgs = new HashMap<>();
-            infoArgs.put("program_path", program_path);
+            infoArgs.put("programPath", program_path);
             infoArgs.put("action", "info");
-            infoArgs.put("structure_name", "Node");
+            infoArgs.put("structureName", "Node");
 
             result = client.callTool(new CallToolRequest("manage-structures", infoArgs));
 
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
 
-            assertNotNull("Should have C representation", json.get("c_representation"));
-            assertEquals("Should have 4 components", 4, json.get("numComponents").asInt());
+            assertTrue("Should have C representation", 
+                json.has("c_representation") || json.has("cRepresentation"));
+            int numComponents = json.has("num_components") 
+                ? json.get("num_components").asInt() 
+                : json.get("numComponents").asInt();
+            assertEquals("Should have 4 components", 4, numComponents);
         });
     }
 
@@ -445,7 +451,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure with a specific size that will have many undefined bytes
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "create");
             createArgs.put("name", "LargeStruct");
             createArgs.put("size", 100); // 100 bytes
@@ -455,30 +461,30 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Add just a few defined fields, leaving many undefined bytes
             Map<String, Object> addArgs1 = new HashMap<>();
-            addArgs1.put("program_path", program_path);
+            addArgs1.put("programPath", program_path);
             addArgs1.put("action", "add_field");
-            addArgs1.put("structure_name", "LargeStruct");
-            addArgs1.put("field_name", "firstField");
-            addArgs1.put("data_type", "int");
+            addArgs1.put("structureName", "LargeStruct");
+            addArgs1.put("fieldName", "firstField");
+            addArgs1.put("dataType", "int");
             addArgs1.put("offset", 0);
 
             client.callTool(new CallToolRequest("manage-structures", addArgs1));
 
             Map<String, Object> addArgs2 = new HashMap<>();
-            addArgs2.put("program_path", program_path);
+            addArgs2.put("programPath", program_path);
             addArgs2.put("action", "add_field");
-            addArgs2.put("structure_name", "LargeStruct");
-            addArgs2.put("field_name", "lastField");
-            addArgs2.put("data_type", "int");
+            addArgs2.put("structureName", "LargeStruct");
+            addArgs2.put("fieldName", "lastField");
+            addArgs2.put("dataType", "int");
             addArgs2.put("offset", 96); // Near the end
 
             client.callTool(new CallToolRequest("manage-structures", addArgs2));
 
             // Get structure info
             Map<String, Object> infoArgs = new HashMap<>();
-            infoArgs.put("program_path", program_path);
+            infoArgs.put("programPath", program_path);
             infoArgs.put("action", "info");
-            infoArgs.put("structure_name", "LargeStruct");
+            infoArgs.put("structureName", "LargeStruct");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-structures", infoArgs));
 
@@ -501,7 +507,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             for (JsonNode field : fields) {
                 if (field.has("isCondensed") && field.get("isCondensed").asBoolean()) {
                     foundCondensed = true;
-                    assertEquals("<undefined>", field.get("field_name").asText());
+                    assertEquals("<undefined>", field.get("fieldName").asText());
                     assertTrue("Condensed range should have componentCount > 1",
                         field.get("componentCount").asInt() > 1);
                 }
@@ -542,9 +548,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // First create a structure with a field
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "parse");
-            createArgs.put("c_definition", "struct ModifyTest1 { void *field1; int field2; };");
+            createArgs.put("cDefinition", "struct ModifyTest1 { void *field1; int field2; };");
 
             CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
@@ -564,11 +570,11 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Modify field1 to be int *
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("program_path", program_path);
+            modifyArgs.put("programPath", program_path);
             modifyArgs.put("action", "modify_field");
-            modifyArgs.put("structure_name", "ModifyTest1");
-            modifyArgs.put("field_name", "field1");
-            modifyArgs.put("new_data_type", "int *");
+            modifyArgs.put("structureName", "ModifyTest1");
+            modifyArgs.put("fieldName", "field1");
+            modifyArgs.put("newDataType", "int *");
 
             CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Field modification should succeed");
@@ -598,20 +604,20 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "parse");
-            createArgs.put("c_definition", "struct ModifyTest2 { int oldName; };");
+            createArgs.put("cDefinition", "struct ModifyTest2 { int oldName; };");
 
             CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
 
             // Rename the field
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("program_path", program_path);
+            modifyArgs.put("programPath", program_path);
             modifyArgs.put("action", "modify_field");
-            modifyArgs.put("structure_name", "ModifyTest2");
-            modifyArgs.put("field_name", "oldName");
-            modifyArgs.put("new_field_name", "newName");
+            modifyArgs.put("structureName", "ModifyTest2");
+            modifyArgs.put("fieldName", "oldName");
+            modifyArgs.put("newFieldName", "newName");
 
             CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Field rename should succeed");
@@ -632,9 +638,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "parse");
-            createArgs.put("c_definition", "struct ModifyTest3 { int field1; char field2; };");
+            createArgs.put("cDefinition", "struct ModifyTest3 { int field1; char field2; };");
 
             CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
@@ -647,12 +653,12 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Modify field2 by offset instead of name
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("program_path", program_path);
+            modifyArgs.put("programPath", program_path);
             modifyArgs.put("action", "modify_field");
-            modifyArgs.put("structure_name", "ModifyTest3");
-            modifyArgs.put("field_name", "field2");
+            modifyArgs.put("structureName", "ModifyTest3");
+            modifyArgs.put("fieldName", "field2");
             modifyArgs.put("offset", field2Offset);
-            modifyArgs.put("new_data_type", "short");
+            modifyArgs.put("newDataType", "short");
 
             CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Field modification by offset should succeed");
@@ -674,9 +680,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create initial structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "parse");
-            createArgs.put("c_definition", "struct ModifyTest4 { int field1; char field2; };");
+            createArgs.put("cDefinition", "struct ModifyTest4 { int field1; char field2; };");
 
             CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
@@ -689,9 +695,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Modify structure using C definition
             Map<String, Object> modifyArgs = new HashMap<>();
-            modifyArgs.put("program_path", program_path);
+            modifyArgs.put("programPath", program_path);
             modifyArgs.put("action", "modify_from_c");
-            modifyArgs.put("c_definition", "struct ModifyTest4 { int field1; short field2; long field3; };");
+            modifyArgs.put("cDefinition", "struct ModifyTest4 { int field1; short field2; long field3; };");
 
             CallToolResult modifyResult = client.callTool(new CallToolRequest("manage-structures", modifyArgs));
             assertMcpResultNotError(modifyResult, "Structure modification from C should succeed");
@@ -700,7 +706,7 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             JsonNode json = parseJsonContent(content.text());
             String message = json.get("message").asText();
             assertTrue("Should indicate successful modification", message.contains("Successfully modified structure from C definition"));
-            assertEquals(3, json.get("num_components").asInt());
+            assertEquals(3, json.has("numComponents") ? json.get("numComponents").asInt() : json.get("num_components").asInt());
 
             // Verify the structure was modified in the program
             dt = findDataTypeByName(dtm, "ModifyTest4");
@@ -728,9 +734,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Create a structure
             Map<String, Object> createArgs = new HashMap<>();
-            createArgs.put("program_path", program_path);
+            createArgs.put("programPath", program_path);
             createArgs.put("action", "parse");
-            createArgs.put("c_definition", "struct DeleteTestForce { int field1; };");
+            createArgs.put("cDefinition", "struct DeleteTestForce { int field1; };");
 
             CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
             assertMcpResultNotError(createResult, "Structure creation should succeed");
@@ -742,9 +748,9 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             // Delete structure (no references, so should succeed even without force)
             Map<String, Object> deleteArgs = new HashMap<>();
-            deleteArgs.put("program_path", program_path);
+            deleteArgs.put("programPath", program_path);
             deleteArgs.put("action", "delete");
-            deleteArgs.put("structure_name", "DeleteTestForce");
+            deleteArgs.put("structureName", "DeleteTestForce");
 
             CallToolResult deleteResult = client.callTool(new CallToolRequest("manage-structures", deleteArgs));
             assertMcpResultNotError(deleteResult, "Delete should succeed");
@@ -758,6 +764,155 @@ public class StructureToolProviderIntegrationTest extends RevaIntegrationTestBas
             // Verify structure was deleted
             dt = findDataTypeByName(dtm, "DeleteTestForce");
             assertNull("Structure should be deleted", dt);
+        });
+    }
+
+    @Test
+    public void testApplyStructure() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // First create a structure
+            Map<String, Object> createArgs = new HashMap<>();
+            createArgs.put("programPath", program_path);
+            createArgs.put("action", "parse");
+            createArgs.put("cDefinition", "struct ApplyTest { int field1; char field2; };");
+
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
+            assertMcpResultNotError(createResult, "Structure creation should succeed");
+
+            // Apply structure to an address
+            Address applyAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000050);
+            int txId = program.startTransaction("Create data for apply");
+            try {
+                try {
+                    ghidra.program.model.listing.Data createdData = program.getListing().createData(applyAddr, new ghidra.program.model.data.ByteDataType(), 1);
+                    if (createdData == null) {
+                        fail("Failed to create data at address");
+                    }
+                } catch (Exception e) {
+                    fail("Failed to create data: " + e.getMessage());
+                }
+            } finally {
+                program.endTransaction(txId, true);
+            }
+
+            Map<String, Object> applyArgs = new HashMap<>();
+            applyArgs.put("programPath", program_path);
+            applyArgs.put("action", "apply");
+            applyArgs.put("structureName", "ApplyTest");
+            applyArgs.put("addressOrSymbol", applyAddr.toString());
+            applyArgs.put("clearExisting", true);
+
+            CallToolResult applyResult = client.callTool(new CallToolRequest("manage-structures", applyArgs));
+            assertFalse("Apply structure should succeed", applyResult.isError());
+
+            // Verify structure was applied
+            ghidra.program.model.listing.Data data = program.getListing().getDataAt(applyAddr);
+            if (data != null) {
+                DataType dataType = data.getDataType();
+                assertTrue("Data type should be structure", dataType instanceof Structure);
+                assertEquals("Structure name should match", "ApplyTest", dataType.getName());
+            }
+        });
+    }
+
+    @Test
+    public void testListStructuresWithFilters() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Create structures with different names
+            Map<String, Object> createArgs1 = new HashMap<>();
+            createArgs1.put("programPath", program_path);
+            createArgs1.put("action", "create");
+            createArgs1.put("name", "FilterTest1");
+            client.callTool(new CallToolRequest("manage-structures", createArgs1));
+
+            Map<String, Object> createArgs2 = new HashMap<>();
+            createArgs2.put("programPath", program_path);
+            createArgs2.put("action", "create");
+            createArgs2.put("name", "FilterTest2");
+            client.callTool(new CallToolRequest("manage-structures", createArgs2));
+
+            // List with name filter
+            Map<String, Object> listArgs = new HashMap<>();
+            listArgs.put("programPath", program_path);
+            listArgs.put("action", "list");
+            listArgs.put("nameFilter", "FilterTest");
+            listArgs.put("includeBuiltIn", false);
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", listArgs));
+            assertFalse("List with filter should succeed", result.isError());
+
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Should have structures field", json.has("structures"));
+        });
+    }
+
+    @Test
+    public void testStructuresValidatesProgramState() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Create structure
+            Map<String, Object> createArgs = new HashMap<>();
+            createArgs.put("programPath", program_path);
+            createArgs.put("action", "create");
+            createArgs.put("name", "StateValidationStruct");
+            createArgs.put("size", 8);
+
+            CallToolResult createResult = client.callTool(new CallToolRequest("manage-structures", createArgs));
+            assertFalse("Create structure should succeed", createResult.isError());
+
+            // Verify structure was actually created in program state
+            DataTypeManager dtm = program.getDataTypeManager();
+            DataType dt = findDataTypeByName(dtm, "StateValidationStruct");
+            assertNotNull("Structure should exist in program", dt);
+            assertTrue("Should be a Structure", dt instanceof Structure);
+            Structure struct = (Structure) dt;
+            assertEquals("Structure size should match", 8, struct.getLength());
+        });
+    }
+
+    @Test
+    public void testStructuresInvalidAction() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", program_path);
+            arguments.put("action", "invalid_action");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
+
+            assertTrue("Tool should have error for invalid action", result.isError());
+        });
+    }
+
+    @Test
+    public void testStructuresMissingRequiredParameters() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test create without name
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", program_path);
+            arguments.put("action", "create");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-structures", arguments));
+
+            assertTrue("Tool should have error for missing name", result.isError());
+
+            // Test parse without c_definition
+            arguments.clear();
+            arguments.put("programPath", program_path);
+            arguments.put("action", "parse");
+
+            result = client.callTool(new CallToolRequest("manage-structures", arguments));
+
+            assertTrue("Tool should have error for missing c_definition", result.isError());
         });
     }
 

@@ -59,9 +59,9 @@ public class DecompilerToolProviderTest {
     public void testValidateChangeDataTypesParameters() {
         // Test parameter validation for the change-variable-datatypes tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
-        validArgs.put("function_name_or_address", "testFunction");
-        validArgs.put("datatype_mappings", Map.of("var1", "int", "var2", "char*"));
+        validArgs.put("programPath", "/test/program");
+        validArgs.put("functionName", "testFunction");
+        validArgs.put("datatypeMappings", Map.of("var1", "int", "var2", "char*"));
 
         // Valid parameters should not throw
         try {
@@ -70,12 +70,12 @@ public class DecompilerToolProviderTest {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
 
-        // Missing program_path should throw
+        // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateChangeDataTypesArgs(missingProgram);
-            fail("Should throw exception for missing program_path");
+            fail("Should throw exception for missing programPath");
         } catch (IllegalArgumentException e) {
             // Expected
         }
@@ -92,7 +92,7 @@ public class DecompilerToolProviderTest {
 
         // Missing datatype_mappings should throw
         Map<String, Object> missingMappings = new HashMap<>(validArgs);
-        missingMappings.remove("datatype_mappings");
+        missingMappings.remove("datatypeMappings");
         try {
             validateChangeDataTypesArgs(missingMappings);
             fail("Should throw exception for missing datatype_mappings");
@@ -102,7 +102,7 @@ public class DecompilerToolProviderTest {
 
         // Empty datatype_mappings should throw
         Map<String, Object> emptyMappings = new HashMap<>(validArgs);
-        emptyMappings.put("datatype_mappings", new HashMap<>());
+        emptyMappings.put("datatypeMappings", new HashMap<>());
         try {
             validateChangeDataTypesArgs(emptyMappings);
             fail("Should throw exception for empty datatype_mappings");
@@ -115,9 +115,9 @@ public class DecompilerToolProviderTest {
     public void testValidateRenameVariablesParameters() {
         // Test parameter validation for the rename-variables tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
-        validArgs.put("function_name_or_address", "testFunction");
-        validArgs.put("variable_mappings", Map.of("oldVar", "newVar"));
+        validArgs.put("programPath", "/test/program");
+        validArgs.put("functionName", "testFunction");
+        validArgs.put("variableMappings", Map.of("oldVar", "newVar"));
 
         // Valid parameters should not throw
         try {
@@ -126,12 +126,12 @@ public class DecompilerToolProviderTest {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
 
-        // Missing program_path should throw
+        // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateRenameVariablesArgs(missingProgram);
-            fail("Should throw exception for missing program_path");
+            fail("Should throw exception for missing programPath");
         } catch (IllegalArgumentException e) {
             // Expected
         }
@@ -141,7 +141,7 @@ public class DecompilerToolProviderTest {
     public void testValidateGetDecompiledFunctionParameters() {
         // Test parameter validation for the get-decompiled-function tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("functionName", "testFunction");
 
         // Valid parameters should not throw
@@ -151,12 +151,12 @@ public class DecompilerToolProviderTest {
             fail("Valid parameters should not throw exception: " + e.getMessage());
         }
 
-        // Missing program_path should throw
+        // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateGetDecompiledFunctionArgs(missingProgram);
-            fail("Should throw exception for missing program_path");
+            fail("Should throw exception for missing programPath");
         } catch (IllegalArgumentException e) {
             // Expected
         }
@@ -174,35 +174,35 @@ public class DecompilerToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateChangeDataTypesArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("functionName") == null) {
             throw new IllegalArgumentException("No function name provided");
         }
         @SuppressWarnings("unchecked")
-        Map<String, String> mappings = (Map<String, String>) args.get("datatype_mappings");
+        Map<String, String> mappings = (Map<String, String>) args.get("datatypeMappings");
         if (mappings == null || mappings.isEmpty()) {
             throw new IllegalArgumentException("No datatype mappings provided");
         }
     }
 
     private void validateRenameVariablesArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("functionName") == null) {
             throw new IllegalArgumentException("No function name provided");
         }
         @SuppressWarnings("unchecked")
-        Map<String, String> mappings = (Map<String, String>) args.get("variable_mappings");
+        Map<String, String> mappings = (Map<String, String>) args.get("variableMappings");
         if (mappings == null || mappings.isEmpty()) {
             throw new IllegalArgumentException("No variable mappings provided");
         }
     }
 
     private void validateGetDecompiledFunctionArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("functionName") == null) {

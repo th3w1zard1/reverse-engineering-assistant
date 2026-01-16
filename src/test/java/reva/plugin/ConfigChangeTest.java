@@ -31,6 +31,8 @@ import ghidra.framework.options.ToolOptions;
 import ghidra.framework.options.OptionsChangeListener;
 import ghidra.util.HelpLocation;
 import ghidra.util.bean.opteditor.OptionsVetoException;
+import reva.plugin.ConfigManager;
+import reva.plugin.ConfigChangeListener;
 import reva.plugin.config.ToolOptionsBackend;
 
 /**

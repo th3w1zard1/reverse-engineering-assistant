@@ -54,9 +54,13 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
 
         int txId = program.startTransaction("Create Test Function");
         try {
-            testFunction = functionManager.createFunction("testFunction", functionAddr,
-                new AddressSet(functionAddr, functionAddr.add(20)),
-                SourceType.USER_DEFINED);
+            try {
+                testFunction = functionManager.createFunction("testFunction", functionAddr,
+                    new AddressSet(functionAddr, functionAddr.add(20)),
+                    SourceType.USER_DEFINED);
+            } catch (ghidra.util.exception.InvalidInputException | ghidra.program.database.function.OverlappingFunctionException e) {
+                fail("Failed to create testFunction: " + e.getMessage());
+            }
         } finally {
             program.endTransaction(txId, true);
         }
@@ -78,14 +82,14 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
 
-            Map<String, Object> arguments = new HashMap<>();
-            arguments.put("mode", "both");
+            // Test get-current-program and get-current-address together
+            CallToolResult programResult = client.callTool(new CallToolRequest("get-current-program", new HashMap<>()));
+            CallToolResult addressResult = client.callTool(new CallToolRequest("get-current-address", new HashMap<>()));
 
-            CallToolResult result = client.callTool(new CallToolRequest("get-current-context", arguments));
-
-            assertNotNull("Result should not be null", result);
+            assertNotNull("Program result should not be null", programResult);
+            assertNotNull("Address result should not be null", addressResult);
             // May fail if no Code Browser is active, but that's acceptable
-            // The test verifies the tool is registered and callable
+            // The test verifies the tools are registered and callable
         });
     }
 
@@ -94,10 +98,7 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
 
-            Map<String, Object> arguments = new HashMap<>();
-            arguments.put("mode", "address");
-
-            CallToolResult result = client.callTool(new CallToolRequest("get-current-context", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-current-address", new HashMap<>()));
 
             assertNotNull("Result should not be null", result);
             // May fail if no Code Browser is active, but that's acceptable
@@ -109,10 +110,7 @@ public class ProjectToolProviderContextIntegrationTest extends RevaIntegrationTe
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
 
-            Map<String, Object> arguments = new HashMap<>();
-            arguments.put("mode", "function");
-
-            CallToolResult result = client.callTool(new CallToolRequest("get-current-context", arguments));
+            CallToolResult result = client.callTool(new CallToolRequest("get-current-function", new HashMap<>()));
 
             assertNotNull("Result should not be null", result);
             // May fail if no Code Browser is active, but that's acceptable

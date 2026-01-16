@@ -81,7 +81,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             Map.of("type", "string", "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."),
             Map.of("type", "array", "items", Map.of("type", "string"), "description", "Array of program paths for multi-program analysis")
         ));
-        properties.put("program_path", programPathProperty);
+        properties.put("programPath", programPathProperty);
         Map<String, Object> identifierProperty = new HashMap<>();
         identifierProperty.put("type", "string");
         identifierProperty.put("description", "Function name or address (e.g., 'main' or '0x401000'). Can be a single string or an array of strings for batch operations. When omitted, returns all functions.");
@@ -110,27 +110,27 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             "description", "Number of lines to return when view='decompile'",
             "default", 50
         ));
-        properties.put("include_callers", Map.of(
+        properties.put("includeCallers", Map.of(
             "type", "boolean",
             "description", "Include list of functions that call this one when view='decompile'",
             "default", false
         ));
-        properties.put("include_callees", Map.of(
+        properties.put("includeCallees", Map.of(
             "type", "boolean",
             "description", "Include list of functions this one calls when view='decompile'",
             "default", false
         ));
-        properties.put("include_comments", Map.of(
+        properties.put("includeComments", Map.of(
             "type", "boolean",
             "description", "Whether to include comments in the decompilation when view='decompile'",
             "default", false
         ));
-        properties.put("include_incoming_references", Map.of(
+        properties.put("includeIncomingReferences", Map.of(
             "type", "boolean",
             "description", "Whether to include incoming cross references when view='decompile'",
             "default", true
         ));
-        properties.put("include_reference_context", Map.of(
+        properties.put("includeReferenceContext", Map.of(
             "type", "boolean",
             "description", "Whether to include code context snippets from calling functions when view='decompile'",
             "default", true
@@ -157,7 +157,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 }
 
                 // Handle programPath as array or string - supports both camelCase and snake_case
-                List<Object> programPathList = getParameterAsList(request.arguments(), "program_path");
+                List<Object> programPathList = getParameterAsList(request.arguments(), "programPath");
                 if (programPathList.isEmpty()) {
                     programPathList = getParameterAsList(request.arguments(), "programPath");
                 }
@@ -246,11 +246,11 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleDecompileView(Program program, Function function, CallToolRequest request) {
         int offset = getOptionalInt(request, "offset", 1);
         int limit = getOptionalInt(request, "limit", 50);
-        boolean includeCallers = getOptionalBoolean(request, "include_callers", false);
-        boolean includeCallees = getOptionalBoolean(request, "include_callees", false);
-        boolean includeComments = getOptionalBoolean(request, "include_comments", false);
-        boolean includeIncomingReferences = getOptionalBoolean(request, "include_incoming_references", true);
-        boolean includeReferenceContext = getOptionalBoolean(request, "include_reference_context", true);
+        boolean includeCallers = getOptionalBoolean(request, "includeCallers", false);
+        boolean includeCallees = getOptionalBoolean(request, "includeCallees", false);
+        boolean includeComments = getOptionalBoolean(request, "includeComments", false);
+        boolean includeIncomingReferences = getOptionalBoolean(request, "includeIncomingReferences", true);
+        boolean includeReferenceContext = getOptionalBoolean(request, "includeReferenceContext", true);
 
         Map<String, Object> resultData = new HashMap<>();
         resultData.put("function", function.getName());
@@ -512,7 +512,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                     if (totalRefCount > maxIncomingRefs) {
                         result.put("incomingReferencesLimited", true);
                         result.put("incomingReferencesMessage", String.format(
-                            "Showing first %d of %d references. Use 'get-references' tool with target='%s' and mode='to' to see all references.",
+                            "Showing first %d of %d references. Use 'find-cross-references' tool with target='%s' and mode='to' to see all references.",
                             maxIncomingRefs, totalRefCount, function.getName()
                         ));
                     }
@@ -701,11 +701,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
      */
     private McpSchema.CallToolResult handleAllFunctions(CallToolRequest request) {
         try {
-            // Use getParameterAsList to support both camelCase and snake_case parameter names
-            List<Object> programPathList = getParameterAsList(request.arguments(), "program_path");
-            if (programPathList.isEmpty()) {
-                programPathList = getParameterAsList(request.arguments(), "programPath");
-            }
+            // Supports both camelCase and snake_case via getParameterValue
+            List<Object> programPathList = getParameterAsList(request.arguments(), "programPath");
             Object programPathValue = programPathList.isEmpty() ? null : (programPathList.size() == 1 ? programPathList.get(0) : programPathList);
             List<Program> programs = new ArrayList<>();
             
@@ -773,8 +770,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 actions.put("finalFunctionCount", finalFunctionCount);
                 
                 Map<String, Object> programResult = new HashMap<>();
-                programResult.put("program_path", program.getDomainFile().getPathname());
-                programResult.put("total_functions", functions.size());
+                programResult.put("programPath", program.getDomainFile().getPathname());
+                programResult.put("totalFunctions", functions.size());
                 programResult.put("functions", functions);
                 programResult.put("actions", actions);
                 programResults.add(programResult);
@@ -787,8 +784,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 result.putAll(programResults.get(0));
             } else {
                 result.put("programs", programResults);
-                result.put("total_programs", programResults.size());
-                result.put("total_functions", totalFunctions);
+                result.put("totalPrograms", programResults.size());
+                result.put("totalFunctions", totalFunctions);
             }
             
             return createJsonResult(result);
@@ -883,8 +880,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 // Leave as -1 if counting fails
             }
         }
-        info.put("caller_count", callerCount);
-        info.put("callee_count", calleeCount);
+        info.put("callerCount", callerCount);
+        info.put("calleeCount", calleeCount);
         
         return info;
     }

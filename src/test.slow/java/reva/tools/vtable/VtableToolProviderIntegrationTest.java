@@ -25,6 +25,8 @@ import org.junit.Test;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.symbol.SourceType;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
@@ -60,9 +62,9 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", program_path);
+            arguments.put("programPath", program_path);
             arguments.put("mode", "analyze");
-            arguments.put("vtable_address", "0x01000000");
+            arguments.put("vtableAddress", "0x01000000");
 
             CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
 
@@ -82,9 +84,9 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", program_path);
+            arguments.put("programPath", program_path);
             arguments.put("mode", "callers");
-            arguments.put("function_address", "0x01000100");
+            arguments.put("functionAddress", "0x01000100");
 
             CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
 
@@ -104,14 +106,118 @@ public class VtableToolProviderIntegrationTest extends RevaIntegrationTestBase {
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", program_path);
+            arguments.put("programPath", program_path);
             arguments.put("mode", "containing");
-            arguments.put("function_address", "0x01000100");
+            arguments.put("functionAddress", "0x01000100");
 
             CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
 
             assertNotNull("Result should not be null", result);
             // May return empty list, but should be valid JSON
+            if (!result.isError()) {
+                TextContent content = (TextContent) result.content().get(0);
+                JsonNode json = parseJsonContent(content.text());
+                assertNotNull("Result should have valid JSON structure", json);
+            }
+        });
+    }
+
+    @Test
+    public void testAnalyzeVtablesAnalyzeModeWithMaxEntries() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            int[] maxEntries = {10, 50, 100, 200};
+
+            for (int max : maxEntries) {
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", program_path);
+                arguments.put("mode", "analyze");
+                arguments.put("vtableAddress", "0x01000000");
+                arguments.put("maxEntries", max);
+
+                CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
+
+                assertNotNull("Result should not be null for max_entries " + max, result);
+                // May error if not a valid vtable
+            }
+        });
+    }
+
+    @Test
+    public void testAnalyzeVtablesCallersModeWithMaxResults() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", program_path);
+            arguments.put("mode", "callers");
+            arguments.put("functionAddress", "0x01000100");
+            arguments.put("maxResults", 50);
+
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
+
+            assertNotNull("Result should not be null", result);
+            if (!result.isError()) {
+                TextContent content = (TextContent) result.content().get(0);
+                JsonNode json = parseJsonContent(content.text());
+                assertNotNull("Result should have valid JSON structure", json);
+            }
+        });
+    }
+
+    @Test
+    public void testAnalyzeVtablesContainingModeWithMaxResults() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", program_path);
+            arguments.put("mode", "containing");
+            arguments.put("functionAddress", "0x01000100");
+            arguments.put("maxResults", 50);
+
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
+
+            assertNotNull("Result should not be null", result);
+            if (!result.isError()) {
+                TextContent content = (TextContent) result.content().get(0);
+                JsonNode json = parseJsonContent(content.text());
+                assertNotNull("Result should have valid JSON structure", json);
+            }
+        });
+    }
+
+    @Test
+    public void testAnalyzeVtablesWithFunctionName() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Create a function first
+            ghidra.program.model.address.Address funcAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000100);
+            int txId = program.startTransaction("Create function");
+            try {
+                ghidra.program.model.listing.FunctionManager funcManager = program.getFunctionManager();
+                try {
+                    funcManager.createFunction("vtableTestFunc", funcAddr,
+                        new AddressSet(funcAddr, funcAddr.add(20)), SourceType.USER_DEFINED);
+                } catch (ghidra.util.exception.InvalidInputException | ghidra.program.database.function.OverlappingFunctionException e) {
+                    fail("Failed to create function: " + e.getMessage());
+                }
+            } finally {
+                program.endTransaction(txId, true);
+            }
+
+            // Test with function name instead of address
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", program_path);
+            arguments.put("mode", "callers");
+            arguments.put("functionAddress", "vtableTestFunc");
+            arguments.put("maxResults", 10);
+
+            CallToolResult result = client.callTool(new CallToolRequest("analyze-vtables", arguments));
+
+            assertNotNull("Result should not be null", result);
             if (!result.isError()) {
                 TextContent content = (TextContent) result.content().get(0);
                 JsonNode json = parseJsonContent(content.text());

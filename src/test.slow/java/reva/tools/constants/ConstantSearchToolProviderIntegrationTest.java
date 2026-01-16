@@ -83,8 +83,8 @@ public class ConstantSearchToolProviderIntegrationTest extends RevaIntegrationTe
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
             arguments.put("mode", "range");
-            arguments.put("min_value", "0x1000");
-            arguments.put("max_value", "0x2000");
+            arguments.put("minValue", "0x1000");
+            arguments.put("maxValue", "0x2000");
 
             CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
 
@@ -105,7 +105,7 @@ public class ConstantSearchToolProviderIntegrationTest extends RevaIntegrationTe
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
             arguments.put("mode", "common");
-            arguments.put("top_n", 10);
+            arguments.put("topN", 10);
 
             CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
 
@@ -114,6 +114,99 @@ public class ConstantSearchToolProviderIntegrationTest extends RevaIntegrationTe
             TextContent content = (TextContent) result.content().get(0);
             JsonNode json = parseJsonContent(content.text());
             assertNotNull("Result should have valid JSON structure", json);
+            assertTrue("Result should contain constants field", json.has("constants"));
+        });
+    }
+
+    @Test
+    public void testSearchConstantsSpecificWithVariousValueFormats() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            String[] values = {"0x1234", "4660", "-1", "0xFFFFFFFF", "0xdeadbeef"};
+
+            for (String value : values) {
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("mode", "specific");
+                arguments.put("value", value);
+                arguments.put("maxResults", 10);
+
+                CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
+
+                assertNotNull("Result should not be null for value " + value, result);
+                if (!result.isError()) {
+                    TextContent content = (TextContent) result.content().get(0);
+                    JsonNode json = parseJsonContent(content.text());
+                    assertNotNull("Result should have valid JSON structure", json);
+                }
+            }
+        });
+    }
+
+    @Test
+    public void testSearchConstantsRangeWithVariousRanges() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test various ranges
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "range");
+            arguments.put("minValue", "0x0");
+            arguments.put("maxValue", "0x100");
+            arguments.put("maxResults", 50);
+
+            CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
+
+            assertNotNull("Result should not be null", result);
+            if (!result.isError()) {
+                TextContent content = (TextContent) result.content().get(0);
+                JsonNode json = parseJsonContent(content.text());
+                assertNotNull("Result should have valid JSON structure", json);
+            }
+        });
+    }
+
+    @Test
+    public void testSearchConstantsCommonWithIncludeSmallValues() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "common");
+            arguments.put("topN", 20);
+            arguments.put("includeSmallValues", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+            assertTrue("Result should contain constants field", json.has("constants"));
+        });
+    }
+
+    @Test
+    public void testSearchConstantsCommonWithMinValueFilter() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("mode", "common");
+            arguments.put("topN", 10);
+            arguments.put("minValue", "256");
+            arguments.put("includeSmallValues", false);
+
+            CallToolResult result = client.callTool(new CallToolRequest("search-constants", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
             assertTrue("Result should contain constants field", json.has("constants"));
         });
     }

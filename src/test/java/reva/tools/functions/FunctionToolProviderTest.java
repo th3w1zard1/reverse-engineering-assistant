@@ -85,7 +85,7 @@ public class FunctionToolProviderTest {
     public void testValidateListFunctionsParameters() {
         // Test parameter validation for the list-functions tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "all");
 
         // Valid parameters should not throw
@@ -97,7 +97,7 @@ public class FunctionToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateListFunctionsArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -199,7 +199,7 @@ public class FunctionToolProviderTest {
         }
 
         // Valid similarity mode args
-        args.put("search_string", "main");
+        args.put("searchString", "main");
         try {
             validateSimilarityModeArgs(args);
         } catch (Exception e) {
@@ -207,7 +207,7 @@ public class FunctionToolProviderTest {
         }
 
         // Empty search_string should be invalid
-        args.put("search_string", "");
+        args.put("searchString", "");
         try {
             validateSimilarityModeArgs(args);
             fail("Should throw exception for empty search_string");
@@ -233,7 +233,7 @@ public class FunctionToolProviderTest {
         }
 
         // Test valid min_reference_count
-        args.put("min_reference_count", 5);
+        args.put("minReferenceCount", 5);
         try {
             validateUndefinedModeArgs(args);
         } catch (Exception e) {
@@ -241,7 +241,7 @@ public class FunctionToolProviderTest {
         }
 
         // Test invalid min_reference_count (< 1)
-        args.put("min_reference_count", 0);
+        args.put("minReferenceCount", 0);
         try {
             validateUndefinedModeArgs(args);
             fail("Should throw exception for min_reference_count < 1");
@@ -259,28 +259,28 @@ public class FunctionToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("mode", "all");
 
-        // Test new pagination parameters (start_index/max_count)
-        args.put("start_index", 10);
-        args.put("max_count", 50);
+        // Test new pagination parameters (startIndex/maxCount)
+        args.put("startIndex", 10);
+        args.put("maxCount", 50);
         try {
             validatePaginationArgs(args);
             PaginationInfo info = getPaginationInfo(args);
-            assertEquals("start_index should be 10", 10, info.startIndex());
-            assertEquals("max_count should be 50", 50, info.maxCount());
+            assertEquals("startIndex should be 10", 10, info.startIndex());
+            assertEquals("maxCount should be 50", 50, info.maxCount());
         } catch (Exception e) {
             fail("New pagination parameters should work: " + e.getMessage());
         }
 
         // Test backward compatibility (offset/limit)
-        args.remove("start_index");
-        args.remove("max_count");
+        args.remove("startIndex");
+        args.remove("maxCount");
         args.put("offset", 20);
         args.put("limit", 100);
         try {
             validatePaginationArgs(args);
             PaginationInfo info = getPaginationInfo(args);
-            assertEquals("offset should map to start_index", 20, info.startIndex());
-            assertEquals("limit should map to max_count", 100, info.maxCount());
+            assertEquals("offset should map to startIndex", 20, info.startIndex());
+            assertEquals("limit should map to maxCount", 100, info.maxCount());
         } catch (Exception e) {
             fail("Backward compatible pagination parameters should work: " + e.getMessage());
         }
@@ -290,8 +290,8 @@ public class FunctionToolProviderTest {
         args.remove("limit");
         try {
             PaginationInfo info = getPaginationInfo(args);
-            assertEquals("Default start_index should be 0", 0, info.startIndex());
-            assertEquals("Default max_count should be 100", 100, info.maxCount());
+            assertEquals("Default startIndex should be 0", 0, info.startIndex());
+            assertEquals("Default maxCount should be 100", 100, info.maxCount());
         } catch (Exception e) {
             fail("Default pagination parameters should work: " + e.getMessage());
         }
@@ -299,33 +299,33 @@ public class FunctionToolProviderTest {
 
     @Test
     public void testValidateFilterDefaultNames() {
-        // Test filter_default_names parameter
+        // Test filterDefaultNames parameter
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "all");
 
         // Test default
-        args.remove("filter_default_names");
+        args.remove("filterDefaultNames");
         try {
             boolean filterDefault = getFilterDefaultNames(args);
-            assertTrue("Default filter_default_names should be true", filterDefault);
+            assertTrue("Default filterDefaultNames should be true", filterDefault);
         } catch (Exception e) {
-            fail("Default filter_default_names should work: " + e.getMessage());
+            fail("Default filterDefaultNames should work: " + e.getMessage());
         }
 
         // Test explicit false
-        args.put("filter_default_names", false);
+        args.put("filterDefaultNames", false);
         try {
             boolean filterDefault = getFilterDefaultNames(args);
-            assertFalse("filter_default_names should be false", filterDefault);
+            assertFalse("filterDefaultNames should be false", filterDefault);
         } catch (Exception e) {
-            fail("filter_default_names=false should work: " + e.getMessage());
+            fail("filterDefaultNames=false should work: " + e.getMessage());
         }
     }
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateListFunctionsArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
     }
@@ -365,7 +365,7 @@ public class FunctionToolProviderTest {
     private void validateSimilarityModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("similarity".equals(mode)) {
-            String searchString = (String) args.get("search_string");
+            String searchString = (String) args.get("searchString");
             if (searchString == null || searchString.trim().isEmpty()) {
                 throw new IllegalArgumentException("search_string parameter is required when mode='similarity'");
             }
@@ -375,7 +375,7 @@ public class FunctionToolProviderTest {
     private void validateUndefinedModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("undefined".equals(mode)) {
-            Object minRefCountObj = args.get("min_reference_count");
+            Object minRefCountObj = args.get("minReferenceCount");
             int minRefCount = minRefCountObj != null ? ((Number) minRefCountObj).intValue() : 1;
             if (minRefCount < 1) {
                 throw new IllegalArgumentException("min_reference_count must be at least 1");
@@ -391,9 +391,9 @@ public class FunctionToolProviderTest {
     private void validatePaginationArgs(Map<String, Object> args) {
         // Both new and old pagination parameters are valid
         // Validation just checks that parameters are reasonable
-        Object startIndexObj = args.get("start_index");
+        Object startIndexObj = args.get("startIndex");
         Object offsetObj = args.get("offset");
-        Object maxCountObj = args.get("max_count");
+        Object maxCountObj = args.get("maxCount");
         Object limitObj = args.get("limit");
 
         // At least one pagination method should be present, but both are optional (have defaults)
@@ -407,9 +407,9 @@ public class FunctionToolProviderTest {
         int maxCount;
 
         // Check for new pagination parameters first, fall back to old ones
-        if (args.containsKey("start_index") || args.containsKey("max_count")) {
-            Object startIndexObj = args.get("start_index");
-            Object maxCountObj = args.get("max_count");
+        if (args.containsKey("startIndex") || args.containsKey("maxCount")) {
+            Object startIndexObj = args.get("startIndex");
+            Object maxCountObj = args.get("maxCount");
             startIndex = startIndexObj != null ? ((Number) startIndexObj).intValue() : 0;
             maxCount = maxCountObj != null ? ((Number) maxCountObj).intValue() : 100;
         } else {
@@ -424,7 +424,7 @@ public class FunctionToolProviderTest {
     }
 
     private boolean getFilterDefaultNames(Map<String, Object> args) {
-        Object filterDefault = args.get("filter_default_names");
+        Object filterDefault = args.get("filterDefaultNames");
         return filterDefault != null ? ((Boolean) filterDefault).booleanValue() : true;
     }
 
@@ -432,7 +432,7 @@ public class FunctionToolProviderTest {
     public void testValidateManageFunctionParameters() {
         // Test parameter validation for the manage-function tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("action", "create");
         validArgs.put("address", "0x401000");
 
@@ -445,7 +445,7 @@ public class FunctionToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateManageFunctionArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -531,18 +531,18 @@ public class FunctionToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "set_prototype");
 
-        // Missing function_identifier should be invalid
+        // Missing functionIdentifier should be invalid
         try {
             validateSetPrototypeActionArgs(args);
-            fail("Should throw exception for missing function_identifier in set_prototype action");
+            fail("Should throw exception for missing functionIdentifier in set_prototype action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Missing prototype should be invalid
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         try {
             validateSetPrototypeActionArgs(args);
             fail("Should throw exception for missing prototype in set_prototype action");
@@ -568,18 +568,18 @@ public class FunctionToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "rename_variable");
 
-        // Missing function_identifier should be invalid
+        // Missing functionIdentifier should be invalid
         try {
             validateRenameVariableActionArgs(args);
-            fail("Should throw exception for missing function_identifier in rename_variable action");
+            fail("Should throw exception for missing functionIdentifier in rename_variable action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Missing both variable_mappings and old_name/new_name should be invalid
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         try {
             validateRenameVariableActionArgs(args);
             fail("Should throw exception for missing variable mappings in rename_variable action");
@@ -590,8 +590,8 @@ public class FunctionToolProviderTest {
         }
 
         // Valid rename_variable action args (single variable)
-        args.put("old_name", "var1");
-        args.put("new_name", "newVar1");
+        args.put("oldName", "var1");
+        args.put("newName", "newVar1");
         try {
             validateRenameVariableActionArgs(args);
         } catch (Exception e) {
@@ -599,9 +599,9 @@ public class FunctionToolProviderTest {
         }
 
         // Valid rename_variable action args (multiple variables)
-        args.remove("old_name");
-        args.remove("new_name");
-        args.put("variable_mappings", "var1:newVar1,var2:newVar2");
+        args.remove("oldName");
+        args.remove("newName");
+        args.put("variableMappings", "var1:newVar1,var2:newVar2");
         try {
             validateRenameVariableActionArgs(args);
         } catch (Exception e) {
@@ -616,18 +616,18 @@ public class FunctionToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "rename_function");
 
-        // Missing function_identifier should be invalid
+        // Missing functionIdentifier should be invalid
         try {
             validateRenameFunctionActionArgs(args);
-            fail("Should throw exception for missing function_identifier in rename_function action");
+            fail("Should throw exception for missing functionIdentifier in rename_function action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Missing name should be invalid
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         try {
             validateRenameFunctionActionArgs(args);
             fail("Should throw exception for missing name in rename_function action");
@@ -653,41 +653,41 @@ public class FunctionToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "set_variable_type");
 
-        // Missing function_identifier should be invalid
+        // Missing functionIdentifier should be invalid
         try {
             validateSetVariableTypeActionArgs(args);
-            fail("Should throw exception for missing function_identifier in set_variable_type action");
+            fail("Should throw exception for missing functionIdentifier in set_variable_type action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
-        // Missing variable_name should be invalid
-        args.put("function_identifier", "main");
+        // Missing variableName should be invalid
+        args.put("functionIdentifier", "main");
         try {
             validateSetVariableTypeActionArgs(args);
-            fail("Should throw exception for missing variable_name in set_variable_type action");
+            fail("Should throw exception for missing variableName in set_variable_type action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention variable_name",
-                e.getMessage().toLowerCase().contains("variable_name"));
+            assertTrue("Error message should mention variableName",
+                e.getMessage().toLowerCase().contains("variablename"));
         }
 
-        // Missing new_type should be invalid
-        args.put("variable_name", "var1");
+        // Missing newType should be invalid
+        args.put("variableName", "var1");
         try {
             validateSetVariableTypeActionArgs(args);
-            fail("Should throw exception for missing new_type in set_variable_type action");
+            fail("Should throw exception for missing newType in set_variable_type action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention new_type",
-                e.getMessage().toLowerCase().contains("new_type"));
+            assertTrue("Error message should mention newType",
+                e.getMessage().toLowerCase().contains("newtype"));
         }
 
         // Valid set_variable_type action args
-        args.put("new_type", "int");
-        args.put("archive_name", "");
+        args.put("newType", "int");
+        args.put("archiveName", "");
         try {
             validateSetVariableTypeActionArgs(args);
         } catch (Exception e) {
@@ -702,18 +702,18 @@ public class FunctionToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "change_datatypes");
 
-        // Missing function_identifier should be invalid
+        // Missing functionIdentifier should be invalid
         try {
             validateChangeDatatypesActionArgs(args);
-            fail("Should throw exception for missing function_identifier in change_datatypes action");
+            fail("Should throw exception for missing functionIdentifier in change_datatypes action");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention function_identifier",
-                e.getMessage().toLowerCase().contains("function_identifier"));
+            assertTrue("Error message should mention functionIdentifier",
+                e.getMessage().toLowerCase().contains("functionidentifier"));
         }
 
         // Missing datatype_mappings should be invalid
-        args.put("function_identifier", "main");
+        args.put("functionIdentifier", "main");
         try {
             validateChangeDatatypesActionArgs(args);
             fail("Should throw exception for missing datatype_mappings in change_datatypes action");
@@ -724,8 +724,8 @@ public class FunctionToolProviderTest {
         }
 
         // Valid change_datatypes action args
-        args.put("datatype_mappings", "var1:int,var2:char*");
-        args.put("archive_name", "");
+        args.put("datatypeMappings", "var1:int,var2:char*");
+        args.put("archiveName", "");
         try {
             validateChangeDatatypesActionArgs(args);
         } catch (Exception e) {
@@ -771,7 +771,7 @@ public class FunctionToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateManageFunctionArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("action") == null) {
@@ -808,8 +808,8 @@ public class FunctionToolProviderTest {
     private void validateSetPrototypeActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("set_prototype".equals(action)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when action='set_prototype'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when action='set_prototype'");
             }
             if (args.get("prototype") == null) {
                 throw new IllegalArgumentException("prototype is required when action='set_prototype'");
@@ -820,15 +820,15 @@ public class FunctionToolProviderTest {
     private void validateRenameVariableActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("rename_variable".equals(action)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when action='rename_variable'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when action='rename_variable'");
             }
-            String variableMappings = (String) args.get("variable_mappings");
-            String oldName = (String) args.get("old_name");
-            String newName = (String) args.get("new_name");
+            String variableMappings = (String) args.get("variableMappings");
+            String oldName = (String) args.get("oldName");
+            String newName = (String) args.get("newName");
             if ((variableMappings == null || variableMappings.trim().isEmpty()) &&
                 (oldName == null || newName == null)) {
-                throw new IllegalArgumentException("Either variable_mappings or both old_name and new_name are required when action='rename_variable'");
+                throw new IllegalArgumentException("Either variableMappings or both oldName and newName are required when action='rename_variable'");
             }
         }
     }
@@ -836,12 +836,12 @@ public class FunctionToolProviderTest {
     private void validateChangeDatatypesActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("change_datatypes".equals(action)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when action='change_datatypes'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when action='change_datatypes'");
             }
-            String datatypeMappings = (String) args.get("datatype_mappings");
+            String datatypeMappings = (String) args.get("datatypeMappings");
             if (datatypeMappings == null || datatypeMappings.trim().isEmpty()) {
-                throw new IllegalArgumentException("datatype_mappings is required when action='change_datatypes'");
+                throw new IllegalArgumentException("datatypeMappings is required when action='change_datatypes'");
             }
         }
     }
@@ -877,8 +877,8 @@ public class FunctionToolProviderTest {
     private void validateRenameFunctionActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("rename_function".equals(action)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when action='rename_function'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when action='rename_function'");
             }
             if (args.get("name") == null) {
                 throw new IllegalArgumentException("name is required when action='rename_function'");
@@ -889,14 +889,14 @@ public class FunctionToolProviderTest {
     private void validateSetVariableTypeActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("set_variable_type".equals(action)) {
-            if (args.get("function_identifier") == null) {
-                throw new IllegalArgumentException("function_identifier is required when action='set_variable_type'");
+            if (args.get("functionIdentifier") == null) {
+                throw new IllegalArgumentException("functionIdentifier is required when action='set_variable_type'");
             }
-            if (args.get("variable_name") == null) {
-                throw new IllegalArgumentException("variable_name is required when action='set_variable_type'");
+            if (args.get("variableName") == null) {
+                throw new IllegalArgumentException("variableName is required when action='set_variable_type'");
             }
-            if (args.get("new_type") == null) {
-                throw new IllegalArgumentException("new_type is required when action='set_variable_type'");
+            if (args.get("newType") == null) {
+                throw new IllegalArgumentException("newType is required when action='set_variable_type'");
             }
         }
     }

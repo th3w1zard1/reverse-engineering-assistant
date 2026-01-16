@@ -89,170 +89,6 @@ public class ImportExportToolProvider extends AbstractToolProvider {
     }
 
     // ========================================================================
-    // Tool Registration (DISABLED - kept for reference)
-    // ========================================================================
-
-    private void registerListImportsTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("libraryFilter", Map.of(
-            "type", "string",
-            "description", "Optional: filter by library name (case-insensitive partial match)"
-        ));
-        properties.put("max_results", Map.of(
-            "type", "integer",
-            "description", "Maximum number of imports to return (default: 500)",
-            "default", 500
-        ));
-        properties.put("start_index", Map.of(
-            "type", "integer",
-            "description", "Starting index for pagination (default: 0)",
-            "default", 0
-        ));
-        properties.put("group_by_library", Map.of(
-            "type", "boolean",
-            "description", "Group imports by library name (default: true)",
-            "default", true
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-imports")
-            .title("List Imports")
-            .description("List all imported functions from external libraries. " +
-                "Useful for understanding what external APIs a binary uses.")
-            .inputSchema(createSchema(properties, List.of("program_path")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            String libraryFilter = getOptionalString(request, "library_filter", null);
-            int maxResults = clamp(getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS), 1, MAX_IMPORT_RESULTS);
-            int startIndex = Math.max(0, getOptionalInt(request, "start_index", 0));
-            boolean groupByLibrary = getOptionalBoolean(request, "group_by_library", true);
-
-            List<Map<String, Object>> allImports = collectImports(program, libraryFilter);
-            List<Map<String, Object>> paginated = paginate(allImports, startIndex, maxResults);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("program_path", program.getDomainFile().getPathname());
-            result.put("total_count", allImports.size());
-            result.put("start_index", startIndex);
-            result.put("returned_count", paginated.size());
-
-            if (groupByLibrary) {
-                result.put("libraries", groupImportsByLibrary(paginated));
-            } else {
-                result.put("imports", paginated);
-            }
-
-            return createJsonResult(result);
-        });
-    }
-
-    private void registerListExportsTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("max_results", Map.of(
-            "type", "integer",
-            "description", "Maximum number of exports to return (default: 500)",
-            "default", 500
-        ));
-        properties.put("start_index", Map.of(
-            "type", "integer",
-            "description", "Starting index for pagination (default: 0)",
-            "default", 0
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("list-exports")
-            .title("List Exports")
-            .description("List all exported symbols from the binary. " +
-                "Shows functions and data that the binary exports for use by other modules.")
-            .inputSchema(createSchema(properties, List.of("program_path")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            Program program = getProgramFromArgs(request);
-            int maxResults = clamp(getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS), 1, MAX_EXPORT_RESULTS);
-            int startIndex = Math.max(0, getOptionalInt(request, "start_index", 0));
-
-            List<Map<String, Object>> allExports = collectExports(program);
-            List<Map<String, Object>> paginated = paginate(allExports, startIndex, maxResults);
-
-            return createJsonResult(Map.of(
-                "programPath", program.getDomainFile().getPathname(),
-                "totalCount", allExports.size(),
-                "startIndex", startIndex,
-                "returnedCount", paginated.size(),
-                "exports", paginated
-            ));
-        });
-    }
-
-    private void registerFindImportReferencesTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("importName", Map.of(
-            "type", "string",
-            "description", "Name of the imported function to find references for (case-insensitive)"
-        ));
-        properties.put("library_name", Map.of(
-            "type", "string",
-            "description", "Optional: specific library name to narrow search (case-insensitive)"
-        ));
-        properties.put("max_results", Map.of(
-            "type", "integer",
-            "description", "Maximum number of references to return (default: 100)",
-            "default", 100
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("find-import-references")
-            .title("Find Import References")
-            .description("Find all locations where a specific imported function is called. " +
-                "Also finds references through thunks (IAT stubs).")
-            .inputSchema(createSchema(properties, List.of("program_path", "import_name")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            return handleFindImportReferences(request);
-        });
-    }
-
-    private void registerResolveThunkTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
-            "type", "string",
-            "description", "Path in the Ghidra Project to the program"
-        ));
-        properties.put("address", Map.of(
-            "type", "string",
-            "description", "Address of the thunk or jump stub to resolve"
-        ));
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("resolve-thunk")
-            .title("Resolve Thunk")
-            .description("Follow a thunk chain to find the actual target function. " +
-                "Thunks are wrapper functions that jump to another location.")
-            .inputSchema(createSchema(properties, List.of("program_path", "address")))
-            .build();
-
-        registerTool(tool, (exchange, request) -> {
-            return handleResolveThunk(request);
-        });
-    }
-
-    // ========================================================================
     // Data Collection Methods
     //
     // NOTE: These methods are kept in sync with upstream disabled tool handlers.
@@ -524,9 +360,9 @@ public class ImportExportToolProvider extends AbstractToolProvider {
      */
     protected McpSchema.CallToolResult handleFindImportReferences(CallToolRequest request) {
         Program program = getProgramFromArgs(request);
-        String importName = getString(request, "import_name");
-        String libraryName = getOptionalString(request, "library_name", null);
-        int maxResults = clamp(getOptionalInt(request, "max_results", 100), 1, MAX_REFERENCE_RESULTS);
+        String importName = getString(request, "importName");
+        String libraryName = getOptionalString(request, "libraryName", null);
+        int maxResults = clamp(getOptionalInt(request, "maxResults", 100), 1, MAX_REFERENCE_RESULTS);
 
         List<Function> matchingImports = findImportsByName(program, importName, libraryName);
         if (matchingImports.isEmpty()) {
@@ -584,10 +420,10 @@ public class ImportExportToolProvider extends AbstractToolProvider {
         boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("start_address", AddressUtil.formatAddress(address));
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("startAddress", AddressUtil.formatAddress(address));
         result.put("chain", chain);
-        result.put("chain_length", chain.size());
+        result.put("chainLength", chain.size());
         result.put("finalTarget", finalTarget);
         result.put("isResolved", isResolved);
 

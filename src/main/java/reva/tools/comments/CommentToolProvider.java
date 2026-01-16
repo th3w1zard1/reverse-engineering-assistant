@@ -104,42 +104,42 @@ public class CommentToolProvider extends AbstractToolProvider {
 
     private void registerManageCommentsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("action", Map.of(
             "type", "string",
             "description", "Action to perform: 'set', 'get', 'remove', 'search', or 'search_decomp'",
             "enum", List.of("set", "get", "remove", "search", "search_decomp")
         ));
-        properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the comment (required for set/remove when not using function/line_number)"));
-        properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter)"));
+        properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the comment (required for set/remove when not using function/lineNumber)"));
+        properties.put("addressOrSymbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter)"));
         properties.put("function", SchemaUtil.stringProperty("Function name or address when setting decompilation line comment or searching decompilation"));
-        properties.put("function_name_or_address", SchemaUtil.stringProperty("Function name or address (alternative parameter name)"));
-        properties.put("line_number", SchemaUtil.integerProperty("Line number in the decompiled function when action='set' with decompilation (1-based)"));
+        properties.put("functionNameOrAddress", SchemaUtil.stringProperty("Function name or address (alternative parameter name)"));
+        properties.put("lineNumber", SchemaUtil.integerProperty("Line number in the decompiled function when action='set' with decompilation (1-based)"));
         properties.put("comment", SchemaUtil.stringProperty("The comment text to set (required for set when not using batch mode)"));
-        properties.put("comment_type", SchemaUtil.stringPropertyWithDefault("Type of comment enum ('pre', 'eol', 'post', 'plate', 'repeatable')", "eol"));
+        properties.put("commentType", SchemaUtil.stringPropertyWithDefault("Type of comment enum ('pre', 'eol', 'post', 'plate', 'repeatable')", "eol"));
         // Batch comments array - array of objects
         Map<String, Object> commentItemSchema = new HashMap<>();
         commentItemSchema.put("type", "object");
         Map<String, Object> commentItemProperties = new HashMap<>();
         commentItemProperties.put("address", SchemaUtil.stringProperty("Address or symbol name where to set the comment"));
         commentItemProperties.put("comment", SchemaUtil.stringProperty("The comment text to set"));
-        commentItemProperties.put("comment_type", SchemaUtil.stringPropertyWithDefault("Type of comment enum ('pre', 'eol', 'post', 'plate', 'repeatable')", "eol"));
+        commentItemProperties.put("commentType", SchemaUtil.stringPropertyWithDefault("Type of comment enum ('pre', 'eol', 'post', 'plate', 'repeatable')", "eol"));
         commentItemSchema.put("properties", commentItemProperties);
         commentItemSchema.put("required", List.of("address", "comment"));
 
         Map<String, Object> commentsArraySchema = new HashMap<>();
         commentsArraySchema.put("type", "array");
-        commentsArraySchema.put("description", "Array of comment objects for batch setting. Each object should have 'address' (required), 'comment' (required), and optional 'comment_type' (defaults to 'eol'). When provided, sets multiple comments in a single transaction.");
+        commentsArraySchema.put("description", "Array of comment objects for batch setting. Each object should have 'address' (required), 'comment' (required), and optional 'commentType' (defaults to 'eol'). When provided, sets multiple comments in a single transaction.");
         commentsArraySchema.put("items", commentItemSchema);
         properties.put("comments", commentsArraySchema);
         properties.put("start", SchemaUtil.stringProperty("Start address of the range when action='get'"));
         properties.put("end", SchemaUtil.stringProperty("End address of the range when action='get'"));
-        properties.put("comment_types", SchemaUtil.stringProperty("Types of comments to retrieve/search (comma-separated: pre,eol,post,plate,repeatable)"));
-        properties.put("search_text", SchemaUtil.stringProperty("Text to search for in comments when action='search'"));
+        properties.put("commentTypes", SchemaUtil.stringProperty("Types of comments to retrieve/search (comma-separated: pre,eol,post,plate,repeatable)"));
+        properties.put("searchText", SchemaUtil.stringProperty("Text to search for in comments when action='search'"));
         properties.put("pattern", SchemaUtil.stringProperty("Regular expression pattern to search for when action='search_decomp'"));
-        properties.put("case_sensitive", SchemaUtil.booleanPropertyWithDefault("Whether search is case sensitive", false));
-        properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return", 100));
-        properties.put("override_max_functions_limit", SchemaUtil.booleanPropertyWithDefault("Whether to override the maximum function limit for decompiler searches", false));
+        properties.put("caseSensitive", SchemaUtil.booleanPropertyWithDefault("Whether search is case sensitive", false));
+        properties.put("maxResults", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return", 100));
+        properties.put("overrideMaxFunctionsLimit", SchemaUtil.booleanPropertyWithDefault("Whether to override the maximum function limit for decompiler searches", false));
 
         List<String> required = List.of("action");
 
@@ -269,7 +269,6 @@ public class CommentToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleSetComment(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         // Check for batch mode (comments array)
-        @SuppressWarnings("unchecked")
         List<Map<String, Object>> commentsArray = getOptionalCommentsArray(request);
 
         if (commentsArray != null && !commentsArray.isEmpty()) {
@@ -278,24 +277,24 @@ public class CommentToolProvider extends AbstractToolProvider {
 
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
+            addressStr = getOptionalString(request, "addressOrSymbol", null);
         }
 
-        // Check if setting decompilation line comment (function + line_number instead of address)
+        // Check if setting decompilation line comment (function + lineNumber instead of address)
         String functionStr = getOptionalString(request, "function", null);
         if (functionStr == null) {
-            functionStr = getOptionalString(request, "function_name_or_address", null);
+            functionStr = getOptionalString(request, "functionNameOrAddress", null);
         }
-        Integer lineNumber = getOptionalInteger(request.arguments(), "line_number", null);
+        Integer lineNumber = getOptionalInteger(request.arguments(), "lineNumber", null);
 
-        // If we have function and line_number but no address, this is a decompilation line comment
+        // If we have function and lineNumber but no address, this is a decompilation line comment
         if (addressStr == null && functionStr != null && lineNumber != null) {
             return handleSetDecompilationLineComment(program, request, functionStr, lineNumber);
         }
 
         // Regular address-based comment
         if (addressStr == null) {
-            return createErrorResult("address is required for action='set' (or use 'comments' array for batch mode, or use function and line_number for decompilation line comments)");
+            return createErrorResult("address is required for action='set' (or use 'comments' array for batch mode, or use function and lineNumber for decompilation line comments)");
         }
 
         Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
@@ -308,16 +307,16 @@ public class CommentToolProvider extends AbstractToolProvider {
             reva.util.IntelligentBookmarkUtil.getDefaultPercentile());
         reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, address, bookmarkPercentile);
 
-        String commentTypeStr = getOptionalString(request, "comment_type", null);
+        String commentTypeStr = getOptionalString(request, "commentType", null);
         if (commentTypeStr == null) {
-            commentTypeStr = getOptionalString(request, "comment_type", null);
+            commentTypeStr = getOptionalString(request, "commentType", null);
         }
 
         // Auto-label comment type if not provided (controlled by environment variable)
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
         if (autoLabel && commentTypeStr == null) {
             Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
-            commentTypeStr = (String) suggestion.get("comment_type");
+            commentTypeStr = (String) suggestion.get("commentType");
         }
 
         if (commentTypeStr == null) {
@@ -418,12 +417,12 @@ public class CommentToolProvider extends AbstractToolProvider {
 
                     // Extract comment type (optional, defaults to "eol")
                     String commentTypeStr = "eol";
-                    Object commentTypeObj = commentObj.get("comment_type");
+                    Object commentTypeObj = commentObj.get("commentType");
                     if (commentTypeObj != null) {
                         commentTypeStr = commentTypeObj.toString();
                     } else {
-                        // Also check camelCase variant
-                        commentTypeObj = commentObj.get("commentType");
+                        // Also check snake_case variant for backward compatibility
+                        commentTypeObj = commentObj.get("comment_type");
                         if (commentTypeObj != null) {
                             commentTypeStr = commentTypeObj.toString();
                         }
@@ -494,7 +493,7 @@ public class CommentToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSetDecompilationLineComment(Program program,
             io.modelcontextprotocol.spec.McpSchema.CallToolRequest request,
             String functionStr, int lineNumber) {
-        String commentTypeStr = getOptionalString(request, "comment_type", "eol");
+        String commentTypeStr = getOptionalString(request, "commentType", "eol");
         String comment = getString(request, "comment");
 
         // Validate comment type (only 'pre' and 'eol' are valid for decompilation comments)
@@ -530,7 +529,7 @@ public class CommentToolProvider extends AbstractToolProvider {
         }
 
         // Validate that the decompilation has been read for this function first
-        String programPath = getString(request, "program_path");
+        String programPath = getString(request, "programPath");
         String functionKey = programPath + ":" + AddressUtil.formatAddress(function.getEntryPoint());
 
         // If decompilation hasn't been read yet, we'll decompile it in this method anyway,
@@ -601,11 +600,11 @@ public class CommentToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleGetComments(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
+            addressStr = getOptionalString(request, "addressOrSymbol", null);
         }
         String startStr = getOptionalString(request, "start", null);
         String endStr = getOptionalString(request, "end", null);
-        String commentTypesStr = getOptionalString(request, "comment_types", null);
+        String commentTypesStr = getOptionalString(request, "commentTypes", null);
         if (commentTypesStr == null) {
             commentTypesStr = getOptionalString(request, "commentTypes", null);
         }
@@ -640,7 +639,7 @@ public class CommentToolProvider extends AbstractToolProvider {
             }
         } else {
             // Use getOptionalStringList which already supports both camelCase and snake_case via getParameterValue
-            List<String> commentTypesList = getOptionalStringList(request.arguments(), "comment_types", null);
+            List<String> commentTypesList = getOptionalStringList(request.arguments(), "commentTypes", null);
             if (commentTypesList == null || commentTypesList.isEmpty()) {
                 commentTypesList = getOptionalStringList(request.arguments(), "commentTypes", null);
             }
@@ -686,7 +685,7 @@ public class CommentToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleRemoveComment(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
+            addressStr = getOptionalString(request, "addressOrSymbol", null);
         }
         if (addressStr == null) {
             return createErrorResult("address is required for action='remove'");
@@ -702,12 +701,12 @@ public class CommentToolProvider extends AbstractToolProvider {
             reva.util.IntelligentBookmarkUtil.getDefaultPercentile());
         reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, address, bookmarkPercentile);
 
-        String commentTypeStr = getOptionalString(request, "comment_type", null);
+        String commentTypeStr = getOptionalString(request, "commentType", null);
         if (commentTypeStr == null) {
-            commentTypeStr = getOptionalString(request, "comment_type", null);
+            commentTypeStr = getOptionalString(request, "commentType", null);
         }
         if (commentTypeStr == null) {
-            return createErrorResult("comment_type is required for action='remove'");
+            return createErrorResult("commentType is required for action='remove'");
         }
 
         CommentType commentType = COMMENT_TYPES.get(commentTypeStr.toLowerCase());
@@ -741,21 +740,21 @@ public class CommentToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleSearchComments(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        String searchText = getOptionalString(request, "search_text", null);
+        String searchText = getOptionalString(request, "searchText", null);
         if (searchText == null) {
-            searchText = getOptionalString(request, "search_text", null);
+            searchText = getOptionalString(request, "searchText", null);
         }
         if (searchText == null) {
-            return createErrorResult("search_text is required for action='search'");
+            return createErrorResult("searchText is required for action='search'");
         }
 
-        boolean caseSensitive = getOptionalBoolean(request, "case_sensitive", false);
+        boolean caseSensitive = getOptionalBoolean(request, "caseSensitive", false);
 
-        String commentTypesStr = getOptionalString(request, "comment_types", null);
+        String commentTypesStr = getOptionalString(request, "commentTypes", null);
         List<String> commentTypesList = getOptionalStringList(request.arguments(), "commentTypes", null);
 
-        int maxResults = getOptionalInt(request, "max_results",
-            getOptionalInt(request, "max_results", 100));
+        int maxResults = getOptionalInt(request, "maxResults",
+            getOptionalInt(request, "maxResults", 100));
 
         List<CommentType> types = new ArrayList<>();
         if (commentTypesStr != null && !commentTypesStr.isEmpty()) {
@@ -829,9 +828,9 @@ public class CommentToolProvider extends AbstractToolProvider {
             return createErrorResult("pattern is required for action='search_decomp'");
         }
 
-        boolean caseSensitive = getOptionalBoolean(request, "case_sensitive", false);
-        int maxResults = getOptionalInt(request, "max_results", 50);
-        boolean overrideMaxFunctionsLimit = getOptionalBoolean(request, "override_max_functions_limit", false);
+        boolean caseSensitive = getOptionalBoolean(request, "caseSensitive", false);
+        int maxResults = getOptionalInt(request, "maxResults", 50);
+        boolean overrideMaxFunctionsLimit = getOptionalBoolean(request, "overrideMaxFunctionsLimit", false);
 
         if (pattern.trim().isEmpty()) {
             return createErrorResult("Search pattern cannot be empty");
@@ -886,10 +885,10 @@ public class CommentToolProvider extends AbstractToolProvider {
 
                                 if (matcher.find()) {
                                     Map<String, Object> result = new HashMap<>();
-                                    result.put("function_name", function.getName());
-                                    result.put("function_address", AddressUtil.formatAddress(function.getEntryPoint()));
-                                    result.put("line_number", i + 1);
-                                    result.put("line_content", line.trim());
+                                    result.put("functionName", function.getName());
+                                    result.put("functionAddress", AddressUtil.formatAddress(function.getEntryPoint()));
+                                    result.put("lineNumber", i + 1);
+                                    result.put("lineContent", line.trim());
                                     result.put("matchStart", matcher.start());
                                     result.put("matchEnd", matcher.end());
                                     result.put("matchedText", matcher.group());

@@ -116,7 +116,7 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", programPath);
+            arguments.put("programPath", programPath);
             arguments.put("action", "create");
             arguments.put("address", "0x01000100");
             arguments.put("name", "newFunction");
@@ -138,9 +138,9 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", programPath);
+            arguments.put("programPath", programPath);
             arguments.put("action", "set_prototype");
-            arguments.put("function_identifier", "0x01000200");
+            arguments.put("functionIdentifier", "0x01000200");
             arguments.put("prototype", "int main(int argc, char** argv)");
             arguments.put("createIfNotExists", true);
 
@@ -160,9 +160,9 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             client.initialize();
 
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", programPath);
+            arguments.put("programPath", programPath);
             arguments.put("action", "rename_function");
-            arguments.put("function_identifier", "oldFunction");
+            arguments.put("functionIdentifier", "oldFunction");
             arguments.put("name", "renamedFunction");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
@@ -184,17 +184,17 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             Map<String, Object> setProtoArgs = new HashMap<>();
             setProtoArgs.put("programPath", programPath);
             setProtoArgs.put("action", "set_prototype");
-            setProtoArgs.put("function_identifier", "0x01002000");
+            setProtoArgs.put("functionIdentifier", "0x01002000");
             setProtoArgs.put("prototype", "void test(int param1, int param2)");
             client.callTool(new CallToolRequest("manage-function", setProtoArgs));
 
             // Then rename a variable
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", programPath);
+            arguments.put("programPath", programPath);
             arguments.put("action", "rename_variable");
-            arguments.put("function_identifier", "0x01000200");
-            arguments.put("old_name", "param1");
-            arguments.put("new_name", "renamedParam");
+            arguments.put("functionIdentifier", "0x01000200");
+            arguments.put("oldName", "param1");
+            arguments.put("newName", "renamedParam");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
@@ -212,17 +212,17 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             Map<String, Object> setProtoArgs = new HashMap<>();
             setProtoArgs.put("programPath", programPath);
             setProtoArgs.put("action", "set_prototype");
-            setProtoArgs.put("function_identifier", "0x01002000");
+            setProtoArgs.put("functionIdentifier", "0x01002000");
             setProtoArgs.put("prototype", "void test(int param1)");
             client.callTool(new CallToolRequest("manage-function", setProtoArgs));
 
             // Then change variable type
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", programPath);
+            arguments.put("programPath", programPath);
             arguments.put("action", "set_variable_type");
-            arguments.put("function_identifier", "0x01000200");
-            arguments.put("variable_name", "param1");
-            arguments.put("new_type", "long");
+            arguments.put("functionIdentifier", "0x01000200");
+            arguments.put("variableName", "param1");
+            arguments.put("newType", "long");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
@@ -240,21 +240,229 @@ public class FunctionToolProviderManageFunctionIntegrationTest extends RevaInteg
             Map<String, Object> setProtoArgs = new HashMap<>();
             setProtoArgs.put("programPath", programPath);
             setProtoArgs.put("action", "set_prototype");
-            setProtoArgs.put("function_identifier", "0x01002000");
+            setProtoArgs.put("functionIdentifier", "0x01002000");
             setProtoArgs.put("prototype", "void test(int param1, int param2)");
             client.callTool(new CallToolRequest("manage-function", setProtoArgs));
 
             // Then change multiple variable types
             Map<String, Object> arguments = new HashMap<>();
-            arguments.put("program_path", programPath);
+            arguments.put("programPath", programPath);
             arguments.put("action", "change_datatypes");
-            arguments.put("function_identifier", "0x01000200");
-            arguments.put("datatype_mappings", "param1:long,param2:short");
+            arguments.put("functionIdentifier", "0x01000200");
+            arguments.put("datatypeMappings", "param1:long,param2:short");
 
             CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
 
             assertNotNull("Result should not be null", result);
             // May fail if decompilation doesn't work, but should return valid response
+        });
+    }
+
+    @Test
+    public void testManageFunctionBatchCreate() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test batch create with array of addresses
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "create");
+            arguments.put("address", java.util.Arrays.asList("0x01000300", "0x01000400"));
+            arguments.put("name", "batchFunc");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertNotNull("Result should not be null", result);
+            // May fail if addresses don't have instructions, but should handle gracefully
+        });
+    }
+
+    @Test
+    public void testManageFunctionBatchRename() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Create additional functions for batch rename
+            Address funcAddr1 = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000500);
+            Address funcAddr2 = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000600);
+            int txId = program.startTransaction("Create functions for batch rename");
+            try {
+                FunctionManager funcManager = program.getFunctionManager();
+                try {
+                    funcManager.createFunction("batchFunc1", funcAddr1,
+                        new AddressSet(funcAddr1, funcAddr1.add(20)), SourceType.USER_DEFINED);
+                } catch (ghidra.util.exception.InvalidInputException | ghidra.program.database.function.OverlappingFunctionException e) {
+                    fail("Failed to create batchFunc1: " + e.getMessage());
+                }
+                try {
+                    funcManager.createFunction("batchFunc2", funcAddr2,
+                        new AddressSet(funcAddr2, funcAddr2.add(20)), SourceType.USER_DEFINED);
+                } catch (ghidra.util.exception.InvalidInputException | ghidra.program.database.function.OverlappingFunctionException e) {
+                    fail("Failed to create batchFunc2: " + e.getMessage());
+                }
+            } finally {
+                program.endTransaction(txId, true);
+            }
+
+            // Test batch rename with functions array
+            java.util.List<Map<String, Object>> functionsList = java.util.Arrays.asList(
+                Map.of("functionIdentifier", "batchFunc1", "name", "renamedBatch1"),
+                Map.of("functionIdentifier", "batchFunc2", "name", "renamedBatch2")
+            );
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "rename_function");
+            arguments.put("functions", functionsList);
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertNotNull("Result should not be null", result);
+            if (!result.isError()) {
+                // Verify functions were renamed
+                FunctionManager funcManager = program.getFunctionManager();
+                Function func1 = funcManager.getFunctionAt(funcAddr1);
+                Function func2 = funcManager.getFunctionAt(funcAddr2);
+                if (func1 != null && func2 != null) {
+                    assertTrue("Function 1 should be renamed", func1.getName().contains("renamedBatch1") ||
+                        "renamedBatch1".equals(func1.getName()));
+                    assertTrue("Function 2 should be renamed", func2.getName().contains("renamedBatch2") ||
+                        "renamedBatch2".equals(func2.getName()));
+                }
+            }
+        });
+    }
+
+    @Test
+    public void testManageFunctionRenameVariableWithMappings() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // First set a prototype
+            Map<String, Object> setProtoArgs = new HashMap<>();
+            setProtoArgs.put("programPath", programPath);
+            setProtoArgs.put("action", "set_prototype");
+            setProtoArgs.put("functionIdentifier", "0x01000200");
+            setProtoArgs.put("prototype", "void test(int var1, int var2)");
+            client.callTool(new CallToolRequest("manage-function", setProtoArgs));
+
+            // Then rename variables using mappings
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "rename_variable");
+            arguments.put("functionIdentifier", "0x01000200");
+            arguments.put("variableMappings", "var1:renamedVar1,var2:renamedVar2");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertNotNull("Result should not be null", result);
+            // May fail if decompilation doesn't work
+        });
+    }
+
+    @Test
+    public void testManageFunctionSetPrototypeBatch() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test batch set prototype with array
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "set_prototype");
+            arguments.put("functionIdentifier", java.util.Arrays.asList("0x01000200", "oldFunction"));
+            arguments.put("prototype", java.util.Arrays.asList("int func1()", "int func2(int x)"));
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertNotNull("Result should not be null", result);
+            // May fail if functions don't exist, but should handle gracefully
+        });
+    }
+
+    @Test
+    public void testManageFunctionPropagate() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test propagate functionality
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "rename_function");
+            arguments.put("functionIdentifier", "oldFunction");
+            arguments.put("name", "propagatedFunction");
+            arguments.put("propagate", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertNotNull("Result should not be null", result);
+            // May return propagation results or just succeed
+        });
+    }
+
+    @Test
+    public void testManageFunctionValidatesProgramState() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test that function rename actually updates program state
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "rename_function");
+            arguments.put("functionIdentifier", "oldFunction");
+            arguments.put("name", "stateValidatedFunction");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertNotNull("Result should not be null", result);
+            if (!result.isError()) {
+                // Verify function was actually renamed in program state
+                FunctionManager funcManager = program.getFunctionManager();
+                Function func = funcManager.getFunctionAt(existingFuncAddr);
+                assertNotNull("Function should exist", func);
+                assertEquals("Function should be renamed", "stateValidatedFunction", func.getName());
+            }
+        });
+    }
+
+    @Test
+    public void testManageFunctionInvalidAction() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "invalid_action");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertTrue("Tool should have error for invalid action", result.isError());
+        });
+    }
+
+    @Test
+    public void testManageFunctionMissingRequiredParameters() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            // Test create without address
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "create");
+            arguments.put("name", "test");
+
+            CallToolResult result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertTrue("Tool should have error for missing address", result.isError());
+
+            // Test rename without name
+            arguments.clear();
+            arguments.put("programPath", programPath);
+            arguments.put("action", "rename_function");
+            arguments.put("functionIdentifier", "oldFunction");
+
+            result = client.callTool(new CallToolRequest("manage-function", arguments));
+
+            assertTrue("Tool should have error for missing name", result.isError());
         });
     }
 }

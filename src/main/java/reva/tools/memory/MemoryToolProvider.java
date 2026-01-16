@@ -59,7 +59,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
 
     private void registerInspectMemoryTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
         properties.put("mode", Map.of(
             "type", "string",
             "description", "Inspection mode: 'blocks', 'read', 'data_at', 'data_items', or 'segments'",
@@ -70,7 +70,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
         properties.put("offset", SchemaUtil.integerPropertyWithDefault("Pagination offset when mode='data_items' or 'segments'", 0));
         properties.put("limit", SchemaUtil.integerPropertyWithDefault("Maximum number of items to return when mode='data_items' or 'segments'", 100));
 
-        List<String> required = List.of("program_path", "mode");
+        List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("inspect-memory")
@@ -161,7 +161,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
         result.put("length", bytes.length);
         String hexString = MemoryUtil.formatHexString(bytes);
         result.put("hex", hexString);
-        result.put("hex_dump", hexString);
+        result.put("hexDump", hexString);
         result.put("data", hexString);
         result.put("ascii", MemoryUtil.formatAsciiString(bytes));
         return createJsonResult(result);
@@ -184,14 +184,14 @@ public class MemoryToolProvider extends AbstractToolProvider {
 
         Map<String, Object> resultData = new HashMap<>();
         resultData.put("address", AddressUtil.formatAddress(data.getAddress()));
-        resultData.put("data_type", data.getDataType().getName());
+        resultData.put("dataType", data.getDataType().getName());
         resultData.put("length", data.getLength());
 
         SymbolTable symbolTable = program.getSymbolTable();
         Symbol primarySymbol = symbolTable.getPrimarySymbol(data.getAddress());
         if (primarySymbol != null) {
-            resultData.put("symbol_name", primarySymbol.getName());
-            resultData.put("symbol_namespace", primarySymbol.getParentNamespace().getName());
+            resultData.put("symbolName", primarySymbol.getName());
+            resultData.put("symbolNamespace", primarySymbol.getParentNamespace().getName());
         }
 
         StringBuilder hexString = new StringBuilder();
@@ -200,9 +200,9 @@ public class MemoryToolProvider extends AbstractToolProvider {
             for (byte b : bytes) {
                 hexString.append(String.format("%02x", b & 0xff));
             }
-            resultData.put("hex_bytes", hexString.toString());
+            resultData.put("hexBytes", hexString.toString());
         } catch (MemoryAccessException e) {
-            resultData.put("hex_bytes_error", "Memory access error: " + e.getMessage());
+            resultData.put("hexBytesError", "Memory access error: " + e.getMessage());
         }
 
         String representation = data.getDefaultValueRepresentation();
@@ -210,7 +210,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
 
         Object value = data.getValue();
         if (value != null) {
-            resultData.put("value_type", value.getClass().getSimpleName());
+            resultData.put("valueType", value.getClass().getSimpleName());
             resultData.put("value", value.toString());
         } else {
             resultData.put("value", null);
@@ -243,7 +243,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
 
             Map<String, Object> item = new HashMap<>();
             item.put("address", AddressUtil.formatAddress(data.getAddress()));
-            item.put("data_type", data.getDataType().getName());
+            item.put("dataType", data.getDataType().getName());
             item.put("length", data.getLength());
             item.put("representation", data.getDefaultValueRepresentation());
 
@@ -266,7 +266,7 @@ public class MemoryToolProvider extends AbstractToolProvider {
         result.put("offset", offset);
         result.put("limit", limit);
         result.put("returned", dataItems.size());
-        result.put("has_more", dataIter.hasNext());
+        result.put("hasMore", dataIter.hasNext());
         return createJsonResult(result);
     }
 
@@ -302,8 +302,8 @@ public class MemoryToolProvider extends AbstractToolProvider {
         result.put("segments", segments);
         result.put("offset", offset);
         result.put("limit", limit);
-        result.put("total_count", allBlocks.size());
-        result.put("has_more", endIndex < allBlocks.size());
+        result.put("totalCount", allBlocks.size());
+        result.put("hasMore", endIndex < allBlocks.size());
         return createJsonResult(result);
     }
 

@@ -23,6 +23,7 @@ import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
 
+import ghidra.program.model.address.Address;
 import ghidra.program.model.data.BuiltInDataTypeManager;
 import ghidra.program.model.data.DataTypeManager;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -129,12 +130,12 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
 
                 // Test get-data-types with invalid program path
                 CallToolResult typesResult = client.callTool(new CallToolRequest("manage-data-types",
-                    Map.of("programPath", invalidProgramPath, "action", "list", "archive_name", "BuiltInTypes")));
+                    Map.of("programPath", invalidProgramPath, "action", "list", "archiveName", "BuiltInTypes")));
                 assertTrue("get-data-types should fail with invalid program path", typesResult.isError());
 
                 // Test get-data-type-by-string with invalid program path
                 CallToolResult byStringResult = client.callTool(new CallToolRequest("manage-data-types",
-                    Map.of("programPath", invalidProgramPath, "action", "by_string", "data_type_string", "int")));
+                    Map.of("programPath", invalidProgramPath, "action", "by_string", "dataTypeString", "int")));
                 assertTrue("get-data-type-by-string should fail with invalid program path", byStringResult.isError());
 
             } catch (Exception e) {
@@ -161,8 +162,8 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                     Map<String, Object> args = new HashMap<>();
                     args.put("programPath", programPath);
                     args.put("action", "apply");
-                    args.put("address_or_symbol", "0x00401000");
-                    args.put("data_type_string", dataType);
+                    args.put("addressOrSymbol", "0x00401000");
+                    args.put("dataTypeString", dataType);
 
                     CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", args));
                     String resultText = ((TextContent) result.content().get(0)).text();
@@ -197,8 +198,8 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
                     Map<String, Object> args = new HashMap<>();
                     args.put("programPath", programPath);
                     args.put("action", "apply");
-                    args.put("address_or_symbol", "0x00401000");
-                    args.put("data_type_string", dataType);
+                    args.put("addressOrSymbol", "0x00401000");
+                    args.put("dataTypeString", dataType);
 
                     CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", args));
                     String resultText = ((TextContent) result.content().get(0)).text();
@@ -242,7 +243,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
 
                 // Now test get-data-types with the built-in archive - this is the key functionality
                 CallToolResult typesResult = client.callTool(new CallToolRequest("manage-data-types",
-                    Map.of("programPath", programPath, "action", "list", "archive_name", "BuiltInTypes")));
+                    Map.of("programPath", programPath, "action", "list", "archiveName", "BuiltInTypes")));
 
                 assertFalse("get-data-types should succeed", typesResult.isError());
 
@@ -263,7 +264,7 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
 
                 // Test get-data-type-by-string with program context - most important test
                 CallToolResult byStringResult = client.callTool(new CallToolRequest("manage-data-types",
-                    Map.of("programPath", programPath, "action", "by_string", "data_type_string", "int")));
+                    Map.of("programPath", programPath, "action", "by_string", "dataTypeString", "int")));
 
                 assertFalse("get-data-type-by-string should succeed", byStringResult.isError());
                 String byStringText = ((TextContent) byStringResult.content().get(0)).text();
@@ -314,6 +315,156 @@ public class DataTypeToolProviderIntegrationTest extends RevaIntegrationTestBase
 
                 // In test environment, program may not be accessible through normal channels,
                 // but the important thing is that the tool accepts programPath and returns built-in types
+            } catch (Exception e) {
+                fail("Test failed with exception: " + e.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testManageDataTypesListWithPagination() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            try {
+                client.initialize();
+
+                // Test first page
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("action", "list");
+                arguments.put("archiveName", "BuiltInTypes");
+                arguments.put("startIndex", 0);
+                arguments.put("maxCount", 10);
+
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", arguments));
+
+                assertFalse("List should succeed", result.isError());
+
+                // Test second page
+                arguments.put("startIndex", 10);
+                CallToolResult result2 = client.callTool(new CallToolRequest("manage-data-types", arguments));
+                assertFalse("Second page should succeed", result2.isError());
+            } catch (Exception e) {
+                fail("Test failed with exception: " + e.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testManageDataTypesListWithCategoryPath() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            try {
+                client.initialize();
+
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("action", "list");
+                arguments.put("archiveName", "BuiltInTypes");
+                arguments.put("categoryPath", "/");
+                arguments.put("includeSubcategories", true);
+
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", arguments));
+
+                assertFalse("List with category should succeed", result.isError());
+            } catch (Exception e) {
+                fail("Test failed with exception: " + e.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testManageDataTypesByString() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            try {
+                client.initialize();
+
+                String[] typeStrings = {"int", "char*", "void*", "int[10]", "char**"};
+
+                for (String typeString : typeStrings) {
+                    Map<String, Object> arguments = new HashMap<>();
+                    arguments.put("programPath", programPath);
+                    arguments.put("action", "by_string");
+                    arguments.put("dataTypeString", typeString);
+
+                    CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", arguments));
+
+                    assertFalse("By string should succeed for type: " + typeString, result.isError());
+                    TextContent content = (TextContent) result.content().get(0);
+                    String resultText = content.text();
+                    assertFalse("Should not fail with 'No data type managers available'",
+                               resultText.contains("No data type managers available"));
+                }
+            } catch (Exception e) {
+                fail("Test failed with exception: " + e.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testManageDataTypesApplyBatch() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            try {
+                client.initialize();
+
+                // Create test addresses
+                Address addr1 = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000010);
+                Address addr2 = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000020);
+                int txId = program.startTransaction("Create data for batch apply");
+                try {
+                    program.getListing().createData(addr1, new ghidra.program.model.data.ByteDataType(), 1);
+                    program.getListing().createData(addr2, new ghidra.program.model.data.ByteDataType(), 1);
+                } finally {
+                    program.endTransaction(txId, true);
+                }
+
+                // Test batch apply (addressOrSymbol as array)
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("action", "apply");
+                arguments.put("addressOrSymbol", java.util.Arrays.asList(addr1.toString(), addr2.toString()));
+                arguments.put("dataTypeString", "int");
+
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", arguments));
+
+                assertFalse("Batch apply should succeed", result.isError());
+            } catch (Exception e) {
+                fail("Test failed with exception: " + e.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testManageDataTypesValidatesProgramState() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            try {
+                client.initialize();
+
+                Address applyAddr = program.getAddressFactory().getDefaultAddressSpace().getAddress(0x01000030);
+                int txId = program.startTransaction("Create data for apply");
+                try {
+                    program.getListing().createData(applyAddr, new ghidra.program.model.data.ByteDataType(), 1);
+                } finally {
+                    program.endTransaction(txId, true);
+                }
+
+                // Apply data type
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("action", "apply");
+                arguments.put("addressOrSymbol", applyAddr.toString());
+                arguments.put("dataTypeString", "int");
+
+                CallToolResult result = client.callTool(new CallToolRequest("manage-data-types", arguments));
+
+                assertFalse("Apply should succeed", result.isError());
+
+                // Verify data type was actually applied to program state
+                ghidra.program.model.listing.Data data = program.getListing().getDataAt(applyAddr);
+                if (data != null) {
+                    ghidra.program.model.data.DataType dataType = data.getDataType();
+                    assertNotNull("Data type should be set", dataType);
+                    assertTrue("Data type should be int or equivalent",
+                        dataType.getName().contains("int") || dataType.getName().equals("int"));
+                }
             } catch (Exception e) {
                 fail("Test failed with exception: " + e.getMessage());
             }

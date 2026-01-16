@@ -82,7 +82,7 @@ public class VtableToolProviderTest {
     public void testValidateAnalyzeVtablesParameters() {
         // Test parameter validation for the analyze-vtables tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "analyze");
 
         // Valid parameters should not throw
@@ -94,7 +94,7 @@ public class VtableToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateAnalyzeVtablesArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -152,8 +152,8 @@ public class VtableToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "analyze");
-        args.put("vtable_address", "0x401000");
-        args.put("max_entries", 200);
+        args.put("vtableAddress", "0x401000");
+        args.put("maxEntries", 200);
 
         // Valid analyze mode args
         try {
@@ -163,7 +163,7 @@ public class VtableToolProviderTest {
         }
 
         // Missing vtable_address should throw
-        args.remove("vtable_address");
+        args.remove("vtableAddress");
         try {
             validateAnalyzeModeArgs(args);
             fail("Should throw exception for missing vtable_address in analyze mode");
@@ -174,8 +174,8 @@ public class VtableToolProviderTest {
         }
 
         // max_entries is optional with default
-        args.put("vtable_address", "0x401000");
-        args.remove("max_entries");
+        args.put("vtableAddress", "0x401000");
+        args.remove("maxEntries");
         try {
             validateAnalyzeModeArgs(args);
             // Should not throw - max_entries has default
@@ -184,7 +184,7 @@ public class VtableToolProviderTest {
         }
 
         // Test max_entries clamping (should be handled in implementation)
-        args.put("max_entries", 5000);
+        args.put("maxEntries", 5000);
         try {
             validateMaxEntriesClamping(args);
             // Should clamp to max (1000)
@@ -199,8 +199,8 @@ public class VtableToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "callers");
-        args.put("function_address", "0x402000");
-        args.put("max_results", 500);
+        args.put("functionAddress", "0x402000");
+        args.put("maxResults", 500);
 
         // Valid callers mode args
         try {
@@ -210,7 +210,7 @@ public class VtableToolProviderTest {
         }
 
         // Missing function_address should throw
-        args.remove("function_address");
+        args.remove("functionAddress");
         try {
             validateCallersModeArgs(args);
             fail("Should throw exception for missing function_address in callers mode");
@@ -221,8 +221,8 @@ public class VtableToolProviderTest {
         }
 
         // vtable_address is optional for callers mode
-        args.put("function_address", "0x402000");
-        args.put("vtable_address", "0x401000");
+        args.put("functionAddress", "0x402000");
+        args.put("vtableAddress", "0x401000");
         try {
             validateCallersModeArgs(args);
             // Should not throw - vtable_address is optional
@@ -231,7 +231,7 @@ public class VtableToolProviderTest {
         }
 
         // max_results is optional with default
-        args.remove("max_results");
+        args.remove("maxResults");
         try {
             validateCallersModeArgs(args);
             // Should not throw - max_results has default
@@ -246,7 +246,7 @@ public class VtableToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "containing");
-        args.put("function_address", "0x402000");
+        args.put("functionAddress", "0x402000");
 
         // Valid containing mode args
         try {
@@ -256,7 +256,7 @@ public class VtableToolProviderTest {
         }
 
         // Missing function_address should throw
-        args.remove("function_address");
+        args.remove("functionAddress");
         try {
             validateContainingModeArgs(args);
             fail("Should throw exception for missing function_address in containing mode");
@@ -269,7 +269,7 @@ public class VtableToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handler
     private void validateAnalyzeVtablesArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("mode") == null) {
@@ -298,7 +298,7 @@ public class VtableToolProviderTest {
     private void validateAnalyzeModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("analyze".equals(mode)) {
-            if (args.get("vtable_address") == null && args.get("vtableAddress") == null) {
+            if (args.get("vtableAddress") == null && args.get("vtableAddress") == null) {
                 throw new IllegalArgumentException("vtable_address is required for mode='analyze'");
             }
             // max_entries is optional with default
@@ -308,7 +308,7 @@ public class VtableToolProviderTest {
     private void validateCallersModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("callers".equals(mode)) {
-            if (args.get("function_address") == null && args.get("functionAddress") == null) {
+            if (args.get("functionAddress") == null && args.get("functionAddress") == null) {
                 throw new IllegalArgumentException("function_address is required for mode='callers'");
             }
             // vtable_address is optional (searches all vtables if not provided)
@@ -319,7 +319,7 @@ public class VtableToolProviderTest {
     private void validateContainingModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("containing".equals(mode)) {
-            if (args.get("function_address") == null && args.get("functionAddress") == null) {
+            if (args.get("functionAddress") == null && args.get("functionAddress") == null) {
                 throw new IllegalArgumentException("function_address is required for mode='containing'");
             }
         }
@@ -328,7 +328,7 @@ public class VtableToolProviderTest {
     private void validateMaxEntriesClamping(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("analyze".equals(mode)) {
-            Object maxEntriesObj = args.get("max_entries");
+            Object maxEntriesObj = args.get("maxEntries");
             if (maxEntriesObj != null) {
                 int maxEntries = ((Number) maxEntriesObj).intValue();
                 if (maxEntries < 1) {

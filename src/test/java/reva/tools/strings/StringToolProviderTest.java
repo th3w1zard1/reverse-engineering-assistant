@@ -104,10 +104,10 @@ public class StringToolProviderTest {
         assertEquals("Address should match", "0x00401000", result.get("address"));
         assertEquals("Content should match", testString, result.get("content"));
         assertEquals("Length should match", testString.length(), result.get("length"));
-        assertEquals("Data type should match", "string", result.get("data_type"));
+        assertEquals("Data type should match", "string", result.get("dataType"));
         assertEquals("Representation should match", "\"Hello, World!\"", result.get("representation"));
-        assertNotNull("Hex bytes should be present", result.get("hex_bytes"));
-        assertEquals("Byte length should match", testBytes.length, result.get("byte_length"));
+        assertNotNull("Hex bytes should be present", result.get("hexBytes"));
+        assertEquals("Byte length should match", testBytes.length, result.get("byteLength"));
     }
 
     @Test
@@ -143,7 +143,7 @@ public class StringToolProviderTest {
     public void testValidateManageStringsParameters() {
         // Test parameter validation for the manage-strings tool
         Map<String, Object> validArgs = new java.util.HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "list");
 
         // Valid parameters should not throw
@@ -155,7 +155,7 @@ public class StringToolProviderTest {
 
         // Missing programPath should throw
         Map<String, Object> missingProgram = new java.util.HashMap<>(validArgs);
-        missingProgram.remove("program_path");
+        missingProgram.remove("programPath");
         try {
             validateManageStringsArgs(missingProgram);
             fail("Should throw exception for missing programPath");
@@ -211,7 +211,7 @@ public class StringToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("mode", "regex");
         args.put("pattern", ".*test.*");
-        args.put("max_results", 100);
+        args.put("maxResults", 100);
 
         // Valid regex mode args
         try {
@@ -262,9 +262,9 @@ public class StringToolProviderTest {
         Map<String, Object> args = new java.util.HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "similarity");
-        args.put("search_string", "test");
-        args.put("start_index", 0);
-        args.put("max_count", 100);
+        args.put("searchString", "test");
+        args.put("startIndex", 0);
+        args.put("maxCount", 100);
 
         // Valid similarity mode args
         try {
@@ -273,22 +273,22 @@ public class StringToolProviderTest {
             fail("Valid similarity mode parameters should not throw: " + e.getMessage());
         }
 
-        // Missing search_string should throw
-        args.remove("search_string");
+        // Missing searchString should throw
+        args.remove("searchString");
         try {
             validateSimilarityModeArgs(args);
-            fail("Should throw exception for missing search_string in similarity mode");
+            fail("Should throw exception for missing searchString in similarity mode");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention search_string",
+            assertTrue("Error message should mention searchString",
                 e.getMessage().toLowerCase().contains("search"));
         }
 
-        // Empty search_string should throw
-        args.put("search_string", "");
+        // Empty searchString should throw
+        args.put("searchString", "");
         try {
             validateSimilarityModeArgs(args);
-            fail("Should throw exception for empty search_string in similarity mode");
+            fail("Should throw exception for empty searchString in similarity mode");
         } catch (IllegalArgumentException e) {
             // Expected
             assertTrue("Error message should mention empty",
@@ -303,10 +303,10 @@ public class StringToolProviderTest {
         Map<String, Object> args = new java.util.HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "list");
-        args.put("start_index", 0);
-        args.put("max_count", 100);
+        args.put("startIndex", 0);
+        args.put("maxCount", 100);
         args.put("filter", "test");
-        args.put("include_referencing_functions", false);
+        args.put("includeReferencingFunctions", false);
 
         // Valid list mode args
         try {
@@ -320,7 +320,7 @@ public class StringToolProviderTest {
         args.put("limit", 50);
         try {
             validateListModeArgs(args);
-            // Should handle offset/limit as alternative to start_index/max_count
+            // Should handle offset/limit as alternative to startIndex/maxCount
         } catch (Exception e) {
             // May or may not accept both
         }
@@ -348,16 +348,16 @@ public class StringToolProviderTest {
         args.put("programPath", "/test/program");
 
         // Valid pagination
-        args.put("start_index", 0);
-        args.put("max_count", 100);
+        args.put("startIndex", 0);
+        args.put("maxCount", 100);
         try {
             validatePaginationArgs(args);
         } catch (Exception e) {
             fail("Valid pagination parameters should not throw: " + e.getMessage());
         }
 
-        // Test start_index validation (should clamp to 0)
-        args.put("start_index", -5);
+        // Test startIndex validation (should clamp to 0)
+        args.put("startIndex", -5);
         try {
             validatePaginationArgs(args);
             // Should clamp to 0
@@ -365,9 +365,9 @@ public class StringToolProviderTest {
             // May clamp or throw
         }
 
-        // Test max_count validation
-        args.put("start_index", 0);
-        args.put("max_count", 0);
+        // Test maxCount validation
+        args.put("startIndex", 0);
+        args.put("maxCount", 0);
         try {
             validatePaginationArgs(args);
             // May have minimum or default
@@ -429,12 +429,12 @@ public class StringToolProviderTest {
     private void validateSimilarityModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("similarity".equals(mode)) {
-            String searchString = (String) args.get("search_string");
+            String searchString = (String) args.get("searchString");
             if (searchString == null) {
-                throw new IllegalArgumentException("search_string is required when mode='similarity'");
+                throw new IllegalArgumentException("searchString is required when mode='similarity'");
             }
             if (searchString.trim().isEmpty()) {
-                throw new IllegalArgumentException("search_string cannot be empty when mode='similarity'");
+                throw new IllegalArgumentException("searchString cannot be empty when mode='similarity'");
             }
         }
     }
@@ -456,19 +456,19 @@ public class StringToolProviderTest {
     }
 
     private void validatePaginationArgs(Map<String, Object> args) {
-        Object startIndexObj = args.get("start_index");
+        Object startIndexObj = args.get("startIndex");
         if (startIndexObj != null) {
             int startIndex = ((Number) startIndexObj).intValue();
             if (startIndex < 0) {
-                throw new IllegalArgumentException("start_index must be non-negative");
+                throw new IllegalArgumentException("startIndex must be non-negative");
             }
         }
 
-        Object maxCountObj = args.get("max_count");
+        Object maxCountObj = args.get("maxCount");
         if (maxCountObj != null) {
             int maxCount = ((Number) maxCountObj).intValue();
             if (maxCount <= 0) {
-                throw new IllegalArgumentException("max_count must be positive");
+                throw new IllegalArgumentException("maxCount must be positive");
             }
         }
     }

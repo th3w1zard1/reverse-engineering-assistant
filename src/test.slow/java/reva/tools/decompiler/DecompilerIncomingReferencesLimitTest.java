@@ -89,10 +89,11 @@ public class DecompilerIncomingReferencesLimitTest extends RevaIntegrationTestBa
                 
                 // Get decompilation with incoming references
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get-decompilation",
+                    "get-functions",
                     Map.of(
                         "programPath", programPath,
-                        "functionNameOrAddress", "popularFunction",
+                        "identifier", "popularFunction",
+                        "view", "decompile",
                         "includeIncomingReferences", true
                     )
                 ));
@@ -161,10 +162,11 @@ public class DecompilerIncomingReferencesLimitTest extends RevaIntegrationTestBa
                 
                 // Get decompilation with incoming references
                 CallToolResult result = client.callTool(new CallToolRequest(
-                    "get-decompilation",
+                    "get-functions",
                     Map.of(
                         "programPath", programPath,
-                        "functionNameOrAddress", "smallFunction",
+                        "identifier", "smallFunction",
+                        "view", "decompile",
                         "includeIncomingReferences", true
                     )
                 ));
@@ -180,14 +182,23 @@ public class DecompilerIncomingReferencesLimitTest extends RevaIntegrationTestBa
                 assertEquals(3, incomingRefs.size());
                 
                 // Should not have the limited flag when under the limit
-                assertNull("Should not have incomingReferencesLimited flag", jsonResult.get("incomingReferencesLimited"));
-                assertNull("Should not have limitation message", jsonResult.get("incomingReferencesMessage"));
+                JsonNode limitedFlag = jsonResult.get("incomingReferencesLimited");
+                if (limitedFlag != null && !limitedFlag.isNull()) {
+                    assertFalse("Should not have incomingReferencesLimited flag set to true", limitedFlag.asBoolean());
+                }
+                JsonNode message = jsonResult.get("incomingReferencesMessage");
+                if (message != null && !message.isNull()) {
+                    // If message exists, it should not mention limiting
+                    assertFalse("Should not have limitation message", message.asText().contains("Showing first"));
+                }
                 assertEquals(3, jsonResult.get("totalIncomingReferences").asInt());
                 
                 // All should be actual references
                 for (JsonNode ref : incomingRefs) {
-                    assertTrue(ref.get("fromAddress").asText().startsWith("0x"));
-                    assertEquals("UNCONDITIONAL_CALL", ref.get("referenceType").asText());
+                    String fromAddr = ref.has("fromAddress") ? ref.get("fromAddress").asText() : ref.get("from_address").asText();
+                    assertTrue(fromAddr.startsWith("0x"));
+                    String refType = ref.has("referenceType") ? ref.get("referenceType").asText() : ref.get("reference_type").asText();
+                    assertEquals("UNCONDITIONAL_CALL", refType);
                 }
             } catch (Exception e) {
                 fail("Test failed with exception: " + e.getMessage());

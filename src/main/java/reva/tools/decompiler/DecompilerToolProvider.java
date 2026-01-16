@@ -256,14 +256,14 @@ public class DecompilerToolProvider extends AbstractToolProvider {
 
         DecompInterface newDecompiler = createConfiguredDecompiler(program, toolName + "-diff");
         if (newDecompiler == null) {
-            result.put("decompilation_error", "Failed to initialize decompiler for diff");
+            result.put("decompilationError", "Failed to initialize decompiler for diff");
             return result;
         }
 
         try {
             DecompilationAttempt attempt = decompileFunctionSafely(newDecompiler, function, toolName + "-diff");
             if (!attempt.success()) {
-                result.put("decompilation_error", attempt.errorMessage());
+                result.put("decompilationError", attempt.errorMessage());
                 return result;
             }
 
@@ -281,7 +281,7 @@ public class DecompilerToolProvider extends AbstractToolProvider {
             }
         } catch (Exception e) {
             logError(toolName + "-diff: Error during diff decompilation", e);
-            result.put("decompilation_error", "Exception during decompilation: " + e.getMessage());
+            result.put("decompilationError", "Exception during decompilation: " + e.getMessage());
         } finally {
             newDecompiler.dispose();
         }
@@ -523,37 +523,6 @@ public class DecompilerToolProvider extends AbstractToolProvider {
         }
 
         return new CallCountResult(callCounts, timedOut);
-    }
-
-    /**
-     * Build a list of caller/callee info maps for the result.
-     *
-     * @param functions The set of functions (callers or callees)
-     * @param callCounts Map of entry point addresses to call counts
-     * @param maxCount Maximum number to include
-     * @return List of function info maps
-     */
-    private List<Map<String, Object>> buildCallListInfo(
-            Set<Function> functions,
-            Map<Address, Integer> callCounts,
-            int maxCount) {
-        List<Map<String, Object>> resultList = new ArrayList<>();
-        int count = 0;
-
-        for (Function func : functions) {
-            if (count >= maxCount) break;
-
-            Map<String, Object> funcInfo = new HashMap<>();
-            funcInfo.put("name", func.getName());
-            funcInfo.put("address", AddressUtil.formatAddress(func.getEntryPoint()));
-            funcInfo.put("signature", func.getSignature().getPrototypeString());
-            funcInfo.put("call_count", callCounts.getOrDefault(func.getEntryPoint(), 0));
-
-            resultList.add(funcInfo);
-            count++;
-        }
-
-        return resultList;
     }
 
     // ============================================================================

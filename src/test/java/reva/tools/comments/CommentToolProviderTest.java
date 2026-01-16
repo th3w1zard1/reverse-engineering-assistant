@@ -156,7 +156,7 @@ public class CommentToolProviderTest {
         args.put("action", "set");
         args.put("address", "0x401000");
         args.put("comment", "Test comment");
-        args.put("comment_type", "eol");
+        args.put("commentType", "eol");
 
         // Valid set action args (address-based)
         try {
@@ -194,9 +194,9 @@ public class CommentToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "set");
         args.put("function", "main");
-        args.put("line_number", 10);
+        args.put("lineNumber", 10);
         args.put("comment", "Test comment");
-        args.put("comment_type", "eol");
+        args.put("commentType", "eol");
 
         // Valid decompilation line comment args
         try {
@@ -206,7 +206,7 @@ public class CommentToolProviderTest {
         }
 
         // Missing line_number should throw
-        args.remove("line_number");
+        args.remove("lineNumber");
         try {
             validateSetDecompilationCommentArgs(args);
             fail("Should throw exception for missing line_number in decompilation line comment");
@@ -224,7 +224,7 @@ public class CommentToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "remove");
         args.put("address", "0x401000");
-        args.put("comment_type", "eol");
+        args.put("commentType", "eol");
 
         // Valid remove action args
         try {
@@ -246,7 +246,7 @@ public class CommentToolProviderTest {
 
         // Missing comment_type should throw
         args.put("address", "0x401000");
-        args.remove("comment_type");
+        args.remove("commentType");
         try {
             validateRemoveActionArgs(args);
             fail("Should throw exception for missing comment_type in remove action");
@@ -263,8 +263,8 @@ public class CommentToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("action", "search");
-        args.put("search_text", "test");
-        args.put("max_results", 100);
+        args.put("searchText", "test");
+        args.put("maxResults", 100);
 
         // Valid search action args
         try {
@@ -274,7 +274,7 @@ public class CommentToolProviderTest {
         }
 
         // Missing search_text should throw
-        args.remove("search_text");
+        args.remove("searchText");
         try {
             validateSearchActionArgs(args);
             fail("Should throw exception for missing search_text in search action");
@@ -285,8 +285,8 @@ public class CommentToolProviderTest {
         }
 
         // max_results is optional with default
-        args.put("search_text", "test");
-        args.remove("max_results");
+        args.put("searchText", "test");
+        args.remove("maxResults");
         try {
             validateSearchActionArgs(args);
             // Should not throw - max_results has default
@@ -302,9 +302,9 @@ public class CommentToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("action", "search_decomp");
         args.put("pattern", "test.*pattern");
-        args.put("max_results", 50);
-        args.put("case_sensitive", false);
-        args.put("override_max_functions_limit", false);
+        args.put("maxResults", 50);
+        args.put("caseSensitive", false);
+        args.put("overrideMaxFunctionsLimit", false);
 
         // Valid search_decomp action args
         try {
@@ -338,7 +338,7 @@ public class CommentToolProviderTest {
 
         // max_results is optional with default (50 for search_decomp)
         args.put("pattern", "test");
-        args.remove("max_results");
+        args.remove("maxResults");
         try {
             validateSearchDecompActionArgs(args);
             // Should not throw - max_results has default
@@ -376,12 +376,12 @@ public class CommentToolProviderTest {
     public void testValidateCommentTypeEnum() {
         // Test comment type validation
         Map<String, Object> args = new HashMap<>();
-        args.put("comment_type", "eol");
+        args.put("commentType", "eol");
 
         // Test all valid comment types
         String[] validTypes = {"pre", "eol", "post", "plate", "repeatable"};
         for (String type : validTypes) {
-            args.put("comment_type", type);
+            args.put("commentType", type);
             try {
                 validateCommentType(args);
             } catch (Exception e) {
@@ -390,7 +390,7 @@ public class CommentToolProviderTest {
         }
 
         // Test invalid comment type
-        args.put("comment_type", "invalid");
+        args.put("commentType", "invalid");
         try {
             validateCommentType(args);
             fail("Should throw exception for invalid comment type");
@@ -433,8 +433,8 @@ public class CommentToolProviderTest {
     private void validateSetActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("set".equals(action)) {
-            if (args.get("address") == null && args.get("address_or_symbol") == null &&
-                args.get("function") == null && args.get("function_name_or_address") == null) {
+            if (args.get("address") == null && args.get("addressOrSymbol") == null &&
+                args.get("function") == null && args.get("functionNameOrAddress") == null) {
                 throw new IllegalArgumentException("address (or function+line_number) is required for action='set'");
             }
             if (args.get("comment") == null) {
@@ -446,10 +446,10 @@ public class CommentToolProviderTest {
     private void validateSetDecompilationCommentArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("set".equals(action)) {
-            if (args.get("function") == null && args.get("function_name_or_address") == null) {
+            if (args.get("function") == null && args.get("functionNameOrAddress") == null) {
                 throw new IllegalArgumentException("function is required for decompilation line comments");
             }
-            if (args.get("line_number") == null) {
+            if (args.get("lineNumber") == null) {
                 throw new IllegalArgumentException("line_number is required for decompilation line comments");
             }
             if (args.get("comment") == null) {
@@ -461,10 +461,10 @@ public class CommentToolProviderTest {
     private void validateRemoveActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("remove".equals(action)) {
-            if (args.get("address") == null && args.get("address_or_symbol") == null) {
+            if (args.get("address") == null && args.get("addressOrSymbol") == null) {
                 throw new IllegalArgumentException("address is required for action='remove'");
             }
-            if (args.get("comment_type") == null) {
+            if (args.get("commentType") == null) {
                 throw new IllegalArgumentException("comment_type is required for action='remove'");
             }
         }
@@ -473,7 +473,7 @@ public class CommentToolProviderTest {
     private void validateSearchActionArgs(Map<String, Object> args) {
         String action = (String) args.get("action");
         if ("search".equals(action)) {
-            String searchText = (String) args.get("search_text");
+            String searchText = (String) args.get("searchText");
             if (searchText == null || searchText.trim().isEmpty()) {
                 throw new IllegalArgumentException("search_text is required for action='search'");
             }
@@ -502,7 +502,7 @@ public class CommentToolProviderTest {
     }
 
     private void validateCommentType(Map<String, Object> args) {
-        String commentType = (String) args.get("comment_type");
+        String commentType = (String) args.get("commentType");
         if (commentType != null) {
             String[] validTypes = {"pre", "eol", "post", "plate", "repeatable"};
             boolean isValid = false;

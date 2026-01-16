@@ -60,8 +60,9 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
                 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", testFilePath
                     )
                 ));
@@ -103,8 +104,9 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", nonExistentPath
                     )
                 ));
@@ -141,8 +143,9 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
 
                 // Import with default enableVersionControl=true
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", testFilePath
                     )
                 ));
@@ -155,7 +158,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<Map<String, Object>>() {});
 
                 assertTrue("Import should be successful", Boolean.TRUE.equals(response.get("success")));
-                assertTrue("enableVersionControl should be true by default", Boolean.TRUE.equals(response.get("enableVersionControl")));
+                assertTrue("enable_version_control should be true by default", Boolean.TRUE.equals(response.get("enable_version_control")) || Boolean.TRUE.equals(response.get("enableVersionControl")));
 
                 // If project supports version control, should have filesAddedToVersionControl count
                 // (This may be 0 if project doesn't support version control, but field should exist)
@@ -190,7 +193,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
 
                 // Import with enableVersionControl=false
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
                         "path", testFilePath,
                         "enableVersionControl", false
@@ -253,10 +256,11 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", archivePath,
-                        "enableVersionControl", false
+                        "enable_version_control", false
                     )
                 ));
 
@@ -277,8 +281,15 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 assertTrue("Should discover files from archive (found " + filesDiscovered + ")", filesDiscovered >= 3);
 
                 // Verify files were imported
-                Integer filesImported = (Integer) response.get("filesImported");
-                assertNotNull("Should have filesImported", filesImported);
+                Integer filesImported = null;
+                if (response.containsKey("filesImported")) {
+                    Object val = response.get("filesImported");
+                    filesImported = val instanceof Number ? ((Number) val).intValue() : (Integer) val;
+                } else if (response.containsKey("files_imported")) {
+                    Object val = response.get("files_imported");
+                    filesImported = val instanceof Number ? ((Number) val).intValue() : (Integer) val;
+                }
+                assertNotNull("Should have filesImported or files_imported", filesImported);
                 // Archive has 3 source files, but fat binary produces 2 programs = 4 total
                 assertTrue("Should import multiple files (imported " + filesImported + ")", filesImported >= 3);
 
@@ -314,7 +325,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
                         "path", fatBinaryPath,
                         "enableVersionControl", false
@@ -378,10 +389,11 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", finalPath,
-                        "enableVersionControl", false
+                        "enable_version_control", false
                     )
                 ));
 
@@ -438,11 +450,12 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", finalPath,
                         "enableVersionControl", false,
-                        "analyzeAfterImport", true
+                        "analyze_after_import", true
                     )
                 ));
 
@@ -498,11 +511,12 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 client.initialize();
 
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
-                    "import-file",
+                    "manage-files",
                     Map.of(
+                        "operation", "import",
                         "path", finalPath,
-                        "enableVersionControl", false,
-                        "analyzeAfterImport", false
+                        "enable_version_control", false,
+                        "analyze_after_import", false
                     )
                 ));
 
@@ -515,7 +529,7 @@ public class ProjectToolProviderNestedArchiveIntegrationTest extends RevaIntegra
                 assertTrue("Import should be successful", Boolean.TRUE.equals(response.get("success")));
 
                 // When analysis is not requested, should NOT have analyzedPrograms field
-                assertFalse("Should NOT have analyzedPrograms when analyzeAfterImport=false",
+                assertFalse("Should NOT have analyzedPrograms when analyze_after_import=false",
                     response.containsKey("analyzedPrograms"));
 
                 return null;

@@ -18,10 +18,10 @@ Trace data flow backward (origins), forward (uses), or find variable accesses wi
 
 **Parameters:**
 - `programPath` (required) - Path to the program in Ghidra project
-- `function_address` (required) - Address of the function to analyze
+- `functionAddress` (required) - Address of the function to analyze
 - `direction` (required) - Analysis direction: 'backward', 'forward', or 'variable_accesses'
-- `start_address` (required for backward/forward modes) - Address within the function to trace from
-- `variable_name` (required for variable_accesses mode) - Name of the variable to find accesses for
+- `startAddress` (required for backward/forward modes) - Address within the function to trace from
+- `variableName` (required for variable_accesses mode) - Name of the variable to find accesses for
 
 **Modes:**
 

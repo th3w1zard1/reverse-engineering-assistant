@@ -253,7 +253,7 @@
 - `programPath` (string, optional): For export: Path to the program to export (e.g., '/Hatchery.exe')
 - `exportType` (string, optional): For export: Type of export: 'program' (export binary), 'function_info' (export function information as JSON/CSV), 'strings' (export strings as text)
 - `format` (string, optional): For export: Export format for function_info: 'json' or 'csv' (default: 'json')
-- `includeParameters` (boolean, optional): For export: Include function parameters in function_info export (default: true)
+- `includeParameters` (boolean, optional): For export: Include function parameters in functionInfo export (default: true)
 - `includeVariables` (boolean, optional): For export: Include local variables in function_info export (default: true)
 - `includeComments` (boolean, optional): For export: Include comments in function_info export (default: false)
 
@@ -335,9 +335,9 @@
 **Parameters:**
 - `programPath` (string, optional): Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser.
 - `action` (string, required): Action to perform enum
-- `address` (string, optional): Address where to set/get/remove the comment (required for set/remove when not using function/line_number)
+- `address` (string, optional): Address where to set/get/remove the comment (required for set/remove when not using function/lineNumber)
 - `addressOrSymbol` (string, optional): Address or symbol name (alternative parameter, used for set/get/remove)
-- `function` (string, optional): Function name or address when setting decompilation line comment or searching decompilation (required for set with line_number, optional for search_decomp)
+- `function` (string, optional): Function name or address when setting decompilation line comment or searching decompilation (required for set with lineNumber, optional for search_decomp)
 - `functionNameOrAddress` (string, optional): Function name or address (alternative parameter name)
 - `lineNumber` (integer, optional): Line number in the decompiled function when action='set' with decompilation (1-based, required for decompilation line comments)
 - `comment` (string, optional): The comment text to set (required for set)
@@ -356,7 +356,7 @@
 
 **Description:** Create, retrieve, search, remove bookmarks, or list bookmark categories.
 
-**Actions:** `set`, `get`, `search`, `remove`, `remove_all`, `categories`
+**Actions:** `set`, `get`, `search`, `remove`, `removeAll`, `categories`
 
 **Parameters:**
 - `programPath` (string, optional): Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser.
@@ -369,7 +369,7 @@
 - `bookmarks` (array, optional): Array of bookmark objects for batch operations when action='set'
 - `searchText` (string, optional): Text to search for in bookmark comments when action='search' (required for search)
 - `maxResults` (integer, optional): Maximum number of results to return when action='search' (default: 100)
-- `removeAll` (boolean, optional): Remove all bookmarks when action='remove_all' (default: false)
+- `removeAll` (boolean, optional): Remove all bookmarks when action='removeAll' (default: false)
 
 ### 25. `analyze-data-flow`
 

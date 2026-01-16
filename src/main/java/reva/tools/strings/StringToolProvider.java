@@ -76,7 +76,7 @@ public class StringToolProvider extends AbstractToolProvider {
 
     private void registerManageStringsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
@@ -90,7 +90,7 @@ public class StringToolProvider extends AbstractToolProvider {
             "type", "string",
             "description", "Regular expression pattern to search for when mode='regex'"
         ));
-        properties.put("search_string", Map.of(
+        properties.put("searchString", Map.of(
             "type", "string",
             "description", "String to compare against for similarity when mode='similarity'"
         ));
@@ -98,12 +98,12 @@ public class StringToolProvider extends AbstractToolProvider {
             "type", "string",
             "description", "Optional filter to match within string content when mode='list'"
         ));
-        properties.put("start_index", Map.of(
+        properties.put("startIndex", Map.of(
             "type", "integer",
             "description", "Starting index for pagination when mode='list' or 'similarity' (0-based)",
             "default", 0
         ));
-        properties.put("max_count", Map.of(
+        properties.put("maxCount", Map.of(
             "type", "integer",
             "description", "Maximum number of strings to return when mode='list' or 'similarity'",
             "default", 100
@@ -118,12 +118,12 @@ public class StringToolProvider extends AbstractToolProvider {
             "description", "Alternative pagination limit when mode='list'",
             "default", 2000
         ));
-        properties.put("max_results", Map.of(
+        properties.put("maxResults", Map.of(
             "type", "integer",
             "description", "Maximum number of results to return when mode='regex'",
             "default", 100
         ));
-        properties.put("include_referencing_functions", Map.of(
+        properties.put("includeReferencingFunctions", Map.of(
             "type", "boolean",
             "description", "Include list of functions that reference each string when mode='list' or 'similarity'",
             "default", false
@@ -178,11 +178,11 @@ public class StringToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleStringsList(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        int startIndex = getOptionalInt(request, "start_index",
+        int startIndex = getOptionalInt(request, "startIndex",
             getOptionalInt(request, "offset", 0));
-        int maxCount = getOptionalInt(request, "max_count",
+        int maxCount = getOptionalInt(request, "maxCount",
             getOptionalInt(request, "limit", 2000));
-        boolean includeReferencingFunctions = getOptionalBoolean(request, "include_referencing_functions", false);
+        boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
         String filter = getOptionalString(request, "filter", null);
 
         ToolLogCollector logCollector = new ToolLogCollector();
@@ -234,10 +234,10 @@ public class StringToolProvider extends AbstractToolProvider {
             }
 
             Map<String, Object> paginationInfo = new HashMap<>();
-        paginationInfo.put("start_index", startIndex);
-        paginationInfo.put("requested_count", maxCount);
-        paginationInfo.put("actual_count", stringData.size());
-        paginationInfo.put("next_start_index", startIndex + stringData.size());
+        paginationInfo.put("startIndex", startIndex);
+        paginationInfo.put("requestedCount", maxCount);
+        paginationInfo.put("actualCount", stringData.size());
+        paginationInfo.put("nextStartIndex", startIndex + stringData.size());
             if (logCollector.hasLogs()) {
                 ToolLogCollector.addLogsToResult(paginationInfo, logCollector);
             }
@@ -261,12 +261,12 @@ public class StringToolProvider extends AbstractToolProvider {
         if (patternStr == null) {
             return createErrorResult("pattern is required when mode='regex'");
         }
-        int maxResults = getOptionalInt(request, "max_results",
-            getOptionalInt(request, "max_results", 100));
-        int startIndex = getOptionalInt(request, "start_index",
-            getOptionalInt(request, "start_index", 0));
-        boolean includeReferencingFunctions = getOptionalBoolean(request, "include_referencing_functions",
-            getOptionalBoolean(request, "include_referencing_functions", false));
+        int maxResults = getOptionalInt(request, "maxResults",
+            getOptionalInt(request, "maxResults", 100));
+        int startIndex = getOptionalInt(request, "startIndex",
+            getOptionalInt(request, "startIndex", 0));
+        boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions",
+            getOptionalBoolean(request, "includeReferencingFunctions", false));
 
         if (patternStr.trim().isEmpty()) {
             return createErrorResult("Pattern cannot be empty when mode='regex'");
@@ -310,10 +310,10 @@ public class StringToolProvider extends AbstractToolProvider {
         Map<String, Object> searchMetadata = new HashMap<>();
         searchMetadata.put("regexPattern", patternStr);
         searchMetadata.put("searchComplete", searchComplete);
-        searchMetadata.put("start_index", startIndex);
-        searchMetadata.put("requested_count", maxResults);
-        searchMetadata.put("actual_count", matchingStrings.size());
-        searchMetadata.put("next_start_index", startIndex + matchingStrings.size());
+        searchMetadata.put("startIndex", startIndex);
+        searchMetadata.put("requestedCount", maxResults);
+        searchMetadata.put("actualCount", matchingStrings.size());
+        searchMetadata.put("nextStartIndex", startIndex + matchingStrings.size());
 
         List<Object> resultData = new ArrayList<>();
         resultData.add(searchMetadata);
@@ -322,16 +322,16 @@ public class StringToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleStringsSimilarity(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        String searchString = getOptionalString(request, "search_string", null);
+        String searchString = getOptionalString(request, "searchString", null);
         if (searchString == null) {
-            return createErrorResult("search_string is required when mode='similarity'");
+            return createErrorResult("searchString is required when mode='similarity'");
         }
-        int startIndex = getOptionalInt(request, "start_index", 0);
-        int maxCount = getOptionalInt(request, "max_count", 100);
-        boolean includeReferencingFunctions = getOptionalBoolean(request, "include_referencing_functions", false);
+        int startIndex = getOptionalInt(request, "startIndex", 0);
+        int maxCount = getOptionalInt(request, "maxCount", 100);
+        boolean includeReferencingFunctions = getOptionalBoolean(request, "includeReferencingFunctions", false);
 
         if (searchString.trim().isEmpty()) {
-            return createErrorResult("search_string cannot be empty when mode='similarity'");
+            return createErrorResult("searchString cannot be empty when mode='similarity'");
         }
 
         DataIterator dataIterator = program.getListing().getDefinedData(true);
@@ -363,17 +363,17 @@ public class StringToolProvider extends AbstractToolProvider {
             Address address = (Address) stringInfo.remove(TEMP_ADDRESS_KEY);
             if (includeReferencingFunctions && address != null) {
                 List<Map<String, String>> referencingFunctions = getReferencingFunctions(program, address);
-                stringInfo.put("referencing_functions", referencingFunctions);
-                stringInfo.put("reference_count", referencingFunctions.size());
+                stringInfo.put("referencingFunctions", referencingFunctions);
+                stringInfo.put("referenceCount", referencingFunctions.size());
             }
         }
 
         Map<String, Object> paginationInfo = new HashMap<>();
-        paginationInfo.put("search_complete", searchComplete);
-        paginationInfo.put("start_index", startIndex);
-        paginationInfo.put("requested_count", maxCount);
-        paginationInfo.put("actual_count", paginatedStringData.size());
-        paginationInfo.put("next_start_index", startIndex + paginatedStringData.size());
+        paginationInfo.put("searchComplete", searchComplete);
+        paginationInfo.put("startIndex", startIndex);
+        paginationInfo.put("requestedCount", maxCount);
+        paginationInfo.put("actualCount", paginatedStringData.size());
+        paginationInfo.put("nextStartIndex", startIndex + paginatedStringData.size());
 
         List<Object> resultData = new ArrayList<>();
         resultData.add(paginationInfo);

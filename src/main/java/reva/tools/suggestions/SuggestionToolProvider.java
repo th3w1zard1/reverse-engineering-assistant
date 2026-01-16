@@ -53,18 +53,18 @@ public class SuggestionToolProvider extends AbstractToolProvider {
 
     private void registerSuggestTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
-        properties.put("suggestion_type", Map.of(
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project"));
+        properties.put("suggestionType", Map.of(
             "type", "string",
             "description", "Type of suggestion to get: 'comment_type', 'comment_text', 'function_name', 'function_tags', 'variable_name', 'data_type'",
             "enum", List.of("comment_type", "comment_text", "function_name", "function_tags", "variable_name", "data_type")
         ));
         properties.put("address", SchemaUtil.stringProperty("Address or symbol name (required for comment_type, comment_text, data_type)"));
         properties.put("function", SchemaUtil.stringProperty("Function name or address (required for function_name, function_tags, variable_name)"));
-        properties.put("data_type", SchemaUtil.stringProperty("Data type string (required for variable_name suggestion)"));
-        properties.put("variable_address", SchemaUtil.stringProperty("Address of variable/data (required for data_type suggestion)"));
+        properties.put("dataType", SchemaUtil.stringProperty("Data type string (required for variable_name suggestion)"));
+        properties.put("variableAddress", SchemaUtil.stringProperty("Address of variable/data (required for data_type suggestion)"));
 
-        List<String> required = List.of("program_path", "suggestion_type");
+        List<String> required = List.of("programPath", "suggestionType");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("suggest")
@@ -76,7 +76,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         registerTool(tool, (exchange, request) -> {
             try {
                 Program program = getProgramFromArgs(request);
-                String suggestionType = getString(request, "suggestion_type");
+                String suggestionType = getString(request, "suggestionType");
 
                 switch (suggestionType) {
                     case "comment_type":
@@ -92,7 +92,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
                     case "data_type":
                         return handleSuggestDataType(program, request);
                     default:
-                        return createErrorResult("Invalid suggestion_type: " + suggestionType);
+                        return createErrorResult("Invalid suggestionType: " + suggestionType);
                 }
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
@@ -106,7 +106,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSuggestCommentType(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            return createErrorResult("address is required for suggestion_type='comment_type'");
+            return createErrorResult("address is required for suggestionType='comment_type'");
         }
 
         ghidra.program.model.address.Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
@@ -117,7 +117,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentType(program, address);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("suggestion_type", "comment_type");
+        result.put("suggestionType", "comment_type");
         result.put("address", AddressUtil.formatAddress(address));
         result.put("suggestion", suggestion);
 
@@ -127,7 +127,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSuggestCommentText(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            return createErrorResult("address is required for suggestion_type='comment_text'");
+            return createErrorResult("address is required for suggestionType='comment_text'");
         }
 
         ghidra.program.model.address.Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
@@ -138,7 +138,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestCommentText(program, address);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("suggestion_type", "comment_text");
+        result.put("suggestionType", "comment_text");
         result.put("address", AddressUtil.formatAddress(address));
         result.put("suggestion", suggestion);
 
@@ -148,7 +148,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSuggestFunctionName(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String functionStr = getOptionalString(request, "function", null);
         if (functionStr == null) {
-            return createErrorResult("function is required for suggestion_type='function_name'");
+            return createErrorResult("function is required for suggestionType='function_name'");
         }
 
         Function function = resolveFunction(program, functionStr);
@@ -159,7 +159,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionNames(program, function);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("suggestion_type", "function_name");
+        result.put("suggestionType", "function_name");
         result.put("function", function.getName());
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
         result.put("suggestions", suggestions);
@@ -170,7 +170,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSuggestFunctionTags(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String functionStr = getOptionalString(request, "function", null);
         if (functionStr == null) {
-            return createErrorResult("function is required for suggestion_type='function_tags'");
+            return createErrorResult("function is required for suggestionType='function_tags'");
         }
 
         Function function = resolveFunction(program, functionStr);
@@ -181,10 +181,10 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         List<Map<String, Object>> suggestions = SmartSuggestionsUtil.suggestFunctionTags(program, function);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("suggestion_type", "function_tags");
+        result.put("suggestionType", "function_tags");
         result.put("function", function.getName());
         result.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
-        result.put("current_tags", function.getTags().stream().map(FunctionTag::getName).sorted().toList());
+        result.put("currentTags", function.getTags().stream().map(FunctionTag::getName).sorted().toList());
         result.put("suggestions", suggestions);
 
         return createJsonResult(result);
@@ -193,12 +193,12 @@ public class SuggestionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSuggestVariableName(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String functionStr = getOptionalString(request, "function", null);
         if (functionStr == null) {
-            return createErrorResult("function is required for suggestion_type='variable_name'");
+            return createErrorResult("function is required for suggestionType='variable_name'");
         }
 
-        String dataType = getOptionalString(request, "data_type", null);
+        String dataType = getOptionalString(request, "dataType", null);
         if (dataType == null) {
-            return createErrorResult("data_type is required for suggestion_type='variable_name'");
+            return createErrorResult("dataType is required for suggestionType='variable_name'");
         }
 
         Function function = resolveFunction(program, functionStr);
@@ -209,9 +209,9 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestVariableName(program, function, dataType);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("suggestion_type", "variable_name");
+        result.put("suggestionType", "variable_name");
         result.put("function", function.getName());
-        result.put("data_type", dataType);
+        result.put("dataType", dataType);
         result.put("suggestion", suggestion);
 
         return createJsonResult(result);
@@ -220,10 +220,10 @@ public class SuggestionToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleSuggestDataType(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "variable_address", null);
+            addressStr = getOptionalString(request, "variableAddress", null);
         }
         if (addressStr == null) {
-            return createErrorResult("address or variable_address is required for suggestion_type='data_type'");
+            return createErrorResult("address or variableAddress is required for suggestionType='data_type'");
         }
 
         Address address = AddressUtil.resolveAddressOrSymbol(program, addressStr);
@@ -240,7 +240,7 @@ public class SuggestionToolProvider extends AbstractToolProvider {
         Map<String, Object> suggestion = SmartSuggestionsUtil.suggestDataType(program, function, address);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("suggestion_type", "data_type");
+        result.put("suggestionType", "data_type");
         result.put("address", AddressUtil.formatAddress(address));
         result.put("suggestion", suggestion);
 

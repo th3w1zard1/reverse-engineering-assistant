@@ -733,7 +733,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
      */
     protected Program getProgramFromArgs(Map<String, Object> args) throws IllegalArgumentException, ProgramValidationException {
         // Try to get programPath, but don't throw if it's missing - we'll try current program instead
-        String programPath = getOptionalString(args, "program_path", null);
+        String programPath = getOptionalString(args, "programPath", null);
         return getValidatedProgram(programPath);
     }
 
@@ -750,8 +750,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return PaginationParams object
      */
     protected PaginationParams getPaginationParams(CallToolRequest request, int defaultMaxCount) {
-        int startIndex = getOptionalInt(request, "start_index", 0);
-        int maxCount = getOptionalInt(request, "max_count", defaultMaxCount);
+        int startIndex = getOptionalInt(request, "startIndex", 0);
+        int maxCount = getOptionalInt(request, "maxCount", defaultMaxCount);
         return new PaginationParams(startIndex, maxCount);
     }
 
@@ -762,8 +762,8 @@ public abstract class AbstractToolProvider implements ToolProvider {
      * @return PaginationParams object
      */
     protected PaginationParams getPaginationParams(Map<String, Object> args, int defaultMaxCount) {
-        int startIndex = getOptionalInt(args, "start_index", 0);
-        int maxCount = getOptionalInt(args, "max_count", defaultMaxCount);
+        int startIndex = getOptionalInt(args, "startIndex", 0);
+        int maxCount = getOptionalInt(args, "maxCount", defaultMaxCount);
         return new PaginationParams(startIndex, maxCount);
     }
 

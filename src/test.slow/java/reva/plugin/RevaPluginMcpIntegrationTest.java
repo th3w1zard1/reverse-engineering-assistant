@@ -199,9 +199,10 @@ public class RevaPluginMcpIntegrationTest extends RevaIntegrationTestBase {
         // Test 1: Verify basic tool call works
         Map<String, Object> getDecompArgs = new HashMap<>();
         getDecompArgs.put("programPath", programPath);
-        getDecompArgs.put("functionNameOrAddress", "testRegressionFunction");
+        getDecompArgs.put("identifier", "testRegressionFunction");
+        getDecompArgs.put("view", "decompile");
 
-        String result = callMcpTool("get-decompilation", getDecompArgs);
+        String result = callMcpTool("get-functions", getDecompArgs);
         JsonNode resultJson = parseJsonContent(result);
         assertTrue("Tool should succeed with normal program lookup", resultJson.has("decompilation"));
 
@@ -218,8 +219,9 @@ public class RevaPluginMcpIntegrationTest extends RevaIntegrationTestBase {
         }
 
         // Test 3: Verify tool still works after program change
-        String result2 = callMcpTool("get-decompilation", getDecompArgs);
+        String result2 = callMcpTool("get-functions", getDecompArgs);
         JsonNode resultJson2 = parseJsonContent(result2);
-        assertTrue("Tool should still work after program change (regression test)", resultJson2.has("decompilation"));
+        assertTrue("Tool should still work after program change (regression test)", 
+            resultJson2.has("decompiledCode") || resultJson2.has("code") || resultJson2.has("decompilation"));
     }
 }

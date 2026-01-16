@@ -75,25 +75,25 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
     private void registerManageSymbolsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."));
         properties.put("mode", Map.of(
             "type", "string",
             "description", "Operation mode: 'classes', 'namespaces', 'imports', 'exports', 'create_label', 'symbols', 'count', 'rename_data', 'demangle'",
             "enum", List.of("classes", "namespaces", "imports", "exports", "create_label", "symbols", "count", "rename_data", "demangle")
         ));
         properties.put("address", SchemaUtil.stringProperty("Address(es) where to create label(s) when mode='create_label' or address(es) of data to rename when mode='rename_data'. Can be a single address string or an array of address strings for batch operations."));
-        properties.put("label_name", SchemaUtil.stringProperty("Name(s) for the label(s) when mode='create_label'. Can be a single string or an array of strings matching the address array."));
-        properties.put("new_name", SchemaUtil.stringProperty("New name(s) for the data label(s) when mode='rename_data'. Can be a single string or an array of strings matching the address array."));
-        properties.put("library_filter", SchemaUtil.stringProperty("Optional library name to filter by when mode='imports' (case-insensitive)"));
-        properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of imports/exports to return when mode='imports' or 'exports'", 500));
-        properties.put("start_index", SchemaUtil.integerPropertyWithDefault("Starting index for pagination (0-based)", 0));
+        properties.put("labelName", SchemaUtil.stringProperty("Name(s) for the label(s) when mode='create_label'. Can be a single string or an array of strings matching the address array."));
+        properties.put("newName", SchemaUtil.stringProperty("New name(s) for the data label(s) when mode='rename_data'. Can be a single string or an array of strings matching the address array."));
+        properties.put("libraryFilter", SchemaUtil.stringProperty("Optional library name to filter by when mode='imports' (case-insensitive)"));
+        properties.put("maxResults", SchemaUtil.integerPropertyWithDefault("Maximum number of imports/exports to return when mode='imports' or 'exports'", 500));
+        properties.put("startIndex", SchemaUtil.integerPropertyWithDefault("Starting index for pagination (0-based)", 0));
         properties.put("offset", SchemaUtil.integerPropertyWithDefault("Alternative pagination offset parameter", 0));
         properties.put("limit", SchemaUtil.integerPropertyWithDefault("Alternative pagination limit parameter", 100));
-        properties.put("group_by_library", SchemaUtil.booleanPropertyWithDefault("Whether to group imports by library name when mode='imports'", true));
-        properties.put("include_external", SchemaUtil.booleanPropertyWithDefault("Whether to include external symbols when mode='symbols' or 'count'", false));
-        properties.put("max_count", SchemaUtil.integerPropertyWithDefault("Maximum number of symbols to return when mode='symbols'", 200));
-        properties.put("filter_default_names", SchemaUtil.booleanPropertyWithDefault("Whether to filter out default Ghidra generated names", true));
-        properties.put("demangle_all", SchemaUtil.booleanPropertyWithDefault("For demangle: Demangle all symbols in program (default: false, demangle single symbol)", false));
+        properties.put("groupByLibrary", SchemaUtil.booleanPropertyWithDefault("Whether to group imports by library name when mode='imports'", true));
+        properties.put("includeExternal", SchemaUtil.booleanPropertyWithDefault("Whether to include external symbols when mode='symbols' or 'count'", false));
+        properties.put("maxCount", SchemaUtil.integerPropertyWithDefault("Maximum number of symbols to return when mode='symbols'", 200));
+        properties.put("filterDefaultNames", SchemaUtil.booleanPropertyWithDefault("Whether to filter out default Ghidra generated names", true));
+        properties.put("demangleAll", SchemaUtil.booleanPropertyWithDefault("For demangle: Demangle all symbols in program (default: false, demangle single symbol)", false));
 
         List<String> required = List.of("mode");
 
@@ -142,8 +142,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
 
     private McpSchema.CallToolResult handleClassesMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        int startIndex = getOptionalInt(request, "start_index", getOptionalInt(request, "offset", 0));
-        int limit = getOptionalInt(request, "limit", getOptionalInt(request, "max_count", 100));
+        int startIndex = getOptionalInt(request, "startIndex", getOptionalInt(request, "offset", 0));
+        int limit = getOptionalInt(request, "limit", getOptionalInt(request, "maxCount", 100));
         if (startIndex < 0) startIndex = 0;
         if (limit <= 0) limit = 100;
         if (limit > 1000) limit = 1000;
@@ -178,8 +178,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleNamespacesMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        int startIndex = getOptionalInt(request, "start_index", getOptionalInt(request, "offset", 0));
-        int limit = getOptionalInt(request, "limit", getOptionalInt(request, "max_count", 100));
+        int startIndex = getOptionalInt(request, "startIndex", getOptionalInt(request, "offset", 0));
+        int limit = getOptionalInt(request, "limit", getOptionalInt(request, "maxCount", 100));
         if (startIndex < 0) startIndex = 0;
         if (limit <= 0) limit = 100;
         if (limit > 1000) limit = 1000;
@@ -204,18 +204,18 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
         Map<String, Object> result = new HashMap<>();
         result.put("namespaces", paginated);
-        result.put("start_index", startIndex);
+        result.put("startIndex", startIndex);
         result.put("limit", limit);
-        result.put("total_count", sortedNamespaces.size());
+        result.put("totalCount", sortedNamespaces.size());
         result.put("hasMore", endIndex < sortedNamespaces.size());
         return createJsonResult(result);
     }
 
     private McpSchema.CallToolResult handleImportsMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        String libraryFilter = getOptionalString(request, "library_filter", null);
-        int maxResults = getOptionalInt(request, "max_results", 500);
-        int startIndex = getOptionalInt(request, "start_index", getOptionalInt(request, "offset", 0));
-        boolean groupByLibrary = getOptionalBoolean(request, "group_by_library", true);
+        String libraryFilter = getOptionalString(request, "libraryFilter", null);
+        int maxResults = getOptionalInt(request, "maxResults", 500);
+        int startIndex = getOptionalInt(request, "startIndex", getOptionalInt(request, "offset", 0));
+        boolean groupByLibrary = getOptionalBoolean(request, "groupByLibrary", true);
 
         if (maxResults <= 0) maxResults = 500;
         if (maxResults > 10000) maxResults = 10000;
@@ -244,8 +244,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleExportsMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        int maxResults = getOptionalInt(request, "max_results", 500);
-        int startIndex = getOptionalInt(request, "start_index", getOptionalInt(request, "offset", 0));
+        int maxResults = getOptionalInt(request, "maxResults", 500);
+        int startIndex = getOptionalInt(request, "startIndex", getOptionalInt(request, "offset", 0));
 
         if (maxResults <= 0) maxResults = 500;
         if (maxResults > 10000) maxResults = 10000;
@@ -256,10 +256,10 @@ public class SymbolToolProvider extends AbstractToolProvider {
         List<Map<String, Object>> paginated = importExportHelper.paginate(allExports, startIndex, maxResults);
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("total_count", allExports.size());
-        result.put("start_index", startIndex);
-        result.put("returned_count", paginated.size());
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("totalCount", allExports.size());
+        result.put("startIndex", startIndex);
+        result.put("returnedCount", paginated.size());
         result.put("exports", paginated);
 
         return createJsonResult(result);
@@ -270,7 +270,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         List<Object> addressList = getParameterAsList(request.arguments(), "address");
         if (addressList.size() > 1 || (!addressList.isEmpty() && addressList.get(0) instanceof List)) {
             List<?> batchList = addressList.size() > 1 ? addressList : (List<?>) addressList.get(0);
-            return handleBatchCreateLabels(program, request, (List<?>) addressValue);
+            return handleBatchCreateLabels(program, request, batchList);
         }
 
         // Single label mode
@@ -285,7 +285,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         }
 
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
-        String labelName = getOptionalString(request, "label_name", null);
+        String labelName = getOptionalString(request, "labelName", null);
 
         // Auto-label if not provided (controlled by environment variable)
         if ((labelName == null || labelName.trim().isEmpty()) && autoLabel) {
@@ -293,7 +293,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         }
 
         if (labelName == null || labelName.trim().isEmpty()) {
-            return createErrorResult("label_name is required for mode='create_label'");
+            return createErrorResult("labelName is required for mode='create_label'");
         }
 
         int transactionID = program.startTransaction("Create Label");
@@ -327,10 +327,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleBatchCreateLabels(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, List<?> addressList) {
         // Use getParameterAsList to support both camelCase and snake_case parameter names
-        List<Object> labelNameListObj = getParameterAsList(request.arguments(), "label_name");
-        if (labelNameListObj.isEmpty()) {
-            labelNameListObj = getParameterAsList(request.arguments(), "labelName");
-        }
+        // Supports both camelCase and snake_case via getParameterValue
+        List<Object> labelNameListObj = getParameterAsList(request.arguments(), "labelName");
         List<?> labelNameList = labelNameListObj.size() > 1 || (!labelNameListObj.isEmpty() && labelNameListObj.get(0) instanceof List)
             ? (labelNameListObj.size() > 1 ? labelNameListObj : (List<?>) labelNameListObj.get(0))
             : null;
@@ -401,12 +399,12 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleSymbolsMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        boolean includeExternal = getOptionalBoolean(request, "include_external", false);
+        boolean includeExternal = getOptionalBoolean(request, "includeExternal", false);
 
         // Handle pagination
-        int startIndexValue = getOptionalInt(request, "start_index",
+        int startIndexValue = getOptionalInt(request, "startIndex",
             getOptionalInt(request, "offset", 0));
-        int maxCountValue = getOptionalInt(request, "max_count",
+        int maxCountValue = getOptionalInt(request, "maxCount",
             getOptionalInt(request, "limit", 200));
         if (startIndexValue < 0) startIndexValue = 0;
         if (maxCountValue <= 0) maxCountValue = 200;
@@ -414,7 +412,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         final int startIndex = startIndexValue;
         final int maxCount = maxCountValue;
 
-        boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
+        boolean filterDefaultNames = getOptionalBoolean(request, "filterDefaultNames", true);
 
         List<Map<String, Object>> symbolData = new ArrayList<>();
         SymbolTable symbolTable = program.getSymbolTable();
@@ -445,13 +443,13 @@ public class SymbolToolProvider extends AbstractToolProvider {
         });
 
         Map<String, Object> paginationInfo = new HashMap<>();
-        paginationInfo.put("start_index", startIndex);
-        paginationInfo.put("requested_count", maxCount);
-        paginationInfo.put("actual_count", symbolData.size());
-        paginationInfo.put("next_start_index", startIndex + symbolData.size());
-        paginationInfo.put("total_processed", currentIndex.get());
-        paginationInfo.put("include_external", includeExternal);
-        paginationInfo.put("filter_default_names", filterDefaultNames);
+        paginationInfo.put("startIndex", startIndex);
+        paginationInfo.put("requestedCount", maxCount);
+        paginationInfo.put("actualCount", symbolData.size());
+        paginationInfo.put("nextStartIndex", startIndex + symbolData.size());
+        paginationInfo.put("totalProcessed", currentIndex.get());
+        paginationInfo.put("includeExternal", includeExternal);
+        paginationInfo.put("filterDefaultNames", filterDefaultNames);
 
         Map<String, Object> result = new HashMap<>();
         result.put("pagination", paginationInfo);
@@ -460,8 +458,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
     }
 
     private McpSchema.CallToolResult handleCountMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        boolean includeExternal = getOptionalBoolean(request, "include_external", false);
-        boolean filterDefaultNames = getOptionalBoolean(request, "filter_default_names", true);
+        boolean includeExternal = getOptionalBoolean(request, "includeExternal", false);
+        boolean filterDefaultNames = getOptionalBoolean(request, "filterDefaultNames", true);
 
         SymbolTable symbolTable = program.getSymbolTable();
         SymbolIterator symbolIterator = symbolTable.getAllSymbols(true);
@@ -505,7 +503,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         }
 
         boolean autoLabel = reva.util.EnvConfigUtil.getBooleanDefault("auto_label", true);
-        String newName = getOptionalString(request, "new_name", null);
+        String newName = getOptionalString(request, "newName", null);
 
         // Auto-label if not provided (controlled by environment variable)
         if ((newName == null || newName.trim().isEmpty()) && autoLabel) {
@@ -513,7 +511,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
         }
 
         if (newName == null || newName.trim().isEmpty()) {
-            return createErrorResult("new_name is required for mode='rename_data'");
+            return createErrorResult("newName is required for mode='rename_data'");
         }
 
         int transactionID = program.startTransaction("Rename Data");
@@ -557,10 +555,8 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
     private McpSchema.CallToolResult handleBatchRenameData(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request, List<?> addressList) {
         // Use getParameterAsList to support both camelCase and snake_case parameter names
-        List<Object> newNameListObj = getParameterAsList(request.arguments(), "new_name");
-        if (newNameListObj.isEmpty()) {
-            newNameListObj = getParameterAsList(request.arguments(), "newName");
-        }
+        // Supports both camelCase and snake_case via getParameterValue
+        List<Object> newNameListObj = getParameterAsList(request.arguments(), "newName");
         List<?> newNameList = newNameListObj.size() > 1 || (!newNameListObj.isEmpty() && newNameListObj.get(0) instanceof List)
             ? (newNameListObj.size() > 1 ? newNameListObj : (List<?>) newNameListObj.get(0))
             : null;
@@ -675,7 +671,7 @@ public class SymbolToolProvider extends AbstractToolProvider {
 
 
     private McpSchema.CallToolResult handleDemangleMode(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        boolean demangleAll = getOptionalBoolean(request, "demangle_all", false);
+        boolean demangleAll = getOptionalBoolean(request, "demangleAll", false);
         String addressStr = getOptionalString(request, "address", null);
 
         if (!demangleAll && addressStr == null) {

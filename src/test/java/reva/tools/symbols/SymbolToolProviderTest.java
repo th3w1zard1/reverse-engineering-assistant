@@ -84,7 +84,7 @@ public class SymbolToolProviderTest {
     public void testValidateManageSymbolsParameters() {
         // Test parameter validation for the manage-symbols tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("mode", "symbols");
 
         // Valid parameters should not throw
@@ -155,7 +155,7 @@ public class SymbolToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("mode", "create_label");
         args.put("address", "0x401000");
-        args.put("label_name", "my_label");
+        args.put("labelName", "my_label");
 
         // Valid create_label mode args
         try {
@@ -177,7 +177,7 @@ public class SymbolToolProviderTest {
 
         // Missing label_name should throw
         args.put("address", "0x401000");
-        args.remove("label_name");
+        args.remove("labelName");
         try {
             validateCreateLabelModeArgs(args);
             fail("Should throw exception for missing label_name in create_label mode");
@@ -188,7 +188,7 @@ public class SymbolToolProviderTest {
         }
 
         // Empty label_name should throw
-        args.put("label_name", "");
+        args.put("labelName", "");
         try {
             validateCreateLabelModeArgs(args);
             fail("Should throw exception for empty label_name in create_label mode");
@@ -206,7 +206,7 @@ public class SymbolToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("mode", "rename_data");
         args.put("address", "0x401000");
-        args.put("new_name", "renamed_data");
+        args.put("newName", "renamed_data");
 
         // Valid rename_data mode args
         try {
@@ -228,7 +228,7 @@ public class SymbolToolProviderTest {
 
         // Missing new_name should throw
         args.put("address", "0x401000");
-        args.remove("new_name");
+        args.remove("newName");
         try {
             validateRenameDataModeArgs(args);
             fail("Should throw exception for missing new_name in rename_data mode");
@@ -240,7 +240,7 @@ public class SymbolToolProviderTest {
         }
 
         // Empty new_name should throw
-        args.put("new_name", "");
+        args.put("newName", "");
         try {
             validateRenameDataModeArgs(args);
             fail("Should throw exception for empty new_name in rename_data mode");
@@ -258,10 +258,10 @@ public class SymbolToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "imports");
-        args.put("library_filter", "kernel32");
-        args.put("max_results", 500);
-        args.put("start_index", 0);
-        args.put("group_by_library", true);
+        args.put("libraryFilter", "kernel32");
+        args.put("maxResults", 500);
+        args.put("startIndex", 0);
+        args.put("groupByLibrary", true);
 
         // Valid imports mode args
         try {
@@ -280,8 +280,8 @@ public class SymbolToolProviderTest {
         }
 
         // max_results is optional with default
-        args.put("library_filter", "kernel32");
-        args.remove("max_results");
+        args.put("libraryFilter", "kernel32");
+        args.remove("maxResults");
         try {
             validateImportsModeArgs(args);
             // Should not throw - max_results has default
@@ -305,8 +305,8 @@ public class SymbolToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "exports");
-        args.put("max_results", 500);
-        args.put("start_index", 0);
+        args.put("maxResults", 500);
+        args.put("startIndex", 0);
 
         // Valid exports mode args
         try {
@@ -316,7 +316,7 @@ public class SymbolToolProviderTest {
         }
 
         // max_results is optional with default
-        args.remove("max_results");
+        args.remove("maxResults");
         try {
             validateExportsModeArgs(args);
             // Should not throw - max_results has default
@@ -331,10 +331,10 @@ public class SymbolToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "symbols");
-        args.put("max_count", 200);
-        args.put("start_index", 0);
-        args.put("include_external", false);
-        args.put("filter_default_names", true);
+        args.put("maxCount", 200);
+        args.put("startIndex", 0);
+        args.put("includeExternal", false);
+        args.put("filterDefaultNames", true);
 
         // Valid symbols mode args
         try {
@@ -343,17 +343,17 @@ public class SymbolToolProviderTest {
             fail("Valid symbols mode parameters should not throw: " + e.getMessage());
         }
 
-        // max_count is optional with default (200 for symbols mode)
-        args.remove("max_count");
+        // maxCount is optional with default (200 for symbols mode)
+        args.remove("maxCount");
         try {
             validateSymbolsModeArgs(args);
-            // Should not throw - max_count has default
+            // Should not throw - maxCount has default
         } catch (Exception e) {
-            fail("max_count should be optional with default value");
+            fail("maxCount should be optional with default value");
         }
 
         // include_external is optional with default (false)
-        args.put("max_count", 200);
+        args.put("maxCount", 200);
         args.remove("include_external");
         try {
             validateSymbolsModeArgs(args);
@@ -378,8 +378,8 @@ public class SymbolToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "count");
-        args.put("include_external", false);
-        args.put("filter_default_names", true);
+        args.put("includeExternal", false);
+        args.put("filterDefaultNames", true);
 
         // Valid count mode args
         try {
@@ -413,7 +413,7 @@ public class SymbolToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "classes");
-        args.put("start_index", 0);
+        args.put("startIndex", 0);
         args.put("limit", 100);
 
         // Valid classes mode args
@@ -424,7 +424,7 @@ public class SymbolToolProviderTest {
         }
 
         // start_index is optional with default (0)
-        args.remove("start_index");
+        args.remove("startIndex");
         try {
             validateClassesModeArgs(args);
             // Should not throw - start_index has default
@@ -433,7 +433,7 @@ public class SymbolToolProviderTest {
         }
 
         // limit is optional with default (100)
-        args.put("start_index", 0);
+        args.put("startIndex", 0);
         args.remove("limit");
         try {
             validateClassesModeArgs(args);
@@ -449,7 +449,7 @@ public class SymbolToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "namespaces");
-        args.put("start_index", 0);
+        args.put("startIndex", 0);
         args.put("limit", 100);
 
         // Valid namespaces mode args
@@ -460,7 +460,7 @@ public class SymbolToolProviderTest {
         }
 
         // start_index is optional with default (0)
-        args.remove("start_index");
+        args.remove("startIndex");
         try {
             validateNamespacesModeArgs(args);
             // Should not throw - start_index has default
@@ -469,7 +469,7 @@ public class SymbolToolProviderTest {
         }
 
         // limit is optional with default (100)
-        args.put("start_index", 0);
+        args.put("startIndex", 0);
         args.remove("limit");
         try {
             validateNamespacesModeArgs(args);
@@ -481,7 +481,7 @@ public class SymbolToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handler
     private void validateManageSymbolsArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("mode") == null) {
@@ -513,7 +513,7 @@ public class SymbolToolProviderTest {
             if (args.get("address") == null) {
                 throw new IllegalArgumentException("address is required for mode='create_label'");
             }
-            String labelName = (String) args.get("label_name");
+            String labelName = (String) args.get("labelName");
             if (labelName == null || labelName.trim().isEmpty()) {
                 throw new IllegalArgumentException("label_name is required for mode='create_label'");
             }
@@ -526,7 +526,7 @@ public class SymbolToolProviderTest {
             if (args.get("address") == null) {
                 throw new IllegalArgumentException("address is required for mode='rename_data'");
             }
-            String newName = (String) args.get("new_name");
+            String newName = (String) args.get("newName");
             if (newName == null || newName.trim().isEmpty()) {
                 throw new IllegalArgumentException("new_name is required for mode='rename_data'");
             }

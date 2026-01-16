@@ -154,7 +154,7 @@ public class ConstantSearchToolProviderTest {
         args.put("programPath", "/test/program");
         args.put("mode", "specific");
         args.put("value", "0xdeadbeef");
-        args.put("max_results", 100);
+        args.put("maxResults", 100);
 
         // Valid specific mode args
         try {
@@ -209,7 +209,7 @@ public class ConstantSearchToolProviderTest {
 
         // Test max_results validation
         args.put("value", "123");
-        args.put("max_results", 0);
+        args.put("maxResults", 0);
         try {
             validateMaxResults(args);
             // Should clamp to default
@@ -217,7 +217,7 @@ public class ConstantSearchToolProviderTest {
             // May clamp or throw
         }
 
-        args.put("max_results", 20000);
+        args.put("maxResults", 20000);
         try {
             validateMaxResults(args);
             // Should clamp to MAX_RESULTS_LIMIT
@@ -232,9 +232,9 @@ public class ConstantSearchToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "range");
-        args.put("min_value", "0x100");
-        args.put("max_value", "0x200");
-        args.put("max_results", 100);
+        args.put("minValue", "0x100");
+        args.put("maxValue", "0x200");
+        args.put("maxResults", 100);
 
         // Valid range mode args
         try {
@@ -244,7 +244,7 @@ public class ConstantSearchToolProviderTest {
         }
 
         // Missing min_value should throw
-        args.remove("min_value");
+        args.remove("minValue");
         try {
             validateRangeModeArgs(args);
             fail("Should throw exception for missing min_value in range mode");
@@ -255,8 +255,8 @@ public class ConstantSearchToolProviderTest {
         }
 
         // Missing max_value should throw
-        args.put("min_value", "0x100");
-        args.remove("max_value");
+        args.put("minValue", "0x100");
+        args.remove("maxValue");
         try {
             validateRangeModeArgs(args);
             fail("Should throw exception for missing max_value in range mode");
@@ -267,8 +267,8 @@ public class ConstantSearchToolProviderTest {
         }
 
         // min_value > max_value should throw
-        args.put("min_value", "0x200");
-        args.put("max_value", "0x100");
+        args.put("minValue", "0x200");
+        args.put("maxValue", "0x100");
         try {
             validateRangeModeArgs(args);
             fail("Should throw exception when min_value > max_value");
@@ -286,9 +286,9 @@ public class ConstantSearchToolProviderTest {
         Map<String, Object> args = new HashMap<>();
         args.put("programPath", "/test/program");
         args.put("mode", "common");
-        args.put("top_n", 50);
-        args.put("include_small_values", false);
-        args.put("min_value", "0x1000");
+        args.put("topN", 50);
+        args.put("includeSmallValues", false);
+        args.put("minValue", "0x1000");
 
         // Valid common mode args
         try {
@@ -298,7 +298,7 @@ public class ConstantSearchToolProviderTest {
         }
 
         // Test top_n validation
-        args.put("top_n", 0);
+        args.put("topN", 0);
         try {
             validateCommonModeArgs(args);
             // Should clamp to default
@@ -306,7 +306,7 @@ public class ConstantSearchToolProviderTest {
             // May clamp or throw
         }
 
-        args.put("top_n", 20000);
+        args.put("topN", 20000);
         try {
             validateCommonModeArgs(args);
             // Should clamp to MAX_RESULTS_LIMIT
@@ -315,8 +315,8 @@ public class ConstantSearchToolProviderTest {
         }
 
         // Test optional min_value for filtering
-        args.put("top_n", 50);
-        args.remove("min_value");
+        args.put("topN", 50);
+        args.remove("minValue");
         try {
             validateCommonModeArgs(args);
             // min_value is optional for common mode
@@ -325,7 +325,7 @@ public class ConstantSearchToolProviderTest {
         }
 
         // Test include_small_values boolean
-        args.put("include_small_values", true);
+        args.put("includeSmallValues", true);
         try {
             validateCommonModeArgs(args);
         } catch (Exception e) {
@@ -398,7 +398,7 @@ public class ConstantSearchToolProviderTest {
     }
 
     private void validateMaxResults(Map<String, Object> args) {
-        Object maxResultsObj = args.get("max_results");
+        Object maxResultsObj = args.get("maxResults");
         if (maxResultsObj != null) {
             int maxResults = ((Number) maxResultsObj).intValue();
             if (maxResults <= 0) {
@@ -413,16 +413,16 @@ public class ConstantSearchToolProviderTest {
     private void validateRangeModeArgs(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("range".equals(mode)) {
-            if (args.get("min_value") == null) {
+            if (args.get("minValue") == null) {
                 throw new IllegalArgumentException("min_value is required for range mode");
             }
-            if (args.get("max_value") == null) {
+            if (args.get("maxValue") == null) {
                 throw new IllegalArgumentException("max_value is required for range mode");
             }
 
             // Validate range
-            String minStr = (String) args.get("min_value");
-            String maxStr = (String) args.get("max_value");
+            String minStr = (String) args.get("minValue");
+            String maxStr = (String) args.get("maxValue");
             if (minStr != null && maxStr != null) {
                 try {
                     long minValue = parseConstantValue(minStr);
@@ -441,7 +441,7 @@ public class ConstantSearchToolProviderTest {
         String mode = (String) args.get("mode");
         if ("common".equals(mode)) {
             // top_n is optional (has default)
-            Object topNObj = args.get("top_n");
+            Object topNObj = args.get("topN");
             if (topNObj != null) {
                 int topN = ((Number) topNObj).intValue();
                 if (topN <= 0) {

@@ -116,7 +116,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
      */
     private void registerCrossReferencesTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
@@ -160,37 +160,37 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             "description", "Maximum number of references to return",
             "default", 100
         ));
-        properties.put("max_results", Map.of(
+        properties.put("maxResults", Map.of(
             "type", "integer",
             "description", "Alternative limit parameter for import mode",
             "default", 100
         ));
-        properties.put("library_name", Map.of(
+        properties.put("libraryName", Map.of(
             "type", "string",
             "description", "Optional specific library name to narrow search when mode='import' (case-insensitive)"
         ));
-        properties.put("start_index", Map.of(
+        properties.put("startIndex", Map.of(
             "type", "integer",
             "description", "Starting index for pagination when mode='referencers_decomp' (0-based)",
             "default", 0
         ));
-        properties.put("max_referencers", Map.of(
+        properties.put("maxReferencers", Map.of(
             "type", "integer",
             "description", "Maximum number of referencing functions to decompile when mode='referencers_decomp'",
             "default", 10
         ));
-        properties.put("include_ref_context", Map.of(
+        properties.put("includeRefContext", Map.of(
             "type", "boolean",
             "description", "Whether to include reference line numbers in decompilation when mode='referencers_decomp'",
             "default", true
         ));
-        properties.put("include_data_refs", Map.of(
+        properties.put("includeDataRefs", Map.of(
             "type", "boolean",
             "description", "Whether to include data references (reads/writes), not just calls when mode='referencers_decomp'",
             "default", true
         ));
 
-        List<String> required = List.of("program_path", "target");
+        List<String> required = List.of("programPath", "target");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("get-references")
@@ -441,16 +441,16 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
             return createErrorResult("Could not resolve address or symbol: " + target);
         }
 
-        int maxReferencers = getOptionalInt(request, "max_referencers", 10);
-        int startIndex = getOptionalInt(request, "start_index", 0);
-        boolean includeRefContext = getOptionalBoolean(request, "include_ref_context", true);
-        boolean includeDataRefs = getOptionalBoolean(request, "include_data_refs", true);
+        int maxReferencers = getOptionalInt(request, "maxReferencers", 10);
+        int startIndex = getOptionalInt(request, "startIndex", 0);
+        boolean includeRefContext = getOptionalBoolean(request, "includeRefContext", true);
+        boolean includeDataRefs = getOptionalBoolean(request, "includeDataRefs", true);
 
         if (maxReferencers <= 0 || maxReferencers > 50) {
-            return createErrorResult("max_referencers must be between 1 and 50");
+            return createErrorResult("maxReferencers must be between 1 and 50");
         }
         if (startIndex < 0) {
-            return createErrorResult("start_index must be non-negative");
+            return createErrorResult("startIndex must be non-negative");
         }
 
         ReferenceManager refManager = program.getReferenceManager();
@@ -546,22 +546,22 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", programPath);
-        result.put("target_address", AddressUtil.formatAddress(targetAddress));
-        result.put("resolved_from", target);
-        result.put("total_referencers", totalReferencers);
-        result.put("start_index", startIndex);
-        result.put("returned_count", decompiledFunctions.size());
-        result.put("next_start_index", startIndex + decompiledFunctions.size());
-        result.put("has_more", endIndex < totalReferencers);
-        result.put("include_data_refs", includeDataRefs);
+        result.put("programPath", programPath);
+        result.put("targetAddress", AddressUtil.formatAddress(targetAddress));
+        result.put("resolvedFrom", target);
+        result.put("totalReferencers", totalReferencers);
+        result.put("startIndex", startIndex);
+        result.put("returnedCount", decompiledFunctions.size());
+        result.put("nextStartIndex", startIndex + decompiledFunctions.size());
+        result.put("hasMore", endIndex < totalReferencers);
+        result.put("includeDataRefs", includeDataRefs);
         result.put("referencers", decompiledFunctions);
         return createJsonResult(result);
     }
 
     private McpSchema.CallToolResult handleImportReferencesMode(Program program, String target, CallToolRequest request) {
-        String libraryName = getOptionalString(request, "library_name", null);
-        int maxResults = getOptionalInt(request, "max_results", 100);
+        String libraryName = getOptionalString(request, "libraryName", null);
+        int maxResults = getOptionalInt(request, "maxResults", 100);
         if (maxResults <= 0) maxResults = 100;
         if (maxResults > 1000) maxResults = 1000;
 
@@ -588,7 +588,7 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("programPath", program.getDomainFile().getPathname());
         result.put("searchedImport", target);
         result.put("matchedImports", importInfoList);
         result.put("referenceCount", references.size());
@@ -615,12 +615,12 @@ public class CrossReferencesToolProvider extends AbstractToolProvider {
         boolean isResolved = !Boolean.TRUE.equals(finalTarget.get("isThunk"));
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("start_address", AddressUtil.formatAddress(address));
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("startAddress", AddressUtil.formatAddress(address));
         result.put("chain", chain);
-        result.put("chain_length", chain.size());
-        result.put("final_target", finalTarget);
-        result.put("is_resolved", isResolved);
+        result.put("chainLength", chain.size());
+        result.put("finalTarget", finalTarget);
+        result.put("isResolved", isResolved);
         return createJsonResult(result);
     }
 

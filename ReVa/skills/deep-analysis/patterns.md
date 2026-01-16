@@ -350,7 +350,7 @@ read_pos = (read_pos + 1) % BUFFER_SIZE;
 **Linked list:**
 ```
 struct node {
-  data_type data;
+  dataType data;
   struct node* next;  // singly-linked
   struct node* prev;  // doubly-linked (optional)
 };
@@ -364,7 +364,7 @@ struct node {
 **Tree structures:**
 ```
 struct tree_node {
-  data_type data;
+  dataType data;
   struct tree_node* left;
   struct tree_node* right;
 };

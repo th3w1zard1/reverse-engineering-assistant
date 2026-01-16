@@ -94,7 +94,6 @@ public class ProgramDocumentationResource extends AbstractResourceProvider {
                     documentation.append("# Program Documentation\n\n");
                     documentation.append("This document provides comprehensive information about all currently open programs.\n\n");
 
-                    boolean cacheInvalidated = false;
                     boolean hasMissingDocs = false;
                     for (Program program : openPrograms) {
                         String cachedDoc = programDocumentationCache.get(program);

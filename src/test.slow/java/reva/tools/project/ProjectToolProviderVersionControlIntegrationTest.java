@@ -83,7 +83,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
                     "checkin-program",
                     Map.of(
-                        "program_path", program_path,
+                        "programPath", program_path,
                         "message", "Test commit"
                     )
                 ));
@@ -164,7 +164,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
                     "checkin-program",
                     Map.of(
-                        "program_path", program_path,
+                        "programPath", program_path,
                         "message", "Test commit"
                     )
                 ));
@@ -248,7 +248,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
                     "checkin-program",
                     Map.of(
-                        "program_path", program_path,
+                        "programPath", program_path,
                         "message", commitMessage
                     )
                 ));

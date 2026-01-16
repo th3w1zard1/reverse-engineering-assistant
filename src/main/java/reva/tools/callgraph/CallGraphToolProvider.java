@@ -87,7 +87,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      */
     private void registerGetCallGraphTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program. Optional in GUI mode - if not provided, uses the currently active program in the Code Browser."
         ));
@@ -102,7 +102,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
             Map.of("type", "string"),
             functionIdentifierArraySchema
         ));
-        properties.put("function_identifier", functionIdentifierProperty);
+        properties.put("functionIdentifier", functionIdentifierProperty);
         properties.put("mode", Map.of(
             "type", "string",
             "description", "Analysis mode: 'graph' (bidirectional call graph), 'tree' (hierarchical tree), 'callers' (list of callers), 'callees' (list of callees), 'callers_decomp' (decompiled callers), 'common_callers' (functions that call all specified functions)",
@@ -120,27 +120,27 @@ public class CallGraphToolProvider extends AbstractToolProvider {
             "enum", List.of("callers", "callees"),
             "default", "callees"
         ));
-        properties.put("max_depth", Map.of(
+        properties.put("maxDepth", Map.of(
             "type", "integer",
             "description", "Maximum depth to traverse when mode='tree' (default: 3, max: 10)",
             "default", 3
         ));
-        properties.put("start_index", Map.of(
+        properties.put("startIndex", Map.of(
             "type", "integer",
             "description", "Starting index for pagination when mode='callers_decomp' (0-based, default: 0)",
             "default", 0
         ));
-        properties.put("max_callers", Map.of(
+        properties.put("maxCallers", Map.of(
             "type", "integer",
             "description", "Maximum number of calling functions to decompile when mode='callers_decomp' (default: 10, max: 50)",
             "default", 10
         ));
-        properties.put("include_call_context", Map.of(
+        properties.put("includeCallContext", Map.of(
             "type", "boolean",
             "description", "Whether to highlight the line containing the call in each decompilation when mode='callers_decomp' (default: true)",
             "default", true
         ));
-        properties.put("function_addresses", Map.of(
+        properties.put("functionAddresses", Map.of(
             "type", "string",
             "description", "Comma-separated list of function addresses or names when mode='common_callers' (required for common_callers mode, format: 'func1,func2,func3')"
         ));
@@ -158,9 +158,9 @@ public class CallGraphToolProvider extends AbstractToolProvider {
             try {
                 Program program = getProgramFromArgs(request);
 
-                // Check if function_identifier is an array (batch mode) - supports both camelCase and snake_case
+                // Check if functionIdentifier is an array (batch mode) - supports both camelCase and snake_case
                 // NOTE: common_callers mode already accepts multiple functions via function_addresses parameter
-                List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "function_identifier");
+                List<Object> functionIdentifierList = getParameterAsList(request.arguments(), "functionIdentifier");
                 Object functionIdentifierValue = functionIdentifierList.isEmpty() ? null : (functionIdentifierList.size() == 1 ? functionIdentifierList.get(0) : functionIdentifierList);
                 String mode = getOptionalString(request, "mode", "graph");
 
@@ -227,14 +227,14 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("center_function", Map.of(
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("centerFunction", Map.of(
             "name", centerFunction.getName(),
             "address", AddressUtil.formatAddress(centerFunction.getEntryPoint())
         ));
         result.put("depth", depth);
-        result.put("caller_count", callerNodeCount[0]);
-        result.put("callee_count", calleeNodeCount[0]);
+        result.put("callerCount", callerNodeCount[0]);
+        result.put("calleeCount", calleeNodeCount[0]);
         result.put("callers", callers);
         result.put("callees", callees);
 
@@ -257,10 +257,10 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
+        result.put("programPath", program.getDomainFile().getPathname());
         result.put("direction", traverseCallers ? "callers" : "callees");
-        result.put("max_depth", maxDepth);
-        result.put("total_nodes", nodeCount[0]);
+        result.put("maxDepth", maxDepth);
+        result.put("totalNodes", nodeCount[0]);
         result.put("tree", tree);
 
         return createJsonResult(result);
@@ -313,15 +313,15 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         });
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("target_functions", targetFunctions.stream()
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("targetFunctions", targetFunctions.stream()
             .map(f -> Map.of(
                 "name", f.getName(),
                 "address", AddressUtil.formatAddress(f.getEntryPoint())
             ))
             .toList());
-        result.put("common_caller_count", callerList.size());
-        result.put("common_callers", callerList);
+        result.put("commonCallerCount", callerList.size());
+        result.put("commonCallers", callerList);
 
         return createJsonResult(result);
     }
@@ -484,12 +484,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      * Handle get-call-graph mode='graph' - bidirectional call graph
      */
     private McpSchema.CallToolResult handleGetCallGraphMode(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when mode='graph'");
+            return createErrorResult("functionIdentifier is required when mode='graph'");
         }
 
-        Address address = getAddressFromArgs(request, program, "function_identifier");
+        Address address = getAddressFromArgs(request, program, "functionIdentifier");
         int depth = getOptionalInt(request, "depth", 1);
         depth = clampDepth(depth);
 
@@ -505,14 +505,14 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      * Handle get-call-graph mode='tree' - hierarchical call tree
      */
     private McpSchema.CallToolResult handleGetCallTreeMode(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when mode='tree'");
+            return createErrorResult("functionIdentifier is required when mode='tree'");
         }
 
-        Address address = getAddressFromArgs(request, program, "function_identifier");
+        Address address = getAddressFromArgs(request, program, "functionIdentifier");
         String direction = getOptionalString(request, "direction", "callees");
-        int maxDepth = getOptionalInt(request, "max_depth", DEFAULT_MAX_DEPTH);
+        int maxDepth = getOptionalInt(request, "maxDepth", DEFAULT_MAX_DEPTH);
 
         if (!"callers".equalsIgnoreCase(direction) && !"callees".equalsIgnoreCase(direction)) {
             return createErrorResult("Invalid direction: '" + direction + "'. Must be 'callers' or 'callees'.");
@@ -533,12 +533,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      * Handle get-call-graph mode='callers' - list of callers
      */
     private McpSchema.CallToolResult handleGetCallersMode(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when mode='callers'");
+            return createErrorResult("functionIdentifier is required when mode='callers'");
         }
 
-        Address address = getAddressFromArgs(request, program, "function_identifier");
+        Address address = getAddressFromArgs(request, program, "functionIdentifier");
         String direction = getOptionalString(request, "direction", "callers");
 
         // For callers mode, direction must be 'callers'
@@ -563,12 +563,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("target_function", Map.of(
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("targetFunction", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("caller_count", callerList.size());
+        result.put("callerCount", callerList.size());
         result.put("callers", callerList);
 
         return createJsonResult(result);
@@ -578,12 +578,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      * Handle get-call-graph mode='callees' - list of callees
      */
     private McpSchema.CallToolResult handleGetCalleesMode(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when mode='callees'");
+            return createErrorResult("functionIdentifier is required when mode='callees'");
         }
 
-        Address address = getAddressFromArgs(request, program, "function_identifier");
+        Address address = getAddressFromArgs(request, program, "functionIdentifier");
         String direction = getOptionalString(request, "direction", "callees");
 
         // For callees mode, direction must be 'callees'
@@ -608,12 +608,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("target_function", Map.of(
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("targetFunction", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("callee_count", calleeList.size());
+        result.put("calleeCount", calleeList.size());
         result.put("callees", calleeList);
 
         return createJsonResult(result);
@@ -623,21 +623,21 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      * Handle get-call-graph mode='callers_decomp' - decompiled callers
      */
     private McpSchema.CallToolResult handleGetCallersDecompiledMode(Program program, CallToolRequest request) {
-        String functionIdentifier = getOptionalString(request, "function_identifier", null);
+        String functionIdentifier = getOptionalString(request, "functionIdentifier", null);
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return createErrorResult("function_identifier is required when mode='callers_decomp'");
+            return createErrorResult("functionIdentifier is required when mode='callers_decomp'");
         }
 
-        int maxCallers = getOptionalInt(request, "max_callers", 10);
-        int startIndex = getOptionalInt(request, "start_index", 0);
-        boolean includeCallContext = getOptionalBoolean(request, "include_call_context", true);
+        int maxCallers = getOptionalInt(request, "maxCallers", 10);
+        int startIndex = getOptionalInt(request, "startIndex", 0);
+        boolean includeCallContext = getOptionalBoolean(request, "includeCallContext", true);
 
         // Validate parameters
         if (maxCallers <= 0 || maxCallers > 50) {
-            return createErrorResult("max_callers must be between 1 and 50");
+            return createErrorResult("maxCallers must be between 1 and 50");
         }
         if (startIndex < 0) {
-            return createErrorResult("start_index must be non-negative");
+            return createErrorResult("startIndex must be non-negative");
         }
 
         // Resolve the target function
@@ -735,13 +735,13 @@ public class CallGraphToolProvider extends AbstractToolProvider {
 
         // Build result
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", programPath);
-        result.put("target_function", targetFunction.getName());
-        result.put("target_address", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
-        result.put("total_callers", totalCallers);
-        result.put("start_index", startIndex);
-        result.put("returned_count", decompilations.size());
-        result.put("next_start_index", startIndex + decompilations.size());
+        result.put("programPath", programPath);
+        result.put("targetFunction", targetFunction.getName());
+        result.put("targetAddress", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
+        result.put("totalCallers", totalCallers);
+        result.put("startIndex", startIndex);
+        result.put("returnedCount", decompilations.size());
+        result.put("nextStartIndex", startIndex + decompilations.size());
         result.put("hasMore", endIndex < totalCallers);
         result.put("callers", decompilations);
 
@@ -752,9 +752,9 @@ public class CallGraphToolProvider extends AbstractToolProvider {
      * Handle get-call-graph mode='common_callers' - find functions that call all specified functions
      */
     private McpSchema.CallToolResult handleFindCommonCallersMode(Program program, CallToolRequest request) {
-        String functionAddresses = getOptionalString(request, "function_addresses", null);
+        String functionAddresses = getOptionalString(request, "functionAddresses", null);
         if (functionAddresses == null || functionAddresses.trim().isEmpty()) {
-            return createErrorResult("function_addresses is required when mode='common_callers' (format: 'func1,func2,func3')");
+            return createErrorResult("functionAddresses is required when mode='common_callers' (format: 'func1,func2,func3')");
         }
 
         // Parse comma-separated function addresses/names
@@ -855,7 +855,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Handle batch get-call-graph operations when function_identifier is an array
+     * Handle batch get-call-graph operations when functionIdentifier is an array
      */
     private McpSchema.CallToolResult handleBatchGetCallGraph(Program program, CallToolRequest request, List<?> functionIdentifierList) {
         String mode = getOptionalString(request, "mode", "graph");
@@ -867,7 +867,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
                 String functionIdentifier = functionIdentifierList.get(i).toString();
                 Map<String, Object> functionResult = new HashMap<>();
                 functionResult.put("index", i);
-                functionResult.put("function_identifier", functionIdentifier);
+                functionResult.put("functionIdentifier", functionIdentifier);
 
                 McpSchema.CallToolResult singleResult;
                 switch (mode) {
@@ -887,20 +887,20 @@ public class CallGraphToolProvider extends AbstractToolProvider {
                         singleResult = handleGetCallersDecompiledModeWithIdentifier(program, request, functionIdentifier);
                         break;
                     default:
-                        errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", "Invalid mode for batch: " + mode));
+                        errors.add(Map.of("index", i, "functionIdentifier", functionIdentifier, "error", "Invalid mode for batch: " + mode));
                         continue;
                 }
 
                 if (singleResult.isError()) {
                     String errorText = extractTextFromContent(singleResult.content().get(0));
-                    errors.add(Map.of("index", i, "function_identifier", functionIdentifier, "error", errorText));
+                    errors.add(Map.of("index", i, "functionIdentifier", functionIdentifier, "error", errorText));
                 } else {
                     Map<String, Object> resultData = extractJsonDataFromResult(singleResult);
                     functionResult.putAll(resultData);
                     results.add(functionResult);
                 }
             } catch (Exception e) {
-                errors.add(Map.of("index", i, "function_identifier", functionIdentifierList.get(i).toString(), "error", e.getMessage()));
+                errors.add(Map.of("index", i, "functionIdentifier", functionIdentifierList.get(i).toString(), "error", e.getMessage()));
             }
         }
 
@@ -969,7 +969,7 @@ public class CallGraphToolProvider extends AbstractToolProvider {
             return createErrorResult("No function at: " + functionIdentifier);
         }
         String direction = getOptionalString(request, "direction", "callees");
-        int maxDepth = getOptionalInt(request, "max_depth", DEFAULT_MAX_DEPTH);
+        int maxDepth = getOptionalInt(request, "maxDepth", DEFAULT_MAX_DEPTH);
         maxDepth = clampDepth(maxDepth);
         boolean traverseCallers = "callers".equalsIgnoreCase(direction);
         return getCallTree(program, function, maxDepth, traverseCallers);
@@ -997,12 +997,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("target_function", Map.of(
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("targetFunction", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("caller_count", callerList.size());
+        result.put("callerCount", callerList.size());
         result.put("callers", callerList);
 
         return createJsonResult(result);
@@ -1030,12 +1030,12 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", program.getDomainFile().getPathname());
-        result.put("target_function", Map.of(
+        result.put("programPath", program.getDomainFile().getPathname());
+        result.put("targetFunction", Map.of(
             "name", function.getName(),
             "address", AddressUtil.formatAddress(function.getEntryPoint())
         ));
-        result.put("callee_count", calleeList.size());
+        result.put("calleeCount", calleeList.size());
         result.put("callees", calleeList);
 
         return createJsonResult(result);
@@ -1044,17 +1044,17 @@ public class CallGraphToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleGetCallersDecompiledModeWithIdentifier(Program program, CallToolRequest request, String functionIdentifier) {
         // Temporarily modify the request arguments to include the function identifier
         // Since CallToolRequest is immutable, we need to work around this
-        // We'll create a wrapper that intercepts the function_identifier lookup
-        int maxCallers = getOptionalInt(request, "max_callers", 10);
-        int startIndex = getOptionalInt(request, "start_index", 0);
-        boolean includeCallContext = getOptionalBoolean(request, "include_call_context", true);
+        // We'll create a wrapper that intercepts the functionIdentifier lookup
+        int maxCallers = getOptionalInt(request, "maxCallers", 10);
+        int startIndex = getOptionalInt(request, "startIndex", 0);
+        boolean includeCallContext = getOptionalBoolean(request, "includeCallContext", true);
 
         // Validate parameters
         if (maxCallers <= 0 || maxCallers > 50) {
-            return createErrorResult("max_callers must be between 1 and 50");
+            return createErrorResult("maxCallers must be between 1 and 50");
         }
         if (startIndex < 0) {
-            return createErrorResult("start_index must be non-negative");
+            return createErrorResult("startIndex must be non-negative");
         }
 
         // Resolve the target function directly
@@ -1152,13 +1152,13 @@ public class CallGraphToolProvider extends AbstractToolProvider {
 
         // Build result
         Map<String, Object> result = new HashMap<>();
-        result.put("program_path", programPath);
-        result.put("target_function", targetFunction.getName());
-        result.put("target_address", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
-        result.put("total_callers", totalCallers);
-        result.put("start_index", startIndex);
-        result.put("returned_count", decompilations.size());
-        result.put("next_start_index", startIndex + decompilations.size());
+        result.put("programPath", programPath);
+        result.put("targetFunction", targetFunction.getName());
+        result.put("targetAddress", AddressUtil.formatAddress(targetFunction.getEntryPoint()));
+        result.put("totalCallers", totalCallers);
+        result.put("startIndex", startIndex);
+        result.put("returnedCount", decompilations.size());
+        result.put("nextStartIndex", startIndex + decompilations.size());
         result.put("hasMore", endIndex < totalCallers);
         result.put("callers", decompilations);
 

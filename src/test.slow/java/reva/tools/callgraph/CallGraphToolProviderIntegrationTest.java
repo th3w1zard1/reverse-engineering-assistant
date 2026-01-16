@@ -86,7 +86,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_identifier", "testFunction");
+            arguments.put("functionIdentifier", "testFunction");
             arguments.put("mode", "graph");
             arguments.put("depth", 1);
 
@@ -108,10 +108,10 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_identifier", "testFunction");
+            arguments.put("functionIdentifier", "testFunction");
             arguments.put("mode", "tree");
             arguments.put("direction", "callees");
-            arguments.put("max_depth", 2);
+            arguments.put("maxDepth", 2);
 
             CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
@@ -131,7 +131,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_identifier", "testFunction");
+            arguments.put("functionIdentifier", "testFunction");
             arguments.put("mode", "callers");
 
             CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
@@ -151,7 +151,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_identifier", "testFunction");
+            arguments.put("functionIdentifier", "testFunction");
             arguments.put("mode", "callees");
 
             CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
@@ -171,9 +171,9 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
 
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
-            arguments.put("function_identifier", "testFunction");
+            arguments.put("functionIdentifier", "testFunction");
             arguments.put("mode", "callers_decomp");
-            arguments.put("max_callers", 5);
+            arguments.put("maxCallers", 5);
 
             CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
@@ -195,7 +195,7 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
             Map<String, Object> arguments = new HashMap<>();
             arguments.put("programPath", programPath);
             arguments.put("mode", "common_callers");
-            arguments.put("function_addresses", "testFunction,callerFunction");
+            arguments.put("functionAddresses", "testFunction,callerFunction");
 
             CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
 
@@ -206,6 +206,108 @@ public class CallGraphToolProviderIntegrationTest extends RevaIntegrationTestBas
                 JsonNode json = parseJsonContent(content.text());
                 assertNotNull("Result should have valid JSON structure", json);
             }
+        });
+    }
+
+    @Test
+    public void testGetCallGraphGraphModeWithVariousDepths() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            int[] depths = {0, 1, 2, 3, 5};
+
+            for (int depth : depths) {
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("functionIdentifier", "testFunction");
+                arguments.put("mode", "graph");
+                arguments.put("depth", depth);
+
+                CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
+
+                assertNotNull("Result should not be null for depth " + depth, result);
+                if (!result.isError()) {
+                    TextContent content = (TextContent) result.content().get(0);
+                    JsonNode json = parseJsonContent(content.text());
+                    assertNotNull("Result should have valid JSON structure", json);
+                }
+            }
+        });
+    }
+
+    @Test
+    public void testGetCallGraphTreeModeWithVariousDirections() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            String[] directions = {"callers", "callees"};
+
+            for (String direction : directions) {
+                Map<String, Object> arguments = new HashMap<>();
+                arguments.put("programPath", programPath);
+                arguments.put("functionIdentifier", "testFunction");
+                arguments.put("mode", "tree");
+                arguments.put("direction", direction);
+                arguments.put("maxDepth", 3);
+
+                CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
+
+                assertNotNull("Result should not be null for direction " + direction, result);
+                if (!result.isError()) {
+                    TextContent content = (TextContent) result.content().get(0);
+                    JsonNode json = parseJsonContent(content.text());
+                    assertNotNull("Result should have valid JSON structure", json);
+                }
+            }
+        });
+    }
+
+    @Test
+    public void testGetCallGraphCallersDecompWithOptions() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("functionIdentifier", "testFunction");
+            arguments.put("mode", "callers_decomp");
+            arguments.put("maxCallers", 5);
+            arguments.put("startIndex", 0);
+            arguments.put("includeCallContext", true);
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
+
+            assertNotNull("Result should not be null", result);
+            if (!result.isError()) {
+                TextContent content = (TextContent) result.content().get(0);
+                JsonNode json = parseJsonContent(content.text());
+                assertNotNull("Result should have valid JSON structure", json);
+            }
+        });
+    }
+
+    @Test
+    public void testGetCallGraphValidatesProgramState() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            client.initialize();
+
+            Map<String, Object> arguments = new HashMap<>();
+            arguments.put("programPath", programPath);
+            arguments.put("functionIdentifier", "testFunction");
+            arguments.put("mode", "callers");
+
+            CallToolResult result = client.callTool(new CallToolRequest("get-call-graph", arguments));
+
+            assertNotNull("Result should not be null", result);
+            assertMcpResultNotError(result, "Result should not be an error");
+            TextContent content = (TextContent) result.content().get(0);
+            JsonNode json = parseJsonContent(content.text());
+
+            // Verify function exists in program state
+            FunctionManager funcManager = program.getFunctionManager();
+            Function func = funcManager.getFunctionAt(testFunction.getEntryPoint());
+            assertNotNull("Function should exist in program", func);
+            assertEquals("Function name should match", "testFunction", func.getName());
         });
     }
 }

@@ -18,17 +18,17 @@ List classes, namespaces, imports, exports, create labels, get symbols, count sy
 - `programPath` (required) - Path to the program in the Ghidra Project
 - `mode` (required) - Operation mode: 'classes', 'namespaces', 'imports', 'exports', 'create_label', 'symbols', 'count', 'rename_data'
 - `address` (required for mode='create_label'/'rename_data') - Address where to create the label or address of data to rename
-- `label_name` (required for mode='create_label') - Name for the label
-- `new_name` (required for mode='rename_data') - New name for the data label
-- `library_filter` (optional for mode='imports') - Optional library name to filter by (case-insensitive)
-- `max_results` (optional for mode='imports'/'exports', default: 500) - Maximum number of imports/exports to return
-- `start_index` (optional, default: 0) - Starting index for pagination (0-based)
+- `labelName` (required for mode='create_label') - Name for the label
+- `newName` (required for mode='rename_data') - New name for the data label
+- `libraryFilter` (optional for mode='imports') - Optional library name to filter by (case-insensitive)
+- `maxResults` (optional for mode='imports'/'exports', default: 500) - Maximum number of imports/exports to return
+- `startIndex` (optional, default: 0) - Starting index for pagination (0-based)
 - `offset` (optional, default: 0) - Alternative pagination offset parameter (backward compatibility)
 - `limit` (optional, default: 100) - Alternative pagination limit parameter (backward compatibility)
-- `group_by_library` (optional for mode='imports', default: true) - Whether to group imports by library name
-- `include_external` (optional for mode='symbols'/'count', default: false) - Whether to include external symbols
-- `max_count` (optional for mode='symbols', default: 200) - Maximum number of symbols to return
-- `filter_default_names` (optional for mode='symbols'/'count', default: true) - Whether to filter out default Ghidra generated names
+- `groupByLibrary` (optional for mode='imports', default: true) - Whether to group imports by library name
+- `includeExternal` (optional for mode='symbols'/'count', default: false) - Whether to include external symbols
+- `maxCount` (optional for mode='symbols', default: 200) - Maximum number of symbols to return
+- `filterDefaultNames` (optional for mode='symbols'/'count', default: true) - Whether to filter out default Ghidra generated names
 
 **Modes:**
 
@@ -294,9 +294,9 @@ while (current != null && !current.isGlobal()) {
 ### Pagination Parameters
 ```java
 // Extract pagination from request with backward compatibility
-int startIndex = getOptionalInt(request, "start_index", 
+int startIndex = getOptionalInt(request, "startIndex", 
     getOptionalInt(request, "offset", 0));
-int maxCount = getOptionalInt(request, "max_count",
+int maxCount = getOptionalInt(request, "maxCount",
     getOptionalInt(request, "limit", 200));
 
 // Manual pagination tracking
@@ -351,7 +351,7 @@ public void testSymbolRetrieval() throws Exception {
     // Test symbol retrieval via MCP
     CallToolResult result = client.callTool(new CallToolRequest(
         "manage-symbols",
-        Map.of("programPath", programPath, "mode", "symbols", "max_count", 50)
+        Map.of("programPath", programPath, "mode", "symbols", "maxCount", 50)
     ));
     
     assertFalse("Tool should not have errors", result.isError());
@@ -381,8 +381,8 @@ CallToolResult result = client.callTool(new CallToolRequest(
     Map.of(
         "programPath", programPath,
         "mode", "symbols",
-        "include_external", false,
-        "max_count", 100
+        "includeExternal", false,
+        "maxCount", 100
     )
 ));
 

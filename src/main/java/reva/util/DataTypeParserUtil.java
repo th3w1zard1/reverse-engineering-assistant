@@ -185,8 +185,8 @@ public class DataTypeParserUtil {
         // as it can contain circular references and recursive structures that would
         // cause serialization issues. Instead, we only include metadata about the data type.
         Map<String, Object> dataTypeInfo = createDataTypeInfo(foundDataType);
-        dataTypeInfo.put("archive_name", foundManager.getName());
-        dataTypeInfo.put("requested_string", dataTypeString);
+        dataTypeInfo.put("archiveName", foundManager.getName());
+        dataTypeInfo.put("requestedString", dataTypeString);
 
         return dataTypeInfo;
     }
@@ -254,17 +254,17 @@ public class DataTypeParserUtil {
     public static Map<String, Object> createDataTypeInfo(DataType dt) {
         Map<String, Object> info = new HashMap<>();
         info.put("name", dt.getName());
-        info.put("display_name", dt.getDisplayName());
-        info.put("category_path", dt.getCategoryPath().getPath());
+        info.put("displayName", dt.getDisplayName());
+        info.put("categoryPath", dt.getCategoryPath().getPath());
         info.put("description", dt.getDescription());
         info.put("id", dt.getUniversalID() != null ? dt.getUniversalID().getValue() : null);
         info.put("size", dt.getLength());
         info.put("alignment", dt.getAlignment());
-        info.put("data_type_name", dt.getClass().getSimpleName());
+        info.put("dataTypeName", dt.getClass().getSimpleName());
 
         // Check if data type is part of the built-in types
         if (dt.getDataTypeManager() != null) {
-            info.put("source_archive_name", dt.getSourceArchive() != null ?
+            info.put("sourceArchiveName", dt.getSourceArchive() != null ?
                 dt.getSourceArchive().getName() : "Local");
         }
 

@@ -203,6 +203,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
         toolProviders.add(new ConstantSearchToolProvider(server));
         toolProviders.add(new VtableToolProvider(server));
         toolProviders.add(new GetFunctionToolProvider(server));
+        toolProviders.add(new reva.tools.suggestions.SuggestionToolProvider(server));
 
         // Register all tools with the server
         // NOTE: As of MCP SDK v0.14.0, tool registration is idempotent and replaces duplicates
@@ -503,10 +504,6 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
      * This is necessary when configuration changes during server restart.
      */
     private void recreateTransportProvider() {
-        int serverPort = configManager.getServerPort();
-        String serverHost = configManager.getServerHost();
-        String baseUrl = "http://" + serverHost + ":" + serverPort;
-
         // Create ObjectMapper configured to ignore unknown properties
         // This is a workaround for MCP SDK issue #724 where the SDK doesn't handle
         // newer protocol fields (e.g., from VS Code MCP client using protocol 2025-11-25)

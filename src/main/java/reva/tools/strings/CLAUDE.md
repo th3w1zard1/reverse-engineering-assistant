@@ -20,13 +20,13 @@ List, search, count, or find similar strings in the program.
 - `programPath` (required) - Path in the Ghidra Project to the program
 - `mode` (optional, default: 'list') - Operation mode: 'list', 'regex', 'count', or 'similarity'
 - `pattern` (required for mode='regex') - Regular expression pattern to search for
-- `search_string` (required for mode='similarity') - String to compare against for similarity
+- `searchString` (required for mode='similarity') - String to compare against for similarity
 - `filter` (optional for mode='list') - Optional filter to match within string content
-- `start_index` (optional, default: 0) - Starting index for pagination when mode='list' or 'similarity' (0-based)
-- `max_count` (optional, default: 100) - Maximum number of strings to return when mode='list' or 'similarity'
+- `startIndex` (optional, default: 0) - Starting index for pagination when mode='list' or 'similarity' (0-based)
+- `maxCount` (optional, default: 100) - Maximum number of strings to return when mode='list' or 'similarity'
 - `offset` (optional, default: 0) - Alternative pagination offset when mode='list' (backward compatibility)
 - `limit` (optional, default: 2000) - Alternative pagination limit when mode='list' (backward compatibility)
-- `max_results` (optional, default: 100) - Maximum number of results to return when mode='regex'
+- `maxResults` (optional, default: 100) - Maximum number of results to return when mode='regex'
 - `include_referencing_functions` (optional, default: false) - Include list of functions that reference each string when mode='list' or 'similarity' (max 100 per string)
 
 **Modes:**

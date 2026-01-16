@@ -157,8 +157,8 @@ task integrationTest(type: Test) {
 		if (testResultsDir.exists()) {
 			// On Windows, file handles may remain open briefly after program.release()
 			// Try multiple times with delays to allow handles to close
-			def maxRetries = 3
-			def retryDelay = 200
+			def maxRetries = 5
+			def retryDelay = 500
 			def deleted = false
 			def lastException = null
 
@@ -167,6 +167,23 @@ task integrationTest(type: Test) {
 					if (i > 0) {
 						Thread.sleep(retryDelay * i)
 					}
+					// Try to delete just the binary subdirectory if it exists
+					def binaryDir = new File(testResultsDir, "binary")
+					if (binaryDir.exists()) {
+						try {
+							binaryDir.deleteDir()
+						} catch (Exception e) {
+							// If binary dir can't be deleted, try to delete individual files
+							binaryDir.listFiles()?.each { file ->
+								try {
+									file.delete()
+								} catch (Exception ignored) {
+									// Ignore individual file deletion failures
+								}
+							}
+						}
+					}
+					// Try to delete the whole directory
 					testResultsDir.deleteDir()
 					deleted = true
 				} catch (Exception e) {

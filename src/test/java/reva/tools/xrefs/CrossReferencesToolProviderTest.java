@@ -84,7 +84,7 @@ public class CrossReferencesToolProviderTest {
     public void testValidateGetReferencesParameters() {
         // Test parameter validation for the get-references tool
         Map<String, Object> validArgs = new HashMap<>();
-        validArgs.put("program_path", "/test/program");
+        validArgs.put("programPath", "/test/program");
         validArgs.put("target", "0x401000");
         validArgs.put("mode", "both");
 
@@ -159,47 +159,47 @@ public class CrossReferencesToolProviderTest {
         args.put("mode", "referencers_decomp");
 
         // Valid referencers_decomp mode args
-        args.put("max_referencers", 10);
-        args.put("start_index", 0);
-        args.put("include_ref_context", true);
-        args.put("include_data_refs", true);
+        args.put("maxReferencers", 10);
+        args.put("startIndex", 0);
+        args.put("includeRefContext", true);
+        args.put("includeDataRefs", true);
         try {
             validateReferencersDecompModeArgs(args);
         } catch (Exception e) {
             fail("Valid referencers_decomp mode parameters should not throw: " + e.getMessage());
         }
 
-        // Test max_referencers validation
-        args.put("max_referencers", 0);
+        // Test maxReferencers validation
+        args.put("maxReferencers", 0);
         try {
             validateReferencersDecompMaxReferencers(args);
-            fail("Should throw exception for max_referencers <= 0");
+            fail("Should throw exception for maxReferencers <= 0");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention max_referencers",
-                e.getMessage().toLowerCase().contains("max_referencers"));
+            assertTrue("Error message should mention maxReferencers",
+                e.getMessage().toLowerCase().contains("maxreferencers") || e.getMessage().toLowerCase().contains("max_referencers"));
         }
 
-        args.put("max_referencers", 100);
+        args.put("maxReferencers", 100);
         try {
             validateReferencersDecompMaxReferencers(args);
-            fail("Should throw exception for max_referencers > 50");
+            fail("Should throw exception for maxReferencers > 50");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention max_referencers",
-                e.getMessage().toLowerCase().contains("max_referencers"));
+            assertTrue("Error message should mention maxReferencers",
+                e.getMessage().toLowerCase().contains("maxreferencers") || e.getMessage().toLowerCase().contains("max_referencers"));
         }
 
-        // Test start_index validation
-        args.put("max_referencers", 10);
-        args.put("start_index", -1);
+        // Test startIndex validation
+        args.put("maxReferencers", 10);
+        args.put("startIndex", -1);
         try {
             validateReferencersDecompStartIndex(args);
-            fail("Should throw exception for negative start_index");
+            fail("Should throw exception for negative startIndex");
         } catch (IllegalArgumentException e) {
             // Expected
-            assertTrue("Error message should mention start_index",
-                e.getMessage().toLowerCase().contains("start_index"));
+            assertTrue("Error message should mention startIndex",
+                e.getMessage().toLowerCase().contains("startindex"));
         }
     }
 
@@ -212,8 +212,8 @@ public class CrossReferencesToolProviderTest {
         args.put("mode", "import");
 
         // Valid import mode args
-        args.put("max_results", 100);
-        args.put("library_name", "msvcrt.dll");
+        args.put("maxResults", 100);
+        args.put("libraryName", "msvcrt.dll");
         try {
             validateImportModeArgs(args);
         } catch (Exception e) {
@@ -221,7 +221,7 @@ public class CrossReferencesToolProviderTest {
         }
 
         // Test max_results validation
-        args.put("max_results", 0);
+        args.put("maxResults", 0);
         try {
             validateImportModeMaxResults(args);
             fail("Should clamp or handle max_results <= 0");
@@ -229,7 +229,7 @@ public class CrossReferencesToolProviderTest {
             // May clamp or throw - either is acceptable
         }
 
-        args.put("max_results", 2000);
+        args.put("maxResults", 2000);
         try {
             validateImportModeMaxResults(args);
             // Should clamp to 1000
@@ -304,7 +304,7 @@ public class CrossReferencesToolProviderTest {
 
     // Helper methods to simulate parameter validation from the tool handlers
     private void validateGetReferencesArgs(Map<String, Object> args) {
-        if (args.get("program_path") == null) {
+        if (args.get("programPath") == null) {
             throw new IllegalArgumentException("No program path provided");
         }
         if (args.get("target") == null) {
@@ -342,11 +342,11 @@ public class CrossReferencesToolProviderTest {
     private void validateReferencersDecompMaxReferencers(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("referencers_decomp".equals(mode)) {
-            Object maxRefsObj = args.get("max_referencers");
+            Object maxRefsObj = args.get("maxReferencers");
             if (maxRefsObj != null) {
                 int maxReferencers = ((Number) maxRefsObj).intValue();
                 if (maxReferencers <= 0 || maxReferencers > 50) {
-                    throw new IllegalArgumentException("max_referencers must be between 1 and 50");
+                    throw new IllegalArgumentException("maxReferencers must be between 1 and 50");
                 }
             }
         }
@@ -355,11 +355,11 @@ public class CrossReferencesToolProviderTest {
     private void validateReferencersDecompStartIndex(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("referencers_decomp".equals(mode)) {
-            Object startIdxObj = args.get("start_index");
+            Object startIdxObj = args.get("startIndex");
             if (startIdxObj != null) {
                 int startIndex = ((Number) startIdxObj).intValue();
                 if (startIndex < 0) {
-                    throw new IllegalArgumentException("start_index must be non-negative");
+                    throw new IllegalArgumentException("startIndex must be non-negative");
                 }
             }
         }
@@ -377,14 +377,14 @@ public class CrossReferencesToolProviderTest {
     private void validateImportModeMaxResults(Map<String, Object> args) {
         String mode = (String) args.get("mode");
         if ("import".equals(mode)) {
-            Object maxResultsObj = args.get("max_results");
+            Object maxResultsObj = args.get("maxResults");
             if (maxResultsObj != null) {
                 int maxResults = ((Number) maxResultsObj).intValue();
                 if (maxResults <= 0) {
-                    throw new IllegalArgumentException("max_results must be positive");
+                    throw new IllegalArgumentException("maxResults must be positive");
                 }
                 if (maxResults > 1000) {
-                    throw new IllegalArgumentException("max_results must be <= 1000");
+                    throw new IllegalArgumentException("maxResults must be <= 1000");
                 }
             }
         }

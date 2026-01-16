@@ -53,14 +53,14 @@ public class BookmarkToolProvider extends AbstractToolProvider {
 
     private void registerManageBookmarksTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional - if not provided, uses the currently active program in the Code Browser (GUI mode only). In headless mode or when no program is active, program_path is required."));
+        properties.put("programPath", SchemaUtil.stringProperty("Path to the program in the Ghidra Project. Optional - if not provided, uses the currently active program in the Code Browser (GUI mode only). In headless mode or when no program is active, programPath is required."));
         properties.put("action", Map.of(
                 "type", "string",
                 "description", "Action to perform: 'set', 'get', 'search', 'remove', 'remove_all', or 'categories'",
                 "enum", List.of("set", "get", "search", "remove", "remove_all", "categories")
         ));
         properties.put("address", SchemaUtil.stringProperty("Address where to set/get/remove the bookmark (required for set/remove, optional for get)"));
-        properties.put("address_or_symbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter name)"));
+        properties.put("addressOrSymbol", SchemaUtil.stringProperty("Address or symbol name (alternative parameter name)"));
         properties.put("type", SchemaUtil.stringProperty("Bookmark type enum ('Note', 'Warning', 'TODO', 'Bug', 'Analysis'; required for set/remove, optional for get/categories)"));
         properties.put("category", SchemaUtil.stringProperty("Bookmark category for organization (required for set, optional for remove; can be empty string)"));
         properties.put("comment", SchemaUtil.stringProperty("Bookmark comment text (required for set when not using batch mode)"));
@@ -80,9 +80,9 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         bookmarksArraySchema.put("description", "Array of bookmark objects for batch setting. Each object should have 'address' (required), 'type' (required), 'comment' (required), and optional 'category'. When provided, sets multiple bookmarks in a single transaction.");
         bookmarksArraySchema.put("items", bookmarkItemSchema);
         properties.put("bookmarks", bookmarksArraySchema);
-        properties.put("search_text", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (optional - if not provided or empty, returns all bookmarks up to max_results)"));
-        properties.put("max_results", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return when action='search'", 100));
-        properties.put("remove_all", SchemaUtil.booleanPropertyWithDefault("When true with action='remove', removes all bookmarks from the program. Can be combined with 'type' and 'category' filters to remove all bookmarks of a specific type/category.", false));
+        properties.put("searchText", SchemaUtil.stringProperty("Text to search for in bookmark comments when action='search' (optional - if not provided or empty, returns all bookmarks up to maxResults)"));
+        properties.put("maxResults", SchemaUtil.integerPropertyWithDefault("Maximum number of results to return when action='search'", 100));
+        properties.put("removeAll", SchemaUtil.booleanPropertyWithDefault("When true with action='remove', removes all bookmarks from the program. Can be combined with 'type' and 'category' filters to remove all bookmarks of a specific type/category.", false));
 
         List<String> required = List.of("action");
 
@@ -140,7 +140,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
 
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
+            addressStr = getOptionalString(request, "addressOrSymbol", null);
         }
         if (addressStr == null) {
             return createErrorResult("address is required for action='set' (or use 'bookmarks' array for batch mode)");
@@ -326,7 +326,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
     private McpSchema.CallToolResult handleGetBookmarks(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
+            addressStr = getOptionalString(request, "addressOrSymbol", null);
         }
         String typeFilter = getOptionalString(request, "type", null);
         String categoryFilter = getOptionalString(request, "category", null);
@@ -369,10 +369,10 @@ public class BookmarkToolProvider extends AbstractToolProvider {
      * @return The result
      */
     private McpSchema.CallToolResult handleSearchBookmarks(Program program, io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
-        String searchText = getOptionalString(request, "search_text", null);
+        String searchText = getOptionalString(request, "searchText", null);
         boolean hasSearchText = searchText != null && !searchText.trim().isEmpty();
         String typeFilter = getOptionalString(request, "type", null);
-        int maxResults = getOptionalInt(request, "max_results", 100);
+        int maxResults = getOptionalInt(request, "maxResults", 100);
 
         BookmarkManager bookmarkMgr = program.getBookmarkManager();
         List<Map<String, Object>> results = new ArrayList<>();
@@ -398,9 +398,9 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         Map<String, Object> result = new HashMap<>();
         result.put("results", results);
         result.put("count", results.size());
-        result.put("max_results", maxResults);
+        result.put("maxResults", maxResults);
         if (hasSearchText) {
-            result.put("search_text", searchText);
+            result.put("searchText", searchText);
         }
         return createJsonResult(result);
     }
@@ -421,7 +421,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         }
         
         // Check for remove_all flag
-        boolean removeAll = getOptionalBoolean(request, "remove_all", false);
+        boolean removeAll = getOptionalBoolean(request, "removeAll", false);
         if (removeAll) {
             return handleRemoveAllBookmarks(program, request);
         }
@@ -429,7 +429,7 @@ public class BookmarkToolProvider extends AbstractToolProvider {
         // Single bookmark removal
         String addressStr = getOptionalString(request, "address", null);
         if (addressStr == null) {
-            addressStr = getOptionalString(request, "address_or_symbol", null);
+            addressStr = getOptionalString(request, "addressOrSymbol", null);
         }
         if (addressStr == null) {
             return createErrorResult("address is required for action='remove' (or use 'bookmarks' array for batch mode, or 'remove_all=true' to remove all)");

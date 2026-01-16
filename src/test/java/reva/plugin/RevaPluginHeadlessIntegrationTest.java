@@ -29,6 +29,7 @@ import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Program;
 
 import reva.RevaHeadlessIntegrationTestBase;
+import reva.plugin.ConfigManager;
 import reva.util.RevaInternalServiceRegistry;
 
 import java.util.List;

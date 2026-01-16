@@ -56,7 +56,7 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
 
     private void registerSearchConstantsTool() {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("program_path", Map.of(
+        properties.put("programPath", Map.of(
             "type", "string",
             "description", "Path in the Ghidra Project to the program"
         ));
@@ -69,31 +69,31 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
             "type", "string",
             "description", "Constant value to search for when mode='specific' (supports hex with 0x, decimal, negative)"
         ));
-        properties.put("min_value", Map.of(
+        properties.put("minValue", Map.of(
             "type", "string",
             "description", "Minimum value when mode='range' or filter minimum when mode='common' (inclusive, supports hex/decimal)"
         ));
-        properties.put("max_value", Map.of(
+        properties.put("maxValue", Map.of(
             "type", "string",
             "description", "Maximum value when mode='range' (inclusive, supports hex/decimal)"
         ));
-        properties.put("max_results", Map.of(
+        properties.put("maxResults", Map.of(
             "type", "integer",
             "description", "Maximum number of results to return when mode='specific' or 'range'",
             "default", DEFAULT_MAX_RESULTS
         ));
-        properties.put("include_small_values", Map.of(
+        properties.put("includeSmallValues", Map.of(
             "type", "boolean",
             "description", "Include small values (0-255) which are often noise when mode='common'",
             "default", false
         ));
-        properties.put("top_n", Map.of(
+        properties.put("topN", Map.of(
             "type", "integer",
             "description", "Number of most common constants to return when mode='common'",
             "default", DEFAULT_TOP_CONSTANTS
         ));
 
-        List<String> required = List.of("program_path", "mode");
+        List<String> required = List.of("programPath", "mode");
 
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("search-constants")
@@ -117,11 +117,11 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
                             return createErrorResult("Invalid constant value: '" + valueStr +
                                 "'. Use decimal (123), hex (0x7b), or negative (-1) format.");
                         }
-                        int maxResults = getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS);
+                        int maxResults = getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS);
                         return findConstantUses(program, value, maxResults);
                     case "range":
-                        String minStr = getString(request, "min_value");
-                        String maxStr = getString(request, "max_value");
+                        String minStr = getString(request, "minValue");
+                        String maxStr = getString(request, "maxValue");
                         long minValue, maxValue;
                         try {
                             minValue = parseConstantValue(minStr);
@@ -130,14 +130,14 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
                             return createErrorResult("Invalid value format. Use decimal (123) or hex (0x7b).");
                         }
                         if (minValue > maxValue) {
-                            return createErrorResult("min_value must be less than or equal to max_value");
+                            return createErrorResult("minValue must be less than or equal to maxValue");
                         }
-                        int maxResultsRange = getOptionalInt(request, "max_results", DEFAULT_MAX_RESULTS);
+                        int maxResultsRange = getOptionalInt(request, "maxResults", DEFAULT_MAX_RESULTS);
                         return findConstantsInRange(program, minValue, maxValue, maxResultsRange);
                     case "common":
-                        int topN = getOptionalInt(request, "top_n", DEFAULT_TOP_CONSTANTS);
-                        boolean includeSmallValues = getOptionalBoolean(request, "include_small_values", false);
-                        String minValueStr = getOptionalString(request, "min_value", null);
+                        int topN = getOptionalInt(request, "topN", DEFAULT_TOP_CONSTANTS);
+                        boolean includeSmallValues = getOptionalBoolean(request, "includeSmallValues", false);
+                        String minValueStr = getOptionalString(request, "minValue", null);
                         Long minValueCommon = null;
                         if (minValueStr != null && !minValueStr.isEmpty()) {
                             try {
@@ -202,12 +202,12 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
         }
 
         Map<String, Object> response = new HashMap<>();
-        response.put("program_path", program.getDomainFile().getPathname());
-        response.put("searched_value", formatValue(targetValue));
-        response.put("result_count", results.size());
+        response.put("programPath", program.getDomainFile().getPathname());
+        response.put("searchedValue", formatValue(targetValue));
+        response.put("resultCount", results.size());
         response.put("truncated", results.size() >= maxResults);
         if (instructionCount > MAX_INSTRUCTIONS) {
-            response.put("instruction_limit_reached", true);
+            response.put("instructionLimitReached", true);
         }
         response.put("results", results);
 
@@ -275,18 +275,18 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
             .collect(Collectors.toList());
 
         Map<String, Object> response = new HashMap<>();
-        response.put("program_path", program.getDomainFile().getPathname());
+        response.put("programPath", program.getDomainFile().getPathname());
         response.put("range", Map.of(
             "min", formatValue(minValue),
             "max", formatValue(maxValue)
         ));
-        response.put("unique_values_found", uniqueValues.size());
-        response.put("total_occurrences", results.size());
+        response.put("uniqueValuesFound", uniqueValues.size());
+        response.put("totalOccurrences", results.size());
         response.put("truncated", results.size() >= maxResults);
         if (instructionCount > MAX_INSTRUCTIONS) {
-            response.put("instruction_limit_reached", true);
+            response.put("instructionLimitReached", true);
         }
-        response.put("unique_values", uniqueValues);
+        response.put("uniqueValues", uniqueValues);
         response.put("results", results);
 
         return createJsonResult(response);
@@ -362,13 +362,13 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
             .collect(Collectors.toList());
 
         Map<String, Object> response = new HashMap<>();
-        response.put("program_path", program.getDomainFile().getPathname());
-        response.put("total_unique_constants", constantMap.size());
+        response.put("programPath", program.getDomainFile().getPathname());
+        response.put("totalUniqueConstants", constantMap.size());
         response.put("returned", topConstants.size());
         String filterDesc = buildFilterDescription(includeSmallValues, minValue);
         response.put("filterApplied", filterDesc);
         if (instructionCount > MAX_INSTRUCTIONS) {
-            response.put("instruction_limit_reached", true);
+            response.put("instructionLimitReached", true);
         }
         response.put("constants", topConstants);
 
@@ -386,7 +386,7 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
         Address addr = instr.getAddress();
         result.put("address", AddressUtil.formatAddress(addr));
         result.put("mnemonic", instr.getMnemonicString());
-        result.put("operand_index", operandIndex);
+        result.put("operandIndex", operandIndex);
         result.put("instruction", instr.toString());
         result.put("value", formatValue(value));
 
@@ -394,7 +394,7 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
         Function func = program.getFunctionManager().getFunctionContaining(addr);
         if (func != null) {
             result.put("function", func.getName());
-            result.put("function_address", AddressUtil.formatAddress(func.getEntryPoint()));
+            result.put("functionAddress", AddressUtil.formatAddress(func.getEntryPoint()));
         }
 
         return result;
