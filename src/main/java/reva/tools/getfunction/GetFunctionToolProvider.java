@@ -209,7 +209,18 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid view mode: " + view);
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return empty result with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    return createJsonResult(result);
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (Exception e) {
                 logError("Error in get-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
@@ -899,7 +910,6 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         
         try {
             FunctionManager funcManager = program.getFunctionManager();
-            ReferenceManager refManager = program.getReferenceManager();
             Listing listing = program.getListing();
             TaskMonitor monitor = TimeoutTaskMonitor.timeoutIn(60, TimeUnit.SECONDS);
             
@@ -985,13 +995,4 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         }
     }
 
-    /**
-     * Helper method to extract text from Content object
-     */
-    private String extractTextFromContent(McpSchema.Content content) {
-        if (content instanceof TextContent) {
-            return ((TextContent) content).text();
-        }
-        return content.toString();
-    }
 }

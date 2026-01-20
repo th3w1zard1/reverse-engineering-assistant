@@ -23,7 +23,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.Objects;
 
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
@@ -33,9 +32,7 @@ import ghidra.framework.main.AppInfo;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.model.Project;
-import ghidra.framework.model.ProjectLocator;
 import ghidra.framework.model.ToolManager;
-import ghidra.base.project.GhidraProject;
 import ghidra.app.services.ProgramManager;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
@@ -50,7 +47,6 @@ import ghidra.program.model.lang.LanguageService;
 import ghidra.program.util.DefaultLanguageService;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.DataIterator;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TimeoutTaskMonitor;
@@ -71,17 +67,22 @@ import ghidra.plugins.importer.batch.BatchGroupLoadSpec;
 import ghidra.plugins.importer.batch.BatchInfo;
 // ImportBatchTask is not available - using custom import loop instead
 import ghidra.app.util.bin.ByteProvider;
+import ghidra.app.util.exporter.ExporterException;
 import ghidra.framework.store.local.LocalFileSystem;
 import ghidra.framework.client.ClientAuthenticator;
 import ghidra.framework.client.ClientUtil;
 import ghidra.framework.client.PasswordClientAuthenticator;
+import ghidra.framework.store.LockException;
+import ghidra.program.model.listing.IncompatibleLanguageException;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.VersionException;
 import io.modelcontextprotocol.server.McpSyncServer;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import reva.debug.DebugCaptureService;
 import reva.plugin.RevaProgramManager;
 import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
+import reva.tools.ProgramValidationException;
 import reva.util.SchemaUtil;
 import reva.util.RevaInternalServiceRegistry;
 import reva.util.ToolLogCollector;
@@ -89,8 +90,8 @@ import reva.util.ProjectUtil;
 import reva.util.AddressUtil;
 
 /**
- * Tool provider for project-related operations. Provides tools to get the
- * current program, list project files, and perform version control operations.
+ * Tool provider for project-related operations.
+ * Provides tools to get the current program, list project files, and perform version control operations.
  */
 public class ProjectToolProvider extends AbstractToolProvider {
 
@@ -98,7 +99,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Constructor
-     *
      * @param server The MCP server
      * @param headlessMode True if running in headless mode (no GUI context)
      */
@@ -109,21 +109,14 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     @Override
     public void registerTools() {
-        // Available in all modes - opens project or program based on path
-        registerOpenTool();
-
-        // DISABLED: Legacy tools - kept for compatibility with upstream repo
-        // These tools were merged into 'open' but kept here as disabled
-        // registerOpenProjectTool();  // DISABLED - use 'open' with .gpr file instead
-        // registerOpenProgramTool();  // DISABLED - use 'open' with program file instead
         // GUI-only tools: require ToolManager which isn't available in headless mode
         if (!headlessMode) {
             registerGetCurrentProgramTool();
             registerListOpenProgramsTool();
+            // new tools
             registerOpenProgramInCodeBrowserTool();
             registerGetCurrentAddressTool();
             registerGetCurrentFunctionTool();
-            // registerOpenAllProgramsInCodeBrowserTool();  // DISABLED - use 'open' with extensions parameter instead
         }
         registerListProjectFilesTool();
         registerCheckinProgramTool();
@@ -131,6 +124,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
         registerChangeProcessorTool();
         registerManageFilesTool();
         registerCaptureDebugInfoTool();
+
+        // Available in all modes - opens project or program based on path
+        registerOpenTool();
     }
 
     /**
@@ -144,18 +140,18 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("get-current-program")
-                .title("Get Current Program")
-                .description("Get the currently active program in Ghidra")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("get-current-program")
+            .title("Get Current Program")
+            .description("Get the currently active program in Ghidra")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
+            // Get all open programs
             Program program = null;
 
             // In GUI mode, try to get the current program from the active Code Browser tool
-            // This matches GhidraMCP's behavior of getting the "current" program, not just any open program
             if (!headlessMode) {
                 Project project = AppInfo.getActiveProject();
                 if (project != null) {
@@ -182,6 +178,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 if (openPrograms.isEmpty()) {
                     return createErrorResult("No programs are currently open in Ghidra");
                 }
+
+                // For now, just return the first program (assuming it's the active one)
                 program = openPrograms.get(0);
             }
 
@@ -336,34 +334,42 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("folderPath", SchemaUtil.stringProperty(
-                "Path to the folder to list contents of. Use '/' for the root folder."
+            "Path to the folder to list contents of. Use '/' for the root folder."
         ));
         properties.put("recursive", SchemaUtil.booleanPropertyWithDefault(
-                "Whether to list files recursively", false
+            "Whether to list files recursively", false
         ));
 
         List<String> required = List.of("folderPath");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("list-project-files")
-                .title("List Project Files")
-                .description("List files and folders in the Ghidra project")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("list-project-files")
+            .title("List Project Files")
+            .description("List files and folders in the Ghidra project")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
             // Get the folder path from the request
             String folderPath;
+            boolean hasIncorrectArgs = false;
             try {
                 folderPath = getString(request, "folderPath");
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Incorrect arguments - use defaults and show full list
+                hasIncorrectArgs = true;
+                folderPath = "/";
             }
 
             // Get the recursive flag
             boolean recursive = getOptionalBoolean(request, "recursive", false);
+            
+            // If incorrect arguments, force recursive=true to show full list
+            if (hasIncorrectArgs) {
+                recursive = true;
+            }
 
             // Get the active project
             Project project = AppInfo.getActiveProject();
@@ -403,6 +409,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
             // Create combined result
             List<Object> resultData = new ArrayList<>();
+            
+            // If incorrect arguments, add error message first
+            if (hasIncorrectArgs) {
+                resultData.add(createIncorrectArgsErrorMap());
+            }
+            
             resultData.add(metadataInfo);
             resultData.addAll(filesList);
 
@@ -421,11 +433,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("list-open-programs")
-                .title("List Open Programs")
-                .description("List all programs currently open in Ghidra across all tools")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("list-open-programs")
+            .title("List Open Programs")
+            .description("List all programs currently open in Ghidra across all tools")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -472,24 +484,24 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-                "Path to the program to checkin (e.g., '/Hatchery.exe')"
+            "Path to the program to checkin (e.g., '/Hatchery.exe')"
         ));
         properties.put("message", SchemaUtil.stringProperty(
-                "Commit message for the checkin"
+            "Commit message for the checkin"
         ));
         properties.put("keepCheckedOut", SchemaUtil.booleanPropertyWithDefault(
-                "Whether to keep the program checked out after checkin", false
+            "Whether to keep the program checked out after checkin", false
         ));
 
         List<String> required = List.of("programPath", "message");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("checkin-program")
-                .title("Checkin Program")
-                .description("Checkin (commit) a program to version control with a commit message")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("checkin-program")
+            .title("Checkin Program")
+            .description("Checkin (commit) a program to version control with a commit message")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -500,7 +512,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 programPath = getString(request, "programPath");
                 message = getString(request, "message");
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    result.put("success", false);
+                    return createJsonResult(result);
+                }
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             }
 
             boolean keepCheckedOut = getOptionalBoolean(request, "keepCheckedOut", false);
@@ -509,8 +531,18 @@ public class ProjectToolProvider extends AbstractToolProvider {
             Program program;
             try {
                 program = getProgramFromArgs(request);
-            } catch (Exception e) {
-                return createErrorResult(e.getMessage());
+            } catch (IllegalArgumentException | ProgramValidationException e) {
+                // Try to return default response with error message
+                Program defaultProgram = tryGetProgramSafely(request.arguments());
+                if (defaultProgram != null) {
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", defaultProgram.getDomainFile().getPathname());
+                    result.put("success", false);
+                    return createJsonResult(result);
+                }
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             }
 
             DomainFile domainFile = program.getDomainFile();
@@ -556,10 +588,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("isCheckedOut", domainFile.isCheckedOut());
 
                     return createJsonResult(result);
-                } else if (domainFile.canCheckin()) {
+                }
+                else if (domainFile.canCheckin()) {
                     // Existing versioned file - check in changes
                     DefaultCheckinHandler checkinHandler = new DefaultCheckinHandler(
-                            message + "\n💜🐉✨ (ReVa)", keepCheckedOut, false);
+                        message + "\n💜🐉✨ (ReVa)", keepCheckedOut, false);
                     domainFile.checkin(checkinHandler, TaskMonitor.DUMMY);
 
                     // Re-open program to cache if it was cached and we're keeping it checked out
@@ -580,7 +613,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("isCheckedOut", domainFile.isCheckedOut());
 
                     return createJsonResult(result);
-                } else if (!domainFile.isVersioned()) {
+                }
+                else if (!domainFile.isVersioned()) {
                     // Not versioned - changes were already saved at the beginning
                     Map<String, Object> result = new HashMap<>();
                     result.put("success", true);
@@ -591,18 +625,21 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("info", "Program is not under version control - changes were saved instead");
 
                     return createJsonResult(result);
-                } else {
+                }
+                else {
                     // Other version control errors
                     if (!domainFile.isCheckedOut()) {
                         return createErrorResult("Program is not checked out and cannot be modified: " + programPath);
-                    } else if (!domainFile.modifiedSinceCheckout()) {
+                    }
+                    else if (!domainFile.modifiedSinceCheckout()) {
                         return createErrorResult("Program has no changes since checkout: " + programPath);
-                    } else {
+                    }
+                    else {
                         return createErrorResult("Program cannot be checked in for an unknown reason: " + programPath);
                     }
                 }
 
-            } catch (Exception e) {
+            } catch (CancelledException | VersionException | java.io.IOException e) {
                 return createErrorResult("Checkin failed: " + e.getMessage());
             }
         });
@@ -610,7 +647,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively collect all program paths from a folder and its subfolders
-     *
      * @param folder The folder to collect from
      * @param programPaths List to accumulate program paths
      */
@@ -629,13 +665,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Collect imported files, optionally analyze them, and add them to version
-     * control
-     *
+     * Collect imported files, optionally analyze them, and add them to version control
      * @param destFolder The destination folder where files were imported
      * @param importedBaseName The base name of the imported file/directory
-     * @param analyzeAfterImport Whether to run auto-analysis on imported
-     * programs
+     * @param analyzeAfterImport Whether to run auto-analysis on imported programs
      * @param analysisTimeoutSeconds Timeout in seconds for analysis operations
      * @param versionedFiles List to track successfully versioned files
      * @param analyzedFiles List to track successfully analyzed files
@@ -643,9 +676,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param monitor Task monitor for cancellation and timeout checking
      */
     private void collectImportedFiles(DomainFolder destFolder, String importedBaseName,
-            boolean analyzeAfterImport, int analysisTimeoutSeconds,
-            List<String> versionedFiles, List<String> analyzedFiles,
-            List<String> errors, TaskMonitor monitor) {
+                                     boolean analyzeAfterImport, int analysisTimeoutSeconds,
+                                     List<String> versionedFiles, List<String> analyzedFiles,
+                                     List<String> errors, TaskMonitor monitor) {
         try {
             // Find newly imported files in the destination folder
             for (DomainFile file : destFolder.getFiles()) {
@@ -658,8 +691,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         Object consumer = this;
                         DomainObject domainObject = file.getDomainObject(consumer, false, false, monitor);
 
-                        if (domainObject instanceof Program) {
-                            Program program = (Program) domainObject;
+                        if (domainObject instanceof Program program) {
                             try {
                                 // Get analysis manager
                                 AutoAnalysisManager analysisManager = AutoAnalysisManager.getAnalysisManager(program);
@@ -674,11 +706,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
                                     analysisManager.waitForAnalysis(null, analysisMonitor);
 
                                     if (analysisMonitor.isCancelled()) {
-                                        errors.add("Analysis timed out for " + file.getPathname()
-                                                + " after " + analysisTimeoutSeconds + " seconds");
+                                        errors.add("Analysis timed out for " + file.getPathname() +
+                                            " after " + analysisTimeoutSeconds + " seconds");
                                     } else {
-                                        // Save program after analysis
-                                        program.save("Auto-analysis complete", monitor);
+                                        // Save/checkin program after analysis (best-effort)
+                                        autoSaveProgram(program, "Auto-analysis complete");
                                         analyzedFiles.add(file.getPathname());
                                         wasAnalyzed = true;
                                     }
@@ -690,7 +722,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                                 program.release(consumer);
                             }
                         }
-                    } catch (Exception e) {
+                    } catch (CancelledException | VersionException | java.io.IOException e) {
                         errors.add("Analysis failed for " + file.getPathname() + ": " + e.getMessage());
                     }
                 }
@@ -700,11 +732,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     try {
                         // Use different commit message based on whether analysis was performed
                         String commitMessage = wasAnalyzed
-                                ? "Initial import via ReVa (analyzed)"
-                                : "Initial import via ReVa";
+                            ? "Initial import via ReVa (analyzed)"
+                            : "Initial import via ReVa";
                         file.addToVersionControl(commitMessage, false, monitor);
                         versionedFiles.add(file.getPathname());
-                    } catch (Exception e) {
+                    } catch (CancelledException | java.io.IOException e) {
                         errors.add("Failed to add " + file.getPathname() + " to version control: " + e.getMessage());
                     }
                 }
@@ -713,7 +745,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             // Recursively process subfolders
             for (DomainFolder subfolder : destFolder.getFolders()) {
                 collectImportedFiles(subfolder, importedBaseName, analyzeAfterImport, analysisTimeoutSeconds,
-                        versionedFiles, analyzedFiles, errors, monitor);
+                    versionedFiles, analyzedFiles, errors, monitor);
             }
         } catch (Exception e) {
             errors.add("Error collecting imported files: " + e.getMessage());
@@ -722,7 +754,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Collect files and subfolders from a folder
-     *
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
@@ -772,7 +803,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
     /**
      * Recursively collect files and subfolders from a folder
-     *
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
@@ -795,18 +825,18 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-                "Path to the program to analyze (e.g., '/Hatchery.exe')"
+            "Path to the program to analyze (e.g., '/Hatchery.exe')"
         ));
 
         List<String> required = List.of("programPath");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("analyze-program")
-                .title("Analyze Program")
-                .description("Run Ghidra's auto-analysis on a program")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("analyze-program")
+            .title("Analyze Program")
+            .description("Run Ghidra's auto-analysis on a program")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -814,7 +844,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             Program program;
             try {
                 program = getProgramFromArgs(request);
-            } catch (Exception e) {
+            } catch (IllegalArgumentException | ProgramValidationException e) {
                 return createErrorResult(e.getMessage());
             }
 
@@ -827,14 +857,41 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     return createErrorResult("Could not get analysis manager for program: " + programPath);
                 }
 
-                // Start analysis
-                analysisManager.startAnalysis(TaskMonitor.DUMMY);
+                ConfigManager configManager = RevaInternalServiceRegistry.getService(ConfigManager.class);
+                int analysisTimeoutSeconds = configManager != null
+                        ? configManager.getImportAnalysisTimeoutSeconds()
+                        : 600;
+
+                // Start analysis and wait for completion (best-effort)
+                TaskMonitor analysisMonitor = TimeoutTaskMonitor.timeoutIn(analysisTimeoutSeconds, TimeUnit.SECONDS);
+                analysisManager.startAnalysis(analysisMonitor);
+                analysisManager.waitForAnalysis(null, analysisMonitor);
+
+                boolean analysisTimedOut = analysisMonitor.isCancelled();
+                boolean analysisRunning = analysisManager.isAnalyzing();
+
+                if (!analysisTimedOut && !analysisRunning) {
+                    autoSaveProgram(program, "Auto-analysis");
+                } else {
+                    logInfo("Analysis did not complete before timeout for " + programPath + "; skipping auto-save");
+                }
+
+                String message;
+                if (analysisTimedOut) {
+                    message = "Analysis timed out before completion";
+                } else if (analysisRunning) {
+                    message = "Analysis started successfully";
+                } else {
+                    message = "Analysis completed successfully";
+                }
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
                 result.put("programPath", programPath);
-                result.put("message", "Analysis started successfully");
-                result.put("analysisRunning", analysisManager.isAnalyzing());
+                result.put("message", message);
+                result.put("analysisRunning", analysisRunning);
+                result.put("analysisTimedOut", analysisTimedOut);
+                result.put("analysisTimeoutSeconds", analysisTimeoutSeconds);
 
                 return createJsonResult(result);
 
@@ -845,31 +902,30 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to change the processor architecture of an existing
-     * program
+     * Register a tool to change the processor architecture of an existing program
      */
     private void registerChangeProcessorTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
         properties.put("programPath", SchemaUtil.stringProperty(
-                "Path to the program to modify (e.g., '/Hatchery.exe')"
+            "Path to the program to modify (e.g., '/Hatchery.exe')"
         ));
         properties.put("languageId", SchemaUtil.stringProperty(
-                "Language ID for the new processor (e.g., 'x86:LE:64:default')"
+            "Language ID for the new processor (e.g., 'x86:LE:64:default')"
         ));
         properties.put("compilerSpecId", SchemaUtil.stringProperty(
-                "Compiler spec ID (optional, defaults to the language's default)"
+            "Compiler spec ID (optional, defaults to the language's default)"
         ));
 
         List<String> required = List.of("programPath", "languageId");
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("change-processor")
-                .title("Change Processor")
-                .description("Change the processor architecture of an existing program")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("change-processor")
+            .title("Change Processor")
+            .description("Change the processor architecture of an existing program")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
@@ -887,11 +943,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
             Program program;
             try {
                 program = getProgramFromArgs(request);
-            } catch (Exception e) {
+            } catch (IllegalArgumentException | ProgramValidationException e) {
                 return createErrorResult(e.getMessage());
             }
 
             String programPath = program.getDomainFile().getPathname();
+            String oldLanguage = program.getLanguage().getLanguageID().getIdAsString();
 
             try {
                 // Get the language service
@@ -918,15 +975,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 try {
                     program.setLanguage(lcsPair.getLanguage(), lcsPair.getCompilerSpecID(), false, TaskMonitor.DUMMY);
                     program.endTransaction(transactionID, true);
-                } catch (Exception e) {
+                } catch (LockException | LanguageNotFoundException | IncompatibleLanguageException | IllegalStateException e) {
                     program.endTransaction(transactionID, false);
                     throw e;
                 }
 
+                autoSaveProgram(program, "Change processor architecture");
+
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
                 result.put("programPath", programPath);
-                result.put("oldLanguage", program.getLanguage().getLanguageID().getIdAsString());
+                result.put("oldLanguage", oldLanguage);
                 result.put("newLanguage", languageId);
                 result.put("newCompilerSpec", compilerSpec.getCompilerSpecID().getIdAsString());
                 result.put("message", "Processor architecture changed successfully");
@@ -956,6 +1015,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
         ));
 
         // path parameter (required for import)
+        // Note: The MCP client and Ghidra may have different working directories,
+        // so absolute paths are recommended for reliable file resolution
         Map<String, Object> pathProperty = new HashMap<>();
         pathProperty.put("type", "string");
         pathProperty.put("description", "For import: Absolute file system path to import (file, directory, or archive). For export: File system path where to save the exported file. Use absolute paths to ensure proper file resolution.");
@@ -1003,7 +1064,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
         mirrorFsProperty.put("description", "Mirror the filesystem layout when importing (default: false)");
         properties.put("mirrorFs", mirrorFsProperty);
 
-        // enableVersionControl parameter (optional, for import)
+        // enableVersionControl parameter (optional, for import and export)
         Map<String, Object> versionControlProperty = new HashMap<>();
         versionControlProperty.put("type", "boolean");
         versionControlProperty.put("description", "For import: Automatically add imported files to version control (default: true)");
@@ -1025,24 +1086,24 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("manage-files")
-                .title("Manage Files")
-                .description("Import files into the Ghidra project or export program data to files")
-                .inputSchema(createSchema(properties, required))
-                .build();
+            .name("manage-files")
+            .title("Manage Files")
+            .description("Import file, directories, or archives into the Ghidra project using batch import or export program data to files")
+            .inputSchema(createSchema(properties, required))
+            .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
             try {
                 String operation = getString(request, "operation");
 
-                if ("import".equals(operation)) {
-                    return handleImportOperation(exchange, request);
-                } else if ("export".equals(operation)) {
-                    return handleExportOperation(request);
-                } else {
+                if (null == operation) {
                     return createErrorResult("Invalid operation: " + operation + ". Must be 'import' or 'export'");
-                }
+                } else return switch (operation) {
+                    case "import" -> handleImportOperation(exchange, request);
+                    case "export" -> handleExportOperation(request);
+                    default -> createErrorResult("Invalid operation: " + operation + ". Must be 'import' or 'export'");
+                };
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
             } catch (Exception e) {
@@ -1148,7 +1209,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
         for (BatchGroup group : batchInfo.getGroups()) {
             // Check for cancellation at the start of each group
             if (importMonitor.isCancelled()) {
-                break importLoop;
+                break;
             }
 
             // Check if group is enabled (has valid load spec selected)
@@ -1220,10 +1281,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         if (loadResults == null) {
                             detailedErrors.add(Map.of(
                                     "stage", "import",
-                                    "source_fsrl", config.getFSRL().toString(),
-                                    "preferred_name", config.getPreferredFileName(),
+                                    "sourceFSRL", config.getFSRL().toString(),
+                                    "preferredName", config.getPreferredFileName(),
                                     "error", "Loader returned null results",
-                                    "error_type", "LoaderError"
+                                    "errorType", "LoaderError"
                             ));
                             processedFiles++;
                             continue;
@@ -1274,12 +1335,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Report if no groups were enabled for import
         if (enabledGroups == 0 && importedDomainFiles.isEmpty()) {
             detailedErrors.add(Map.of(
-                    "stage", "discovery",
-                    "error", "No enabled batch groups found",
-                    "error_type", "NoImportableFiles",
-                    "files_discovered", batchInfo.getTotalCount(),
-                    "groups_created", batchInfo.getGroups().size(),
-                    "skipped_groups", skippedGroups
+                "stage", "discovery",
+                "error", "No enabled batch groups found",
+                "errorType", "NoImportableFiles",
+                "filesDiscovered", batchInfo.getTotalCount(),
+                "groupsCreated", batchInfo.getGroups().size(),
+                "skippedGroups", skippedGroups
             ));
         }
 
@@ -1301,19 +1362,19 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 if (postMonitor.isCancelled()) {
                     // Record timeout error and skipped files
                     detailedErrors.add(Map.of(
-                            "stage", "postProcessing",
-                            "error", "Post-processing timed out",
-                            "errorType", "TimeoutError"
+                        "stage", "postProcessing",
+                        "error", "Post-processing timed out",
+                        "errorType", "TimeoutError"
                     ));
 
                     // Record individual timeout/skip error for each remaining file
                     for (int j = fileIndex; j < totalFilesToProcess; j++) {
                         DomainFile remainingFile = importedDomainFiles.get(j);
                         detailedErrors.add(Map.of(
-                                "stage", "postProcessing",
-                                "programPath", remainingFile.getPathname(),
-                                "error", "Post-processing skipped due to prior timeout",
-                                "errorType", "TimeoutError"
+                            "stage", "postProcessing",
+                            "programPath", remainingFile.getPathname(),
+                            "error", "Post-processing skipped due to prior timeout",
+                            "errorType", "TimeoutError"
                         ));
                     }
                     break;
@@ -1339,10 +1400,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
                                         analyzedFiles.add(domainFile.getPathname());
                                     } else {
                                         detailedErrors.add(Map.of(
-                                                "stage", "analysis",
-                                                "programPath", domainFile.getPathname(),
-                                                "error", "Analysis timed out",
-                                                "errorType", "TimeoutError"
+                                            "stage", "analysis",
+                                            "programPath", domainFile.getPathname(),
+                                            "error", "Analysis timed out",
+                                            "errorType", "TimeoutError"
                                         ));
                                     }
                                 }
@@ -1359,19 +1420,19 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     if (enableVersionControl) {
                         if (domainFile.canAddToRepository()) {
                             String vcMessage = analyzeAfterImport && analyzedFiles.contains(domainFile.getPathname())
-                                    ? "Initial import via ReVa (analyzed)"
-                                    : "Initial import via ReVa";
+                                ? "Initial import via ReVa (analyzed)"
+                                : "Initial import via ReVa";
                             // Second parameter false = check in immediately (don't keep checked out)
                             domainFile.addToVersionControl(vcMessage, false, postMonitor);
                             versionedFiles.add(domainFile.getPathname());
                         }
                     }
-                } catch (Exception e) {
+                } catch (CancelledException | VersionException | java.io.IOException e) {
                     detailedErrors.add(Map.of(
-                            "stage", "postProcessing",
-                            "programPath", domainFile.getPathname(),
-                            "error", Objects.requireNonNullElse(e.getMessage(), e.toString()),
-                            "error_type", e.getClass().getSimpleName()
+                        "stage", "postProcessing",
+                        "programPath", domainFile.getPathname(),
+                        "error", Objects.requireNonNullElse(e.getMessage(), e.toString()),
+                        "errorType", e.getClass().getSimpleName()
                     ));
                 }
             }
@@ -1421,9 +1482,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             summary.append(detailedErrors.size()).append(" error(s): ");
             boolean first = true;
             for (Map.Entry<String, Long> entry : errorsByStage.entrySet()) {
-                if (!first) {
-                    summary.append(", ");
-                }
+                if (!first) summary.append(", ");
                 summary.append(entry.getValue()).append(" during ").append(entry.getKey());
                 first = false;
             }
@@ -1431,12 +1490,12 @@ public class ProjectToolProvider extends AbstractToolProvider {
         }
 
         // Build completion message
-        String message = "Import completed. " + importedDomainFiles.size() + " of "
-                + batchInfo.getTotalCount() + " files imported";
-        if (analyzeAfterImport && !analyzedFiles.isEmpty()) {
+        String message = "Import completed. " + importedDomainFiles.size() + " of " +
+            batchInfo.getTotalCount() + " files imported";
+        if (analyzeAfterImport && analyzedFiles.size() > 0) {
             message += ", " + analyzedFiles.size() + " analyzed";
         }
-        if (enableVersionControl && !versionedFiles.isEmpty()) {
+        if (enableVersionControl && versionedFiles.size() > 0) {
             message += ", " + versionedFiles.size() + " added to version control";
         }
         if (!detailedErrors.isEmpty()) {
@@ -1608,132 +1667,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
         });
     }
 
-    /**
-     * DISABLED: Legacy tool - kept for compatibility with upstream repo. This
-     * tool was merged into 'open' but kept here as disabled. Use 'open' with a
-     * .gpr file path instead.
-     *
-     * Original tool: open-project Merged into: open (detects .gpr files
-     * automatically)
-     */
-    /*
-    private void registerOpenProjectTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("projectPath", SchemaUtil.stringProperty(
-            "Path to the Ghidra project file (.gpr) to open. Use absolute path for reliability."
-        ));
-        properties.put("openAllPrograms", SchemaUtil.booleanPropertyWithDefault(
-            "Whether to automatically open all programs in the project into memory (default: true). " +
-            "Set to false for large projects where you want to open specific programs later.", true
-        ));
-
-        List<String> required = List.of("projectPath");
-
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("open-project")
-            .title("Open Project")
-            .description("Open a Ghidra project from a .gpr file path and optionally load all programs into memory. " +
-                "When openAllPrograms is true (default), all programs in the project are opened and cached, " +
-                "making them immediately accessible to other tools like get-strings, get-functions, etc.")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            // Start log collection to capture all messages during tool execution
-            ToolLogCollector logCollector = new ToolLogCollector();
-            logCollector.start();
-
-            try {
-                // Get the project path from the request
-                String projectPath;
-                boolean shouldOpenAllPrograms;
-                try {
-                    projectPath = getString(request, "projectPath");
-                    shouldOpenAllPrograms = getOptionalBoolean(request, "openAllPrograms", true);
-                } catch (IllegalArgumentException e) {
-                    logCollector.stop();
-                    return createErrorResult(e.getMessage());
-                }
-
-                // Use the shared handler method
-                Map<String, Object> modifiedRequest = new HashMap<>(request);
-                modifiedRequest.put("path", projectPath);
-                modifiedRequest.put("openAllPrograms", shouldOpenAllPrograms);
-                return handleOpenProject(modifiedRequest, projectPath, logCollector);
-
-            } catch (IllegalArgumentException e) {
-                logCollector.stop();
-                return createErrorResult("Invalid project path: " + e.getMessage());
-            } catch (Exception e) {
-                logCollector.stop();
-                return createErrorResult("Failed to open project: " + e.getMessage());
-            }
-        });
-    }
-     */
-    /**
-     * DISABLED: Legacy tool - kept for compatibility with upstream repo. This
-     * tool was merged into 'open' but kept here as disabled. Use 'open' with a
-     * program file path instead.
-     *
-     * Original tool: open-program Merged into: open (detects program files
-     * automatically)
-     */
-    /*
-    private void registerOpenProgramTool() {
-        // Define schema for the tool
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("path", SchemaUtil.stringProperty(
-            "File system path to program. Imports if not in project, opens if exists."
-        ));
-        properties.put("destinationFolder", SchemaUtil.stringProperty(
-            "Project folder for new imports (default: '/'). Ignored if program exists."
-        ));
-        properties.put("analyzeAfterImport", SchemaUtil.booleanPropertyWithDefault(
-            "Run auto-analysis on new imports (default: true). Ignored if program exists.",
-            true
-        ));
-        properties.put("enableVersionControl", SchemaUtil.booleanPropertyWithDefault(
-            "Add new imports to version control (default: true). Program always saved regardless.",
-            true
-        ));
-
-        List<String> required = List.of("path");
-
-        // Create the tool
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-            .name("open-program")
-            .title("Open Program")
-            .description("Open program in project. Imports if missing, opens if exists. Always saves to project. Caches for other tools.")
-            .inputSchema(createSchema(properties, required))
-            .build();
-
-        // Register the tool with a handler
-        registerTool(tool, (exchange, request) -> {
-            try {
-                // Get required parameter
-                String path = getString(request, "path");
-
-                // Validate file exists
-                File file = new File(path);
-                if (!file.exists()) {
-                    return createErrorResult("File does not exist: " + path);
-                }
-
-                // Use the shared handler method
-                return handleOpenProgram(request, path);
-
-            } catch (IllegalArgumentException e) {
-                return createErrorResult("Invalid parameter: " + e.getMessage());
-            } catch (Exception e) {
-                return createErrorResult("Failed to open program: " + e.getMessage());
-            }
-        });
-    }
-     */
     /**
      * Get server credentials from request parameters or environment variables.
      * Checks request parameters first, then falls back to environment
@@ -2020,35 +1953,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     result.put("authenticationUsed", true);
                 }
 
-                // Try to get server address from repository adapter (if available)
-                try {
-                    ghidra.framework.client.RepositoryAdapter repository = null; // TODO: Get repository adapter if needed
-                    if (repository != null) {
-                        ghidra.framework.client.RepositoryServerAdapter serverAdapter = repository.getServer();
-                        if (serverAdapter != null) {
-                            String actualHost = serverAdapter.getServerInfo().getServerName();
-                            int actualPort = serverAdapter.getServerInfo().getPortNumber();
-                            result.put("serverHost", actualHost);
-                            result.put("serverPort", actualPort);
-
-                            // Log if provided host/port differs from actual
-                            if (serverHost != null && !serverHost.equals(actualHost)) {
-                                logCollector.addLog("INFO",
-                                        "Provided serverHost (" + serverHost + ") differs from project's server (" + actualHost + "). "
-                                        + "Using project's stored server address.");
-                            }
-                            if (serverPort != null && serverPort != actualPort) {
-                                logCollector.addLog("INFO",
-                                        "Provided serverPort (" + serverPort + ") differs from project's server port (" + actualPort + "). "
-                                        + "Using project's stored server port.");
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    // If we can't get server info, that's okay - just log it
-                    logCollector.addLog("DEBUG", "Could not retrieve server address from repository: " + e.getMessage());
-                }
-
                 // Include provided server address in response (even if not used)
                 if (serverHost != null) {
                     result.put("providedServerHost", serverHost);
@@ -2220,30 +2124,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
         } catch (Exception e) {
             return createErrorResult("Failed to open program: " + e.getMessage());
         }
-    }
-
-    /**
-     * Recursively count programs in a folder
-     *
-     * @param folder The folder to count programs in
-     * @return The number of programs found
-     */
-    private int countPrograms(DomainFolder folder) {
-        int count = 0;
-
-        // Count programs in this folder
-        for (DomainFile file : folder.getFiles()) {
-            if (file.getContentType().equals("Program")) {
-                count++;
-            }
-        }
-
-        // Recursively count in subfolders
-        for (DomainFolder subfolder : folder.getFolders()) {
-            count += countPrograms(subfolder);
-        }
-
-        return count;
     }
 
     /**
@@ -2689,7 +2569,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 result.put("message", "Debug information captured to: " + debugZip.getAbsolutePath());
 
                 return createJsonResult(result);
-            } catch (Exception e) {
+            } catch (java.io.IOException e) {
                 return createErrorResult("Failed to capture debug info: " + e.getMessage());
             }
         });
@@ -2847,14 +2727,14 @@ public class ProjectToolProvider extends AbstractToolProvider {
                             analysisManager.startAnalysis(analysisMonitor);
                             analysisManager.waitForAnalysis(null, analysisMonitor);
                             if (!analysisMonitor.isCancelled()) {
-                                program.save("Auto-analysis complete", TaskMonitor.DUMMY);
+                                autoSaveProgram(program, "Auto-analysis complete");
                             }
                         }
                     } finally {
                         program.release(consumer);
                     }
                 }
-            } catch (Exception e) {
+            } catch (CancelledException | VersionException | IOException e) {
                 logError("Analysis failed for imported file: " + importedFile.getPathname(), e);
                 // Continue - file is still imported
             }
@@ -2867,7 +2747,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                         ? commitMessagePrefix + " (analyzed)"
                         : commitMessagePrefix;
                 importedFile.addToVersionControl(commitMessage, false, TaskMonitor.DUMMY);
-            } catch (Exception e) {
+            } catch (CancelledException | IOException e) {
                 logError("Failed to add file to version control: " + importedFile.getPathname(), e);
                 // Continue - file is still imported
             }
@@ -2923,7 +2803,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             result.put("fileSize", outputFile.length());
 
             return createJsonResult(result);
-        } catch (Exception e) {
+        } catch (ExporterException | java.io.IOException e) {
             return createErrorResult("Failed to export program: " + e.getMessage());
         }
     }
@@ -3041,7 +2921,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             result.put("fileSize", outputFile.length());
 
             return createJsonResult(result);
-        } catch (Exception e) {
+        } catch (java.io.IOException e) {
             return createErrorResult("Failed to export function info: " + e.getMessage());
         }
     }
@@ -3080,7 +2960,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             result.put("fileSize", outputFile.length());
 
             return createJsonResult(result);
-        } catch (Exception e) {
+        } catch (java.io.IOException e) {
             return createErrorResult("Failed to export strings: " + e.getMessage());
         }
     }

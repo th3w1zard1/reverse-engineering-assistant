@@ -15,6 +15,7 @@
  */
 package reva.plugin;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +33,8 @@ import ghidra.framework.model.ToolManager;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
+import ghidra.util.exception.CancelledException;
+import ghidra.util.exception.VersionException;
 import ghidra.util.task.TaskMonitor;
 import reva.util.RevaInternalServiceRegistry;
 
@@ -45,6 +48,9 @@ public class RevaProgramManager {
 
     // Registry of directly opened programs (mainly for test environments)
     private static final Map<String, Program> registeredPrograms = new HashMap<>();
+
+    // Stable consumer used for cached program opens/releases
+    private static final Object CACHE_CONSUMER = new Object();
 
     /**
      * Get all currently open programs in any Ghidra tool.
@@ -365,7 +371,7 @@ public class RevaProgramManager {
                         "Failed to auto-checkout versioned program: " + programPath +
                         " (may be checked out exclusively by another user)");
                 }
-            } catch (Exception e) {
+            } catch (CancelledException | IOException e) {
                 Msg.error(RevaProgramManager.class,
                     "Could not auto-checkout program " + programPath + ": " + e.getMessage(), e);
                 // Continue anyway - program is still usable in read-only mode
@@ -491,22 +497,21 @@ public class RevaProgramManager {
             // Use the class itself as the consumer to ensure a stable, non-null reference
             // false for readOnly means open for update
             // false for okToUpgrade means don't show upgrade dialogs (upgrades happen automatically)
-            Object consumer = RevaProgramManager.class;
-            DomainObject domainObject = domainFile.getDomainObject(consumer, false, false, TaskMonitor.DUMMY);
+            DomainObject domainObject = domainFile.getDomainObject(CACHE_CONSUMER, false, false, TaskMonitor.DUMMY);
 
-            if (domainObject instanceof Program) {
-                program = (Program) domainObject;
+            if (domainObject instanceof Program prog1) {
+                program = prog1;
             } else {
                 Msg.warn(RevaProgramManager.class, "Domain object is not a Program: " + programPath);
                 if (domainObject != null) {
-                    domainObject.release(consumer);
+                    domainObject.release(CACHE_CONSUMER);
                 }
             }
-        } catch (Exception e) {
+        } catch (CancelledException | VersionException | IOException e) {
             Msg.error(RevaProgramManager.class, "Failed to open program " + programPath + ": " + e.getMessage(), e);
             // Fall back to ProgramOpener if getDomainObject fails
             try {
-                ProgramOpener programOpener = new ProgramOpener(programCache);
+                ProgramOpener programOpener = new ProgramOpener(CACHE_CONSUMER);
                 ProgramLocator locator = new ProgramLocator(domainFile);
                 program = programOpener.openProgram(locator, TaskMonitor.DUMMY);
             } catch (Exception fallbackException) {
@@ -557,7 +562,12 @@ public class RevaProgramManager {
         if (cachedProgram != null && cachedProgram == program) {
             Msg.debug(RevaProgramManager.class,
                 "Releasing program from cache: " + canonicalPath);
-            program.release(programCache);
+            try {
+                program.release(CACHE_CONSUMER);
+            } catch (Exception e) {
+                Msg.warn(RevaProgramManager.class,
+                    "Failed to release cached program consumer for " + canonicalPath + ": " + e.getMessage(), e);
+            }
             return true;
         }
 
@@ -592,7 +602,12 @@ public class RevaProgramManager {
         // Close any programs we opened
         for (Program program : programCache.values()) {
             if (program != null && !program.isClosed()) {
-                program.release(programCache);
+                try {
+                    program.release(CACHE_CONSUMER);
+                } catch (Exception e) {
+                    Msg.warn(RevaProgramManager.class,
+                        "Failed to release cached program during cleanup: " + e.getMessage(), e);
+                }
             }
         }
         programCache.clear();

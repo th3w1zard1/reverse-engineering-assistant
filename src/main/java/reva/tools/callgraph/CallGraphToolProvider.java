@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.decompiler.DecompiledFunction;
@@ -30,6 +32,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
+import reva.tools.ProgramValidationException;
 import reva.util.AddressUtil;
 import reva.util.DecompilationReadTracker;
 import reva.util.RevaInternalServiceRegistry;
@@ -187,8 +190,21 @@ public class CallGraphToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid mode: " + mode + ". Valid modes are: graph, tree, callers, callees, callers_decomp, common_callers");
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
-            } catch (Exception e) {
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return empty result with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    result.put("nodes", new ArrayList<>());
+                    result.put("edges", new ArrayList<>());
+                    return createJsonResult(result);
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
+            } catch (ProgramValidationException e) {
                 logError("Error in get-call-graph", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
@@ -926,20 +942,10 @@ public class CallGraphToolProvider extends AbstractToolProvider {
         try {
             String jsonText = extractTextFromContent(result.content().get(0));
             return JSON.readValue(jsonText, Map.class);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             logError("Error extracting JSON data from result", e);
             return new HashMap<>();
         }
-    }
-
-    /**
-     * Helper method to extract text from Content object
-     */
-    private String extractTextFromContent(McpSchema.Content content) {
-        if (content instanceof io.modelcontextprotocol.spec.McpSchema.TextContent) {
-            return ((io.modelcontextprotocol.spec.McpSchema.TextContent) content).text();
-        }
-        return content.toString();
     }
 
     // Helper methods for batch operations - call handlers with modified function identifier

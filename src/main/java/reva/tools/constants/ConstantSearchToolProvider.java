@@ -151,7 +151,19 @@ public class ConstantSearchToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid mode: " + mode + ". Valid modes are: specific, range, common");
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return empty result with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    result.put("constants", new ArrayList<>());
+                    return createJsonResult(result);
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (Exception e) {
                 logError("Error in search-constants", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());

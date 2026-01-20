@@ -700,7 +700,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
                         dryRun, maxFunctions, batchSize, functionIdentifier);
 
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    result.put("matches", new ArrayList<>());
+                    return createJsonResult(result);
+                }
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (ProgramValidationException e) {
                 logError("Error in match-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
@@ -1188,7 +1198,32 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     }
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return "all" mode as default with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    McpSchema.CallToolResult defaultResult = handleListFunctionsAll(program, 0, 100, true, null, false, false, false);
+                    // Prepend error message to result
+                    if (defaultResult.content() != null && !defaultResult.content().isEmpty()) {
+                        try {
+                            String jsonText = extractTextFromContent(defaultResult.content().get(0));
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> data = JSON.readValue(jsonText, Map.class);
+                            data.put("error", errorInfo.get("error"));
+                            return createJsonResult(data);
+                        } catch (Exception ex) {
+                            // If we can't modify, return error with default response
+                            List<Object> resultData = new ArrayList<>();
+                            resultData.add(errorInfo);
+                            resultData.add(extractTextFromContent(defaultResult.content().get(0)));
+                            return createMultiJsonResult(resultData);
+                        }
+                    }
+                    return defaultResult;
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (ProgramValidationException e) {
                 logError("Error in list-functions", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
@@ -2275,7 +2310,17 @@ public class FunctionToolProvider extends AbstractToolProvider {
                     }
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    result.put("success", false);
+                    return createJsonResult(result);
+                }
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (ProgramValidationException e) {
                 logError("Error in manage-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
@@ -2798,18 +2843,6 @@ public class FunctionToolProvider extends AbstractToolProvider {
         }
     }
 
-    /**
-     * Helper method to extract text from Content object
-     */
-    private String extractTextFromContent(McpSchema.Content content) {
-        if (content instanceof io.modelcontextprotocol.spec.McpSchema.TextContent textContent) {
-            return textContent.text();
-        }
-        if (content == null) {
-            return "";
-        }
-        return content.toString();
-    }
 
     private Map<String, Object> propagatePrototypeAcrossOpenPrograms(Program sourceProgram, Function sourceFunction,
             String normalizedSignature, CallToolRequest request) {

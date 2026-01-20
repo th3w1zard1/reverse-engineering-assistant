@@ -127,7 +127,19 @@ public class DataFlowToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid direction: " + direction + ". Valid directions are: backward, forward, variable_accesses");
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return empty result with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("error", errorInfo.get("error"));
+                    result.put("programPath", program.getDomainFile().getPathname());
+                    result.put("dataFlow", new ArrayList<>());
+                    return createJsonResult(result);
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (Exception e) {
                 logError("Error in analyze-data-flow", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());

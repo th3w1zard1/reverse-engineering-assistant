@@ -170,7 +170,32 @@ public class CommentToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid action: " + action + ". Valid actions are: set, get, remove, search, search_decomp");
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return "get" action as default with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    McpSchema.CallToolResult defaultResult = handleGetComments(program, request);
+                    // Prepend error message to result
+                    if (defaultResult.content() != null && !defaultResult.content().isEmpty()) {
+                        try {
+                            String jsonText = extractTextFromContent(defaultResult.content().get(0));
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> data = JSON.readValue(jsonText, Map.class);
+                            data.put("error", errorInfo.get("error"));
+                            return createJsonResult(data);
+                        } catch (Exception ex) {
+                            // If we can't modify, return error with default response
+                            List<Object> resultData = new ArrayList<>();
+                            resultData.add(errorInfo);
+                            resultData.add(extractTextFromContent(defaultResult.content().get(0)));
+                            return createMultiJsonResult(resultData);
+                        }
+                    }
+                    return defaultResult;
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (Exception e) {
                 logError("Error in manage-comments", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());

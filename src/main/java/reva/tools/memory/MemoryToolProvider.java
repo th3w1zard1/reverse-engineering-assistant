@@ -20,6 +20,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.listing.Data;
@@ -99,7 +101,32 @@ public class MemoryToolProvider extends AbstractToolProvider {
                         return createErrorResult("Invalid mode: " + mode + ". Valid modes are: blocks, read, data_at, data_items, segments");
                 }
             } catch (IllegalArgumentException e) {
-                return createErrorResult(e.getMessage());
+                // Try to return default response with error message
+                Program program = tryGetProgramSafely(request.arguments());
+                if (program != null) {
+                    // Return "blocks" mode as default with error message
+                    Map<String, Object> errorInfo = createIncorrectArgsErrorMap();
+                    McpSchema.CallToolResult defaultResult = handleBlocksMode(program);
+                    // Prepend error message to result
+                    if (defaultResult.content() != null && !defaultResult.content().isEmpty()) {
+                        try {
+                            String jsonText = extractTextFromContent(defaultResult.content().get(0));
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> data = JSON.readValue(jsonText, Map.class);
+                            data.put("error", errorInfo.get("error"));
+                            return createJsonResult(data);
+                        } catch (JsonProcessingException ex) {
+                            // If we can't modify, return error with default response
+                            List<Object> resultData = new ArrayList<>();
+                            resultData.add(errorInfo);
+                            resultData.add(extractTextFromContent(defaultResult.content().get(0)));
+                            return createMultiJsonResult(resultData);
+                        }
+                    }
+                    return defaultResult;
+                }
+                // If we can't get a default response, return error with message
+                return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
             } catch (Exception e) {
                 logError("Error in inspect-memory", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());

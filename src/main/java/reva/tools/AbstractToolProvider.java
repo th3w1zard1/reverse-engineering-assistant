@@ -16,6 +16,7 @@
 package reva.tools;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -40,7 +41,6 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import reva.plugin.RevaProgramManager;
 import reva.util.ProgramLookupUtil;
-import reva.util.ToolLogCollector;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.Content;
@@ -149,6 +149,28 @@ public abstract class AbstractToolProvider implements ToolProvider {
     }
 
     /**
+     * Create an error message map for incorrect arguments that should be included in responses
+     * @return Map with error message instructing not to call the tool again
+     */
+    protected Map<String, Object> createIncorrectArgsErrorMap() {
+        Map<String, Object> errorMap = new HashMap<>();
+        errorMap.put("error", "DO **NOT** CALL THIS TOOL AGAIN UNTIL YOU REFLECT ON WHY YOUR PARAMETERS WERE INCORRECT.");
+        return errorMap;
+    }
+
+    /**
+     * Helper method to extract text from Content object
+     * @param content The Content object
+     * @return The text content, or content.toString() if not TextContent
+     */
+    protected String extractTextFromContent(McpSchema.Content content) {
+        if (content instanceof TextContent) {
+            return ((TextContent) content).text();
+        }
+        return content.toString();
+    }
+
+    /**
      * Register a tool with the MCP server
      * @param tool The tool to register
      * @param handler The handler function for the tool
@@ -180,13 +202,7 @@ public abstract class AbstractToolProvider implements ToolProvider {
                         requestId, tool.name(), durationMs));
 
                     return result;
-                } catch (IllegalArgumentException e) {
-                    long durationMs = System.currentTimeMillis() - startTime;
-                    RevaToolLogger.logError(tool.name(), requestId, durationMs, e.getMessage());
-                    Msg.debug(AbstractToolProvider.class, String.format("[ReVa:%s] Tool error: %s - %s (%dms)",
-                        requestId, tool.name(), e.getMessage(), durationMs));
-                    return createErrorResult(e.getMessage());
-                } catch (ProgramValidationException e) {
+                } catch (IllegalArgumentException | ProgramValidationException e) {
                     long durationMs = System.currentTimeMillis() - startTime;
                     RevaToolLogger.logError(tool.name(), requestId, durationMs, e.getMessage());
                     Msg.debug(AbstractToolProvider.class, String.format("[ReVa:%s] Tool error: %s - %s (%dms)",
@@ -551,12 +567,12 @@ public abstract class AbstractToolProvider implements ToolProvider {
         if (value == null) {
             throw new IllegalArgumentException("Missing required parameter: " + key);
         }
-        if (value instanceof Boolean) {
-            return (Boolean) value;
+        if (value instanceof Boolean aBoolean) {
+            return aBoolean;
         }
         // Handle string representations of booleans
-        if (value instanceof String) {
-            String strValue = ((String) value).toLowerCase();
+        if (value instanceof String string) {
+            String strValue = string.toLowerCase();
             if ("true".equals(strValue)) {
                 return true;
             } else if ("false".equals(strValue)) {
@@ -735,6 +751,43 @@ public abstract class AbstractToolProvider implements ToolProvider {
         // Try to get programPath, but don't throw if it's missing - we'll try current program instead
         String programPath = getOptionalString(args, "programPath", null);
         return getValidatedProgram(programPath);
+    }
+
+    /**
+     * Try to get a program safely without throwing exceptions. Used for default responses when arguments are incorrect.
+     * First tries to get programPath from args, then tries current program from GUI, then tries any open program.
+     * @param args The arguments map from MCP tool call
+     * @return A Program object if available, null otherwise
+     */
+    protected Program tryGetProgramSafely(Map<String, Object> args) {
+        try {
+            // Try to get programPath from args
+            String programPath = getOptionalString(args, "programPath", null);
+            if (programPath != null && !programPath.trim().isEmpty()) {
+                try {
+                    return getValidatedProgram(programPath);
+                } catch (ProgramValidationException e) {
+                    // Program path invalid, try other methods
+                    return null;
+                } catch (Exception e) {
+                    // Ignore all exceptions - return null if we can't get a program
+                    return null;
+                }
+            }
+            // Try current program from GUI
+            Program currentProgram = ProgramLookupUtil.getCurrentProgramFromGUI();
+            if (currentProgram != null && !currentProgram.isClosed()) {
+                return currentProgram;
+            }
+            // Try any open program
+            List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
+            if (!openPrograms.isEmpty()) {
+                return openPrograms.get(0);
+            }
+        } catch (Exception e) {
+            // Ignore all exceptions - return null if we can't get a program
+        }
+        return null;
     }
 
 
