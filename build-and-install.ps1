@@ -2,7 +2,7 @@
 # Builds the Ghidra extension and installs it to the Ghidra extensions directory
 
 param(
-    [string]$ProjectDir = "G:\GitHub\Andastra\.cursor\mcp\reverse-engineering-assistant",
+    [string]$ProjectDir = "G:\GitHub\reverse-engineering-assistant",
     [string]$GhidraInstallDir = "",
     [string]$GradlePath = ""
 )
