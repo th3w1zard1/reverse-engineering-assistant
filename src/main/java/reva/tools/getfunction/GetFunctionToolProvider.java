@@ -20,15 +20,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import ghidra.app.decompiler.ClangLine;
-import ghidra.app.decompiler.ClangToken;
 import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompiledFunction;
 import ghidra.app.decompiler.DecompileResults;
-import ghidra.app.decompiler.component.DecompilerUtils;
 import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.CodeUnitIterator;
@@ -41,23 +37,28 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Reference;
-import ghidra.program.model.symbol.ReferenceIterator;
-import ghidra.program.model.symbol.ReferenceManager;
 import ghidra.util.UndefinedFunction;
 import ghidra.util.task.TaskMonitor;
 import ghidra.util.task.TimeoutTaskMonitor;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
-import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import reva.tools.AbstractToolProvider;
 import reva.util.AddressUtil;
 import reva.plugin.ConfigManager;
 import reva.util.RevaInternalServiceRegistry;
+
 import java.util.HashSet;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+
+import ghidra.program.database.function.OverlappingFunctionException;
+import ghidra.program.model.listing.Variable;
+import ghidra.util.exception.InvalidInputException;
+import reva.tools.ProgramValidationException;
 
 /**
  * Tool provider for get-function.
@@ -196,18 +197,13 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                     reva.util.IntelligentBookmarkUtil.getDefaultPercentile());
                 reva.util.IntelligentBookmarkUtil.checkAndBookmarkIfFrequent(program, function.getEntryPoint(), bookmarkPercentile);
 
-                switch (view) {
-                    case "decompile":
-                        return handleDecompileView(program, function, request);
-                    case "disassemble":
-                        return handleDisassembleView(program, function);
-                    case "info":
-                        return handleInfoView(program, function);
-                    case "calls":
-                        return handleCallsView(program, function);
-                    default:
-                        return createErrorResult("Invalid view mode: " + view);
-                }
+                return switch (view) {
+                    case "decompile" -> handleDecompileView(program, function, request);
+                    case "disassemble" -> handleDisassembleView(program, function);
+                    case "info" -> handleInfoView(program, function);
+                    case "calls" -> handleCallsView(program, function);
+                    default -> createErrorResult("Invalid view mode: " + view);
+                };
             } catch (IllegalArgumentException e) {
                 // Try to return default response with error message
                 Program program = tryGetProgramSafely(request.arguments());
@@ -221,7 +217,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 }
                 // If we can't get a default response, return error with message
                 return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
-            } catch (Exception e) {
+            } catch (ProgramValidationException e) {
                 logError("Error in get-function", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
             }
@@ -403,8 +399,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
 
         // Local variables
         List<Map<String, Object>> locals = new ArrayList<>();
-        for (int i = 0; i < function.getLocalVariables().length; i++) {
-            var local = function.getLocalVariables()[i];
+        for (Variable local : function.getLocalVariables()) {
             Map<String, Object> localInfo = new HashMap<>();
             localInfo.put("name", local.getName());
             localInfo.put("dataType", local.getDataType().toString());
@@ -492,7 +487,6 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
 
         try {
             // Convert markup to lines
-            List<ClangLine> clangLines = DecompilerUtils.toLines(markup);
             String[] decompLines = fullDecompCode.split("\n");
 
             // Calculate range
@@ -644,7 +638,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                 functionResult.put("address", AddressUtil.formatAddress(function.getEntryPoint()));
 
                 switch (view) {
-                    case "decompile":
+                    case "decompile" -> {
                         McpSchema.CallToolResult decompileResult = handleDecompileView(program, function, request);
                         if (decompileResult.isError()) {
                             String errorText = extractTextFromContent(decompileResult.content().get(0));
@@ -654,8 +648,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                             Map<String, Object> decompileData = extractJsonDataFromResult(decompileResult);
                             functionResult.putAll(decompileData);
                         }
-                        break;
-                    case "disassemble":
+                    }
+                    case "disassemble" -> {
                         McpSchema.CallToolResult disassembleResult = handleDisassembleView(program, function);
                         if (disassembleResult.isError()) {
                             String errorText = extractTextFromContent(disassembleResult.content().get(0));
@@ -664,8 +658,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                             Map<String, Object> disassembleData = extractJsonDataFromResult(disassembleResult);
                             functionResult.putAll(disassembleData);
                         }
-                        break;
-                    case "info":
+                    }
+                    case "info" -> {
                         McpSchema.CallToolResult infoResult = handleInfoView(program, function);
                         if (infoResult.isError()) {
                             String errorText = extractTextFromContent(infoResult.content().get(0));
@@ -674,8 +668,8 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                             Map<String, Object> infoData = extractJsonDataFromResult(infoResult);
                             functionResult.putAll(infoData);
                         }
-                        break;
-                    case "calls":
+                    }
+                    case "calls" -> {
                         McpSchema.CallToolResult callsResult = handleCallsView(program, function);
                         if (callsResult.isError()) {
                             String errorText = extractTextFromContent(callsResult.content().get(0));
@@ -684,10 +678,11 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                             Map<String, Object> callsData = extractJsonDataFromResult(callsResult);
                             functionResult.putAll(callsData);
                         }
-                        break;
-                    default:
+                    }
+                    default -> {
                         errors.add(Map.of("index", i, "identifier", identifier, "error", "Invalid view: " + view));
                         continue;
+                    }
                 }
 
                 results.add(functionResult);
@@ -729,7 +724,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                         if (p != null && !p.isClosed()) {
                             programs.add(p);
                         }
-                    } catch (Exception e) {
+                    } catch (ProgramValidationException e) {
                         // Skip invalid programs
                     }
                 }
@@ -803,7 +798,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
             }
             
             return createJsonResult(result);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException | ProgramValidationException e) {
             logError("Error handling all functions", e);
             return createErrorResult("Failed to retrieve all functions: " + e.getMessage());
         }
@@ -957,7 +952,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
                                     "name", newFunc.getName()
                                 ));
                             }
-                        } catch (Exception e) {
+                        } catch (OverlappingFunctionException | InvalidInputException e) {
                             // Skip if function creation fails
                         }
                     }
@@ -988,7 +983,7 @@ public class GetFunctionToolProvider extends AbstractToolProvider {
         try {
             String jsonText = extractTextFromContent(result.content().get(0));
             return JSON.readValue(jsonText, Map.class);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             // Fallback: return empty map if parsing fails
             logError("Error extracting JSON data from result", e);
             return new HashMap<>();

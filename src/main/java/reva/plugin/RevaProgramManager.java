@@ -278,6 +278,61 @@ public class RevaProgramManager {
     }
 
     /**
+     * Get all program domain files from the project, optionally filtered by checkout status.
+     * @param onlyCheckedOut If true, only return programs that are checked out (or not versioned)
+     * @return List of DomainFile objects for all programs in the project
+     */
+    public static List<DomainFile> getAllProgramFiles(boolean onlyCheckedOut) {
+        List<DomainFile> programFiles = new ArrayList<>();
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            return programFiles;
+        }
+
+        try {
+            DomainFolder rootFolder = project.getProjectData().getRootFolder();
+            collectProgramFilesRecursive(rootFolder, programFiles, onlyCheckedOut);
+        } catch (Exception e) {
+            Msg.debug(RevaProgramManager.class, "Error collecting program files from project: " + e.getMessage());
+        }
+
+        return programFiles;
+    }
+
+    /**
+     * Recursively collect program domain files from a domain folder.
+     * @param folder The folder to search
+     * @param programFiles The list to add domain files to
+     * @param onlyCheckedOut If true, only include programs that are checked out (or not versioned)
+     */
+    private static void collectProgramFilesRecursive(DomainFolder folder, List<DomainFile> programFiles, boolean onlyCheckedOut) {
+        if (folder == null) {
+            return;
+        }
+
+        // Add programs in this folder
+        for (DomainFile file : folder.getFiles()) {
+            if ("Program".equals(file.getContentType())) {
+                // If filtering by checkout status, check the file's state
+                if (onlyCheckedOut) {
+                    // Include if not versioned (always accessible) or if checked out
+                    if (!file.isVersioned() || file.isCheckedOut()) {
+                        programFiles.add(file);
+                    }
+                } else {
+                    // Include all programs
+                    programFiles.add(file);
+                }
+            }
+        }
+
+        // Recurse into subfolders
+        for (DomainFolder subfolder : folder.getFolders()) {
+            collectProgramFilesRecursive(subfolder, programFiles, onlyCheckedOut);
+        }
+    }
+
+    /**
      * Register a program directly with the manager. This is useful in test environments
      * or when programs are opened outside of the normal Ghidra tool system.
      * @param program The program to register

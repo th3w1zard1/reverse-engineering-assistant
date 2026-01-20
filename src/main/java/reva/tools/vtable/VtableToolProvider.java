@@ -34,6 +34,7 @@ import ghidra.util.task.TimeoutTaskMonitor;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import reva.tools.AbstractToolProvider;
+import reva.tools.ProgramValidationException;
 import reva.util.AddressUtil;
 
 /**
@@ -137,6 +138,9 @@ public class VtableToolProvider extends AbstractToolProvider {
                 }
                 // If we can't get a default response, return error with message
                 return createErrorResult(e.getMessage() + " " + createIncorrectArgsErrorMap().get("error"));
+            } catch (ProgramValidationException e) {
+                logError("Error in analyze-vtables", e);
+                return createErrorResult("Tool execution failed: " + e.getMessage());
             } catch (Exception e) {
                 logError("Error in analyze-vtables", e);
                 return createErrorResult("Tool execution failed: " + e.getMessage());
@@ -219,8 +223,8 @@ public class VtableToolProvider extends AbstractToolProvider {
 
         if (existingData != null) {
             DataType dataType = existingData.getDataType();
-            if (dataType instanceof Structure) {
-                existingStructure = (Structure) dataType;
+            if (dataType instanceof Structure structure) {
+                existingStructure = structure;
                 structureName = existingStructure.getName();
             }
         }
@@ -425,7 +429,7 @@ public class VtableToolProvider extends AbstractToolProvider {
         }
 
         // Find indirect calls with matching offsets
-        List<Map<String, Object>> callers = new ArrayList<>();
+        List<Map<String, Object>> callers;
         try {
             callers = findIndirectCallsWithOffsets(program, targetOffsets, maxResults, monitor);
         } catch (CancelledException e) {

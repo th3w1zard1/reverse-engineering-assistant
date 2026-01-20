@@ -119,52 +119,64 @@ def server(ghidra_initialized):
     yield launcher
 
     # Cleanup: Stop server
-    print(f"[Fixture] Stopping server...")
+    print("[Fixture] Stopping server...")
     launcher.stop()
-    print(f"[Fixture] Server stopped")
+    print("[Fixture] Server stopped")
 
 
-@pytest.fixture
-def mcp_client(server):
+@pytest_asyncio.fixture(loop_scope="function")
+async def mcp_client(server):
     """
-    Create an MCP client helper for making requests.
+    Create an async MCP client helper for making requests.
 
-    Provides a convenient interface for making MCP tool calls to the
-    server started by the 'server' fixture.
+    Provides a convenient async interface for making MCP tool calls to the
+    server started by the 'server' fixture using streamable HTTP transport.
 
     Scope: function (new client for each test)
 
     Yields:
-        MCPClient instance with call_tool() method
+        ClientSession instance with async call_tool() method
 
     Example:
-        def test_something(mcp_client):
-            response = mcp_client.call_tool("list-project-files")
+        async def test_something(mcp_client):
+            response = await mcp_client.call_tool(
+                name="list-project-files",
+                arguments={"folderPath": "/"}
+            )
             assert response is not None
     """
-    from tests.helpers import make_mcp_request
+    from mcp.client.streamable_http import streamablehttp_client
+    from mcp import ClientSession
+    import asyncio
 
-    class MCPClient:
-        """Helper class for making MCP requests"""
+    port = server.getPort()
+    url = f"http://localhost:{port}/mcp/message"
 
-        def __init__(self, port: int):
-            self.port = port
+    print(f"\n[Fixture] Creating async MCP HTTP client for port {port}...")
 
-        def call_tool(self, name: str, arguments: dict = None, timeout: int = 10):
-            """
-            Call an MCP tool.
+    try:
+        # Use the streamable HTTP client from MCP SDK
+        async with streamablehttp_client(url, timeout=30.0) as (read_stream, write_stream, get_session_id):
+            async with ClientSession(read_stream, write_stream) as session:
+                # Initialize the session
+                try:
+                    init_result = await asyncio.wait_for(
+                        session.initialize(),
+                        timeout=60.0
+                    )
+                    print(f"[Fixture] MCP HTTP session initialized: {init_result.serverInfo.name} v{init_result.serverInfo.version}")
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        "MCP HTTP session initialization timed out after 60 seconds. "
+                        "Check server logs for errors."
+                    )
 
-            Args:
-                name: Tool name (e.g., "list-project-files")
-                arguments: Tool arguments dictionary (optional)
-                timeout: Request timeout in seconds (default: 10)
+                yield session
 
-            Returns:
-                Parsed JSON response or None if request failed
-            """
-            return make_mcp_request(self.port, name, arguments, timeout)
-
-    yield MCPClient(server.getPort())
+                print("[Fixture] Closing MCP HTTP session...")
+    except Exception as e:
+        print(f"[Fixture] Error with MCP HTTP client: {e}")
+        raise
 
 
 # ============================================================================

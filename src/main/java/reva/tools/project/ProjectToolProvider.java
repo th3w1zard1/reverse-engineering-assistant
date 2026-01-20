@@ -339,6 +339,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
         properties.put("recursive", SchemaUtil.booleanPropertyWithDefault(
             "Whether to list files recursively", false
         ));
+        properties.put("onlyShowCheckedOutPrograms", SchemaUtil.booleanPropertyWithDefault(
+            "If true, only show programs that are checked out (or not versioned). Only applies when listing files of type 'Program'. Defaults to false to show all programs.",
+            false
+        ));
 
         List<String> required = List.of("folderPath");
 
@@ -365,6 +369,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
             // Get the recursive flag
             boolean recursive = getOptionalBoolean(request, "recursive", false);
+            
+            // Get the onlyShowCheckedOutPrograms flag
+            boolean onlyCheckedOut = getOptionalBoolean(request, "onlyShowCheckedOutPrograms", false);
             
             // If incorrect arguments, force recursive=true to show full list
             if (hasIncorrectArgs) {
@@ -397,12 +404,13 @@ public class ProjectToolProvider extends AbstractToolProvider {
             metadataInfo.put("folderPath", folderPath);
             metadataInfo.put("folderName", folder.getName());
             metadataInfo.put("isRecursive", recursive);
+            metadataInfo.put("onlyShowCheckedOutPrograms", onlyCheckedOut);
 
             // Get the files and folders
             if (recursive) {
-                collectFilesRecursive(folder, filesList, "");
+                collectFilesRecursive(folder, filesList, "", onlyCheckedOut);
             } else {
-                collectFilesInFolder(folder, filesList, "");
+                collectFilesInFolder(folder, filesList, "", onlyCheckedOut);
             }
 
             metadataInfo.put("itemCount", filesList.size());
@@ -423,50 +431,76 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to list all open programs across all Ghidra tools
+     * Register a tool to list all programs in the project
      */
     private void registerListOpenProgramsTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
+        properties.put("onlyShowCheckedOutPrograms", SchemaUtil.booleanPropertyWithDefault(
+            "If true, only show programs that are checked out (or not versioned). Defaults to false to show all programs.",
+            false
+        ));
         // This tool doesn't require any parameters
         List<String> required = new ArrayList<>();
 
         // Create the tool
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("list-open-programs")
-            .title("List Open Programs")
-            .description("List all programs currently open in Ghidra across all tools")
+            .title("List Programs")
+            .description("List all programs in the Ghidra project (not just open ones). Use onlyShowCheckedOutPrograms to filter by checkout status.")
             .inputSchema(createSchema(properties, required))
             .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get all open programs from all tools
-            List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
+            // Get the filter parameter
+            boolean onlyCheckedOut = getOptionalBoolean(request, "onlyShowCheckedOutPrograms", false);
 
-            if (openPrograms.isEmpty()) {
-                return createErrorResult("No programs are currently open in Ghidra");
+            // Get all program files from the project
+            List<ghidra.framework.model.DomainFile> programFiles = RevaProgramManager.getAllProgramFiles(onlyCheckedOut);
+
+            if (programFiles.isEmpty()) {
+                return createErrorResult("No programs found in the project" + (onlyCheckedOut ? " (filtered to checked out programs only)" : ""));
             }
 
-            // Create program info for each program
+            // Create program info for each program file
             List<Map<String, Object>> programsData = new ArrayList<>();
-            for (Program program : openPrograms) {
-                Map<String, Object> programInfo = new HashMap<>();
-                programInfo.put("programPath", program.getDomainFile().getPathname());
-                programInfo.put("language", program.getLanguage().getLanguageID().getIdAsString());
-                programInfo.put("compilerSpec", program.getCompilerSpec().getCompilerSpecID().getIdAsString());
-                programInfo.put("creationDate", program.getCreationDate());
-                programInfo.put("sizeBytes", program.getMemory().getSize());
-                programInfo.put("symbolCount", program.getSymbolTable().getNumSymbols());
-                programInfo.put("functionCount", program.getFunctionManager().getFunctionCount());
-                programInfo.put("modificationDate", program.getDomainFile().getLastModifiedTime());
-                programInfo.put("isReadOnly", program.getDomainFile().isReadOnly());
-                programsData.add(programInfo);
+            for (ghidra.framework.model.DomainFile domainFile : programFiles) {
+                try {
+                    Map<String, Object> programInfo = new HashMap<>();
+                    programInfo.put("programPath", domainFile.getPathname());
+                    programInfo.put("lastModified", domainFile.getLastModifiedTime());
+                    programInfo.put("isReadOnly", domainFile.isReadOnly());
+                    programInfo.put("versioned", domainFile.isVersioned());
+                    programInfo.put("checkedOut", domainFile.isCheckedOut());
+
+                    // Try to get additional metadata from the file
+                    if (domainFile.getMetadata() != null) {
+                        Object languageObj = domainFile.getMetadata().get("CREATED_WITH_LANGUAGE");
+                        if (languageObj != null) {
+                            programInfo.put("language", languageObj);
+                        }
+                        Object compilerObj = domainFile.getMetadata().get("CREATED_WITH_COMPILER");
+                        if (compilerObj != null) {
+                            programInfo.put("compilerSpec", compilerObj);
+                        }
+                        Object md5Obj = domainFile.getMetadata().get("Executable MD5");
+                        if (md5Obj != null) {
+                            programInfo.put("executableMD5", md5Obj);
+                        }
+                    }
+
+                    programsData.add(programInfo);
+                } catch (Exception e) {
+                    // Skip files that can't be read
+                    Msg.debug(ProjectToolProvider.class, "Error reading program file metadata: " + domainFile.getPathname() + ": " + e.getMessage());
+                }
             }
 
             // Create metadata
             Map<String, Object> metadataInfo = new HashMap<>();
             metadataInfo.put("count", programsData.size());
+            metadataInfo.put("onlyCheckedOut", onlyCheckedOut);
 
             // Create combined result
             List<Object> resultData = new ArrayList<>();
@@ -757,8 +791,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
+     * @param onlyCheckedOut If true, only include programs that are checked out (or not versioned)
      */
-    private void collectFilesInFolder(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix) {
+    private void collectFilesInFolder(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix, boolean onlyCheckedOut) {
         // Add subfolders first
         for (DomainFolder subfolder : folder.getFolders()) {
             Map<String, Object> folderInfo = new HashMap<>();
@@ -770,6 +805,14 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // Add files
         for (DomainFile file : folder.getFiles()) {
+            // If filtering by checkout status, only include programs that are checked out (or not versioned)
+            if (onlyCheckedOut && "Program".equals(file.getContentType())) {
+                if (file.isVersioned() && !file.isCheckedOut()) {
+                    // Skip versioned programs that are not checked out
+                    continue;
+                }
+            }
+
             Map<String, Object> fileInfo = new HashMap<>();
             fileInfo.put("programPath", file.getPathname());
             fileInfo.put("type", "file");
@@ -806,15 +849,16 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
+     * @param onlyCheckedOut If true, only include programs that are checked out (or not versioned)
      */
-    private void collectFilesRecursive(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix) {
+    private void collectFilesRecursive(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix, boolean onlyCheckedOut) {
         // Collect files in current folder
-        collectFilesInFolder(folder, filesList, pathPrefix);
+        collectFilesInFolder(folder, filesList, pathPrefix, onlyCheckedOut);
 
         // Recursively collect files in subfolders
         for (DomainFolder subfolder : folder.getFolders()) {
             String newPrefix = pathPrefix + subfolder.getName() + "/";
-            collectFilesRecursive(subfolder, filesList, newPrefix);
+            collectFilesRecursive(subfolder, filesList, newPrefix, onlyCheckedOut);
         }
     }
 

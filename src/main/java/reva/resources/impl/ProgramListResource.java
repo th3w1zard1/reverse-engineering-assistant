@@ -34,14 +34,14 @@ import reva.plugin.RevaProgramManager;
 import reva.resources.AbstractResourceProvider;
 
 /**
- * Resource provider that exposes the list of currently open programs.
+ * Resource provider that exposes the list of all programs in the project.
  * Supports subscriptions - clients will be notified when programs are opened or closed.
  */
 public class ProgramListResource extends AbstractResourceProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String RESOURCE_ID = "ghidra://programs";
     private static final String RESOURCE_NAME = "open-programs";
-    private static final String RESOURCE_DESCRIPTION = "Currently open programs";
+    private static final String RESOURCE_DESCRIPTION = "All programs in the Ghidra project";
     private static final String RESOURCE_MIME_TYPE = "text/plain";
 
     /**
@@ -82,21 +82,35 @@ public class ProgramListResource extends AbstractResourceProvider {
     private ReadResourceResult generateResourceContents() {
         List<ResourceContents> resourceContents = new ArrayList<>();
 
-        // Get all open programs
-        List<Program> openPrograms = RevaProgramManager.getOpenPrograms();
+        // Get all program files from the project (not just open ones)
+        List<ghidra.framework.model.DomainFile> programFiles = RevaProgramManager.getAllProgramFiles(false);
 
-        for (Program program : openPrograms) {
+        for (ghidra.framework.model.DomainFile domainFile : programFiles) {
             try {
-                // Create program info object
-                String programPath = program.getDomainFile().getPathname();
-                String programLanguage = program.getLanguage().getLanguageID().getIdAsString();
-                String programCompilerSpec = program.getCompilerSpec().getCompilerSpecID().getIdAsString();
-                long programSize = program.getMemory().getSize();
+                // Create program info object from domain file metadata
+                String programPath = domainFile.getPathname();
+                String programLanguage = null;
+                String programCompilerSpec = null;
+                long programSize = 0;
+
+                // Try to get metadata from the file
+                if (domainFile.getMetadata() != null) {
+                    Object languageObj = domainFile.getMetadata().get("CREATED_WITH_LANGUAGE");
+                    if (languageObj != null) {
+                        programLanguage = languageObj.toString();
+                    }
+                    Object compilerObj = domainFile.getMetadata().get("CREATED_WITH_COMPILER");
+                    if (compilerObj != null) {
+                        programCompilerSpec = compilerObj.toString();
+                    }
+                }
+
+                // Try to open the program briefly to get size if metadata doesn't have it
+                // But avoid opening programs just for resource listing - use metadata if available
+                ProgramInfo programInfo = new ProgramInfo(programPath, programLanguage, programCompilerSpec, programSize);
 
                 // Create a JSON object with program metadata
-                String metaString = JSON.writeValueAsString(
-                    new ProgramInfo(programPath, programLanguage, programCompilerSpec, programSize)
-                );
+                String metaString = JSON.writeValueAsString(programInfo);
 
                 // Add to resource contents
                 // URL encode the program path to ensure URI safety
@@ -110,6 +124,8 @@ public class ProgramListResource extends AbstractResourceProvider {
                 );
             } catch (JsonProcessingException e) {
                 logError("Error serializing program metadata", e);
+            } catch (Exception e) {
+                logError("Error reading program file: " + domainFile.getPathname(), e);
             }
         }
 
