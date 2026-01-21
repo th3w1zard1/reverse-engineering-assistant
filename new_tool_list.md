@@ -237,10 +237,12 @@
 
 ### 19. `manage-files`
 
-**Description:** Import files into the Ghidra project or export program data to files.
+**Description:** Import files into the Ghidra project, export program data to files, or perform version control operations (checkout/uncheckout/unhijack).
+
+**Operations:** `import`, `export`, `checkout`, `uncheckout`, `unhijack`
 
 **Parameters:**
-- `operation` (string, required): Operation to perform: 'import' (import files into project) or 'export' (export program data to files)
+- `operation` (string, required): Operation to perform: 'import' (import files into project), 'export' (export program data to files), 'checkout' (check out a program from version control), 'uncheckout' (undo checkout and discard changes), or 'unhijack' (unhijack a hijacked file)
 - `path` (string, required): For import: Absolute file system path to import (file, directory, or archive). For export: File system path where to save the exported file. Use absolute paths to ensure proper file resolution.
 - `destinationFolder` (string, optional): Project folder path for imported files (default: root folder '/')
 - `recursive` (boolean, optional): Whether to recursively import from containers/archives (default: true)
@@ -250,12 +252,13 @@
 - `stripAllContainerPath` (boolean, optional): Completely flatten container paths in imported file locations (default: false)
 - `mirrorFs` (boolean, optional): Mirror the filesystem layout when importing (default: false)
 - `enableVersionControl` (boolean, optional): For import: Automatically add imported files to version control (default: true)
-- `programPath` (string, optional): For export: Path to the program to export (e.g., '/Hatchery.exe')
+- `programPath` (string, required for export/checkout/uncheckout/unhijack): For export/checkout/uncheckout/unhijack: Path to the program (e.g., '/Hatchery.exe')
 - `exportType` (string, optional): For export: Type of export: 'program' (export binary), 'function_info' (export function information as JSON/CSV), 'strings' (export strings as text)
 - `format` (string, optional): For export: Export format for function_info: 'json' or 'csv' (default: 'json')
 - `includeParameters` (boolean, optional): For export: Include function parameters in functionInfo export (default: true)
 - `includeVariables` (boolean, optional): For export: Include local variables in function_info export (default: true)
 - `includeComments` (boolean, optional): For export: Include comments in function_info export (default: false)
+- `exclusive` (boolean, optional): For checkout: Whether to check out exclusively (default: false)
 
 ### 20. `get-references`
 

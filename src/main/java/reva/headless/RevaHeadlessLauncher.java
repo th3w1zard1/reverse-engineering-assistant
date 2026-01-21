@@ -17,18 +17,28 @@ package reva.headless;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
+import ghidra.GhidraApplicationLayout;
 import ghidra.base.project.GhidraProject;
 import ghidra.framework.Application;
 import ghidra.framework.ApplicationConfiguration;
 import ghidra.framework.HeadlessGhidraApplicationConfiguration;
-import utility.application.ApplicationLayout;
 import ghidra.util.Msg;
-import ghidra.GhidraApplicationLayout;
-
 import reva.plugin.ConfigManager;
 import reva.server.McpServerManager;
 import reva.util.ProjectUtil;
+import utility.application.ApplicationLayout;
 
 /**
  * Headless launcher for ReVa MCP server.
@@ -55,6 +65,14 @@ import reva.util.ProjectUtil;
  * </pre>
  */
 public class RevaHeadlessLauncher {
+
+    private static final String LOCK_ENV_VAR = "REVA_FORCE_IGNORE_LOCK";
+    private static final List<String> LOCK_FILE_SUFFIXES = List.of(".lock", ".lock~", ".~lock");
+    private static final Pattern PID_KEY_PATTERN =
+        Pattern.compile("(?i)\\b(pid|process(?:\\s*id)?)\\b\\s*[:=]\\s*(\\d+)");
+    private static final Pattern GENERIC_NUMBER_PATTERN = Pattern.compile("\\b(\\d{4,6})\\b");
+    private static final long MIN_WINDOWS_PID = 1000;
+    private static final long MAX_WINDOWS_PID = 99999;
 
     private McpServerManager serverManager;
     private ConfigManager configManager;
@@ -180,18 +198,12 @@ public class RevaHeadlessLauncher {
 
         // Create/open persistent project if location and name specified
         if (projectLocation != null && projectName != null) {
+            boolean forceIgnoreLock = isForceIgnoreLockEnabled();
+            if (forceIgnoreLock) {
+                releaseLockFiles(projectLocation, projectName);
+            }
+
             try {
-                // Check environment variable for forceIgnoreLock
-                String forceIgnoreLockEnv = System.getenv("REVA_FORCE_IGNORE_LOCK");
-                boolean forceIgnoreLock = forceIgnoreLockEnv != null && 
-                        (forceIgnoreLockEnv.equalsIgnoreCase("true") || forceIgnoreLockEnv.equalsIgnoreCase("1"));
-                
-                // If forceIgnoreLock is enabled, delete lock files before attempting to open
-                // This handles the case where lock files exist from a previous crashed session
-                if (forceIgnoreLock) {
-                    ProjectUtil.deleteLockFiles(projectLocation, projectName, this);
-                }
-                
                 ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
                     projectLocation, projectName, true, this, forceIgnoreLock);
                 ghidraProject = result.getGhidraProject();
@@ -203,46 +215,43 @@ public class RevaHeadlessLauncher {
                     Msg.info(this, "Opened project: " + projectName);
                 }
             } catch (IOException e) {
-                // Check if this is a lock-related error and forceIgnoreLock is enabled
-                String errorMsg = e.getMessage();
-                if (errorMsg != null && errorMsg.contains("locked") && errorMsg.contains("cannot be opened")) {
-                    String forceIgnoreLockEnv = System.getenv("REVA_FORCE_IGNORE_LOCK");
-                    boolean forceIgnoreLock = forceIgnoreLockEnv != null && 
-                            (forceIgnoreLockEnv.equalsIgnoreCase("true") || forceIgnoreLockEnv.equalsIgnoreCase("1"));
-                    
-                    if (forceIgnoreLock) {
-                        Msg.info(this, "Project is locked, attempting to delete lock files and retry...");
-                        ProjectUtil.deleteLockFiles(projectLocation, projectName, this);
-                        // Retry opening the project after deleting lock files
-                        try {
-                            ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
-                                projectLocation, projectName, true, this, true);
-                            ghidraProject = result.getGhidraProject();
-                            if (result.wasAlreadyOpen()) {
-                                Msg.info(this, "Project '" + projectName + "' is already open, using active project");
-                            } else {
-                                Msg.info(this, "Opened project after deleting lock files: " + projectName);
-                            }
-                        } catch (Exception retryException) {
-                            throw new IOException("Failed to open project after deleting lock files: " + projectName, retryException);
+                if (forceIgnoreLock && isLockRelatedError(e)) {
+                    Msg.info(this, "Project is locked, attempting to delete lock files and retry...");
+                    releaseLockFiles(projectLocation, projectName);
+                    try {
+                        ProjectUtil.ProjectOpenResult result = ProjectUtil.createOrOpenProject(
+                            projectLocation, projectName, true, this, true);
+                        ghidraProject = result.getGhidraProject();
+                        if (result.wasAlreadyOpen()) {
+                            Msg.info(this, "Project '" + projectName + "' is already open, using active project");
+                        } else {
+                            Msg.info(this, "Opened project after deleting lock files: " + projectName);
                         }
-                    } else {
-                        // Re-throw the original exception with helpful message
-                        throw new IOException("Project '" + projectName + "' is locked and cannot be opened. " +
-                            "Ghidra projects can only be opened by one process at a time to prevent data corruption. " +
-                            "The project may be open in another Ghidra instance or ReVa CLI process. " +
-                            "\n\nOptions:\n" +
-                            "1. Close the project in the other process (Ghidra GUI or another ReVa CLI instance)\n" +
-                            "2. For shared projects: Use Ghidra Server for true simultaneous access (recommended)\n" +
-                            "3. Workaround: Set REVA_FORCE_IGNORE_LOCK=true (RISKY - can cause data corruption if multiple processes write simultaneously)\n" +
-                            "\nNote: ReVa does not create locks - this is Ghidra's built-in protection mechanism.", e);
+                    } catch (IOException retryException) {
+                        // IMPORTANT: Do not crash the MCP server if a project cannot be opened.
+                        // The server should still start so users can choose/open another project.
+                        Msg.error(this,
+                            "Failed to open project after deleting lock files: " + projectName +
+                                ". Starting ReVa without an active project.",
+                            retryException);
+                        ghidraProject = null;
                     }
                 } else {
-                    // Not a lock-related error, re-throw as-is
-                    throw e;
+                    // IMPORTANT: Do not crash the MCP server if a project cannot be opened.
+                    // Starting without an active project is valid; tools will surface "no active project"
+                    // errors where appropriate and project-management tools can still be used.
+                    Msg.error(this,
+                        "Failed to open project '" + projectName + "'. Starting ReVa without an active project. " +
+                            "You can open a different project using the project tools.",
+                        e);
+                    ghidraProject = null;
                 }
             } catch (Exception e) {
-                throw new IOException("Failed to create/open project: " + projectName, e);
+                // IMPORTANT: Do not crash the MCP server if a project cannot be opened.
+                Msg.error(this,
+                    "Failed to create/open project '" + projectName + "'. Starting ReVa without an active project.",
+                    e);
+                ghidraProject = null;
             }
         }
 
@@ -317,20 +326,190 @@ public class RevaHeadlessLauncher {
      * @param timeoutMs Maximum time to wait in milliseconds
      * @return True if server became ready within timeout, false otherwise
      */
+    @SuppressWarnings("BusyWait")
     public boolean waitForServer(long timeoutMs) {
         long start = System.currentTimeMillis();
-        while (System.currentTimeMillis() - start < timeoutMs) {
+        long elapsed;
+        while ((elapsed = System.currentTimeMillis() - start) < timeoutMs) {
             if (isRunning() && isServerReady()) {
                 return true;
             }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            long remaining = timeoutMs - elapsed;
+            if (remaining <= 0) {
+                break;
+            }
+            if (!sleepWithInterrupt(Math.min(100, remaining))) {
                 return false;
             }
         }
         return false;
+    }
+
+    /**
+     * Sleep for the specified duration, handling interrupts
+     * @param ms Duration to sleep in milliseconds
+     * @return True if sleep completed normally, false if interrupted
+     */
+    private boolean sleepWithInterrupt(long ms) {
+        try {
+            Thread.sleep(ms);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    private static boolean isForceIgnoreLockEnabled() {
+        String forceIgnoreLockEnv = System.getenv(LOCK_ENV_VAR);
+        return forceIgnoreLockEnv != null &&
+            (forceIgnoreLockEnv.equalsIgnoreCase("true") ||
+             forceIgnoreLockEnv.equalsIgnoreCase("1"));
+    }
+
+    private static boolean isLockRelatedError(IOException e) {
+        String errorMessage = e.getMessage();
+        if (errorMessage == null) {
+            return false;
+        }
+        String normalized = errorMessage.toLowerCase(Locale.ENGLISH);
+        return normalized.contains("locked") && normalized.contains("cannot be opened");
+    }
+
+    private static boolean isWindows() {
+        String osName = System.getProperty("os.name", "");
+        return osName.toLowerCase(Locale.ENGLISH).contains("win");
+    }
+
+    private void releaseLockFiles(File projectLocation, String projectName) {
+        if (isWindows()) {
+            handleWindowsLockFiles(projectLocation, projectName);
+        }
+        ProjectUtil.deleteLockFiles(projectLocation, projectName, this);
+    }
+
+    private void handleWindowsLockFiles(File projectLocation, String projectName) {
+        if (projectLocation == null || !projectLocation.exists()) {
+            return;
+        }
+        Map<Long, Set<File>> lockingProcesses = collectLockOwners(projectLocation, projectName);
+        if (lockingProcesses.isEmpty()) {
+            return;
+        }
+
+        long currentPid = ProcessHandle.current().pid();
+        for (Map.Entry<Long, Set<File>> entry : lockingProcesses.entrySet()) {
+            long pid = entry.getKey();
+            if (pid == currentPid) {
+                Msg.info(this, "Current process (" + pid + ") already owns lock files for project " + projectName);
+                continue;
+            }
+            terminateLockingProcess(pid, entry.getValue());
+        }
+    }
+
+    private Map<Long, Set<File>> collectLockOwners(File projectLocation, String projectName) {
+        Map<Long, Set<File>> owners = new LinkedHashMap<>();
+        for (String suffix : LOCK_FILE_SUFFIXES) {
+            File lockFile = new File(projectLocation, projectName + suffix);
+            if (!lockFile.exists() || !lockFile.isFile()) {
+                continue;
+            }
+            Set<Long> pids = parsePidsFromLockFile(lockFile);
+            for (Long pid : pids) {
+                owners.computeIfAbsent(pid, $ -> new LinkedHashSet<>()).add(lockFile);
+            }
+        }
+        return owners;
+    }
+
+    private Set<Long> parsePidsFromLockFile(File lockFile) {
+        Set<Long> pids = new LinkedHashSet<>();
+        try {
+            String content = Files.readString(lockFile.toPath(), StandardCharsets.UTF_8);
+            Matcher kvMatcher = PID_KEY_PATTERN.matcher(content);
+            while (kvMatcher.find()) {
+                addPidCandidate(kvMatcher.group(2), pids);
+            }
+            if (pids.isEmpty()) {
+                Matcher genericMatcher = GENERIC_NUMBER_PATTERN.matcher(content);
+                while (genericMatcher.find()) {
+                    addPidCandidate(genericMatcher.group(1), pids);
+                }
+            }
+            if (!pids.isEmpty()) {
+                Msg.info(this, "Detected potential locking PID(s) " + pids + " in " + lockFile.getName());
+            }
+        } catch (IOException e) {
+            Msg.warn(this, "Unable to read lock file '" + lockFile.getAbsolutePath() + "': " + e.getMessage());
+        }
+        return pids;
+    }
+
+    private void addPidCandidate(String rawPid, Set<Long> pids) {
+        if (rawPid == null) {
+            return;
+        }
+        try {
+            long pid = Long.parseLong(rawPid);
+            if (pid >= MIN_WINDOWS_PID && pid <= MAX_WINDOWS_PID) {
+                pids.add(pid);
+            }
+        } catch (NumberFormatException ignored) {
+            // Ignore unparsable values
+        }
+    }
+
+    private void terminateLockingProcess(long pid, Set<File> lockFiles) {
+        String fileDescription = lockFiles.stream()
+            .map(File::getName)
+            .collect(Collectors.joining(", "));
+        Msg.info(this, "Detected Windows lock held by pid " + pid + " for files [" + fileDescription + "]");
+
+        ProcessHandle.of(pid).ifPresentOrElse(handle -> {
+            if (!handle.isAlive()) {
+                Msg.info(this, "Process " + pid + " already exited.");
+                return;
+            }
+            String commandDescription = handle.info().command().orElse("unknown");
+            Msg.info(this, "Requesting graceful termination of process " + pid + " (" + commandDescription + ")");
+            try {
+                handle.destroy();
+            } catch (UnsupportedOperationException | SecurityException ex) {
+                Msg.warn(this, "Unable to request graceful termination of process " + pid + ": " + ex.getMessage());
+            }
+
+            if (!waitForProcessExit(handle, 2000)) {
+                Msg.info(this, "Process " + pid + " still alive after graceful request; forcing termination");
+                try {
+                    handle.destroyForcibly();
+                } catch (UnsupportedOperationException | SecurityException ex) {
+                    Msg.warn(this, "Unable to forcefully terminate process " + pid + ": " + ex.getMessage());
+                }
+                if (!waitForProcessExit(handle, 2000)) {
+                    Msg.warn(this, "Process " + pid + " remained alive after forced termination attempt");
+                } else {
+                    Msg.info(this, "Process " + pid + " terminated after forced termination");
+                }
+            } else {
+                Msg.info(this, "Process " + pid + " terminated gracefully");
+            }
+        }, () -> Msg.info(this, "No running process found for pid " + pid));
+    }
+
+    private boolean waitForProcessExit(ProcessHandle handle, long timeoutMs) {
+        long waitInterval = 200;
+        long waited = 0;
+        while (handle.isAlive() && waited < timeoutMs) {
+            try {
+                Thread.sleep(waitInterval);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            waited += waitInterval;
+        }
+        return !handle.isAlive();
     }
 
     /**
@@ -397,9 +576,8 @@ public class RevaHeadlessLauncher {
                 System.err.println("Failed to start server within timeout");
                 System.exit(1);
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             System.err.println("Error starting server: " + e.getMessage());
-            e.printStackTrace();
             System.exit(1);
         }
     }

@@ -83,7 +83,7 @@ public class ProgramListResource extends AbstractResourceProvider {
         List<ResourceContents> resourceContents = new ArrayList<>();
 
         // Get all program files from the project (not just open ones)
-        List<ghidra.framework.model.DomainFile> programFiles = RevaProgramManager.getAllProgramFiles(false);
+        List<ghidra.framework.model.DomainFile> programFiles = RevaProgramManager.getAllProgramFiles();
 
         for (ghidra.framework.model.DomainFile domainFile : programFiles) {
             try {

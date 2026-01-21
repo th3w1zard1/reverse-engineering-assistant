@@ -173,6 +173,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
     private void initializeResourceProviders() {
         resourceProviders.add(new ProgramListResource(server));
         resourceProviders.add(new ProgramDocumentationResource(server));
+        resourceProviders.add(new reva.resources.impl.RevaDebugInfoResource(server));
 
         // Register all resources with the server
         for (ResourceProvider provider : resourceProviders) {
@@ -550,21 +551,30 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
     public void onConfigChanged(String category, String name, Object oldValue, Object newValue) {
         // Handle server configuration changes
         if (ConfigManager.SERVER_OPTIONS.equals(category)) {
-            if (ConfigManager.SERVER_PORT.equals(name)) {
-                Msg.info(this, "Server port changed from " + oldValue + " to " + newValue + ". Restarting server...");
-                restartServer();
-            } else if (ConfigManager.SERVER_HOST.equals(name)) {
-                Msg.info(this, "Server host changed from " + oldValue + " to " + newValue + ". Restarting server...");
-                restartServer();
-            } else if (ConfigManager.SERVER_ENABLED.equals(name)) {
-                Msg.info(this, "Server enabled setting changed from " + oldValue + " to " + newValue + ". Restarting server...");
-                restartServer();
-            } else if (ConfigManager.API_KEY_ENABLED.equals(name)) {
-                Msg.info(this, "API key authentication setting changed from " + oldValue + " to " + newValue + ". Restarting server...");
-                restartServer();
-            } else if (ConfigManager.API_KEY.equals(name)) {
-                Msg.info(this, "API key changed. Restarting server...");
-                restartServer();
+            if (null != name && null != oldValue && null != newValue)
+                switch (name) {
+                    case ConfigManager.SERVER_PORT -> {
+                        Msg.info(this, "Server port changed from " + oldValue + " to " + newValue + ". Restarting server...");
+                        restartServer();
+                }
+                    case ConfigManager.SERVER_HOST -> {
+                        Msg.info(this, "Server host changed from " + oldValue + " to " + newValue + ". Restarting server...");
+                        restartServer();
+                }
+                    case ConfigManager.SERVER_ENABLED -> {
+                        Msg.info(this, "Server enabled setting changed from " + oldValue + " to " + newValue + ". Restarting server...");
+                        restartServer();
+                }
+                    case ConfigManager.API_KEY_ENABLED -> {
+                        Msg.info(this, "API key authentication setting changed from " + oldValue + " to " + newValue + ". Restarting server...");
+                        restartServer();
+                }
+                    case ConfigManager.API_KEY -> {
+                        Msg.info(this, "API key changed. Restarting server...");
+                        restartServer();
+                }
+                    default -> {
+                }
             }
         }
     }

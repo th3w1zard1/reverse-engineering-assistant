@@ -21,37 +21,6 @@ if TYPE_CHECKING:
     )
 
 
-def _spawn_project_watchdog(
-    project_path: Path,
-    project_name: str,
-) -> int | None:
-    """Spawn a detached watchdog process to monitor this process and clean up the project.
-
-    Args:
-        project_path: Path to the Ghidra project directory
-        project_name: Name of the Ghidra project
-
-    Returns:
-        Watchdog PID if spawned successfully, None otherwise
-    """
-    try:
-        from .watchdog import spawn_watchdog
-
-        parent_pid = os.getpid()
-        watchdog_pid = spawn_watchdog(parent_pid, project_path, project_name)
-        if watchdog_pid:
-            sys.stderr.write(
-                f"Spawned project watchdog (PID: {watchdog_pid}) to monitor cleanup\n"
-            )
-        return watchdog_pid
-    except Exception as e:
-        # Don't fail if watchdog can't be spawned - just log and continue
-        sys.stderr.write(
-            f"Warning: Failed to spawn project watchdog: {e.__class__.__name__}: {e}\n"
-        )
-        return None
-
-
 class ProjectManager:
     """Manages Ghidra project creation and lifecycle for ReVa CLI."""
 
@@ -73,7 +42,6 @@ class ProjectManager:
         self.project: GhidraProject | None = None
         self._opened_programs: list[Program] = []
         self._initialized: bool = False
-        self._watchdog_pid: int | None = None
 
     def _ensure_initialized(self):
         """Ensure the project directory exists and project is opened.
@@ -89,10 +57,6 @@ class ProjectManager:
 
         # Open/create the Ghidra project
         self.open_project()
-
-        # Spawn watchdog process to ensure project cleanup on shutdown
-        project_name, project_path = self.get_or_create_project()
-        self._watchdog_pid = _spawn_project_watchdog(project_path, project_name)
 
         self._initialized = True
 

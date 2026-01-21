@@ -15,10 +15,15 @@
  */
 package reva.util;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import ghidra.base.project.GhidraProject;
 import ghidra.framework.main.AppInfo;
@@ -26,6 +31,8 @@ import ghidra.framework.model.Project;
 import ghidra.framework.model.ProjectLocator;
 import ghidra.framework.store.LockException;
 import ghidra.util.Msg;
+import ghidra.util.NotOwnerException;
+import ghidra.util.exception.NotFoundException;
 
 /**
  * Utility class for unified project handling across ReVa components.
@@ -161,7 +168,7 @@ public class ProjectUtil {
             } catch (LockException e) {
                 // Project is locked - check if it's already open as the active project
                 return handleLockedProject(projectLocationPath, projectName, logContext, e);
-            } catch (Exception e) {
+            } catch (NotOwnerException | NotFoundException | IOException e) {
                 // Check if this is an authentication error
                 String errorMsg = e.getMessage();
                 if (errorMsg != null && (errorMsg.contains("authentication")
@@ -187,7 +194,7 @@ public class ProjectUtil {
                 GhidraProject ghidraProject = GhidraProject.createProject(projectLocationPath, projectName, false);
                 Project project = ghidraProject.getProject();
                 return new ProjectOpenResult(project, ghidraProject, false, true);
-            } catch (Exception e) {
+            } catch (IOException e) {
                 throw new IOException("Failed to create project: " + projectName, e);
             }
         }
@@ -298,18 +305,26 @@ public class ProjectUtil {
         File lockFile = new File(projectDir, projectName + ".lock");
         File lockFileBackup = new File(projectDir, projectName + ".lock~");
 
+        // Check if force kill is enabled
+        String forceIgnoreLock = System.getenv("REVA_FORCE_IGNORE_LOCK");
+        boolean forceKillEnabled = "true".equalsIgnoreCase(forceIgnoreLock);
+
         // Delete main lock file
         if (lockFile.exists()) {
             try {
                 if (!lockFile.delete()) {
-                    // Try rename trick if direct delete fails (file handle in use)
-                    File tempFile = new File(projectDir, projectName + ".lock.tmp." + System.currentTimeMillis());
-                    try {
-                        Files.move(lockFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        tempFile.delete();
-                        logInfo(logContext, "Deleted lock file using rename trick: " + lockFile.getName());
-                    } catch (IOException e) {
-                        logInfo(logContext, "Warning: Could not delete lock file (may be in use): " + lockFile.getName() + " - " + e.getMessage());
+                    if (forceKillEnabled) {
+                        forceKillAndDeleteLockFile(lockFile, logContext);
+                    } else {
+                        // Try rename trick if direct delete fails (file handle in use)
+                        File tempFile = new File(projectDir, projectName + ".lock.tmp." + System.currentTimeMillis());
+                        try {
+                            Files.move(lockFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                            tempFile.delete();
+                            logInfo(logContext, "Deleted lock file using rename trick: " + lockFile.getName());
+                        } catch (IOException e) {
+                            logInfo(logContext, "Warning: Could not delete lock file (may be in use): " + lockFile.getName() + " - " + e.getMessage());
+                        }
                     }
                 } else {
                     logInfo(logContext, "Deleted lock file: " + lockFile.getName());
@@ -323,14 +338,18 @@ public class ProjectUtil {
         if (lockFileBackup.exists()) {
             try {
                 if (!lockFileBackup.delete()) {
-                    // Try rename trick if direct delete fails
-                    File tempFile = new File(projectDir, projectName + ".lock~.tmp." + System.currentTimeMillis());
-                    try {
-                        Files.move(lockFileBackup.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                        tempFile.delete();
-                        logInfo(logContext, "Deleted backup lock file using rename trick: " + lockFileBackup.getName());
-                    } catch (IOException e) {
-                        logInfo(logContext, "Warning: Could not delete backup lock file (may be in use): " + lockFileBackup.getName() + " - " + e.getMessage());
+                    if (forceKillEnabled) {
+                        forceKillAndDeleteLockFile(lockFileBackup, logContext);
+                    } else {
+                        // Try rename trick if direct delete fails
+                        File tempFile = new File(projectDir, projectName + ".lock~.tmp." + System.currentTimeMillis());
+                        try {
+                            Files.move(lockFileBackup.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                            tempFile.delete();
+                            logInfo(logContext, "Deleted backup lock file using rename trick: " + lockFileBackup.getName());
+                        } catch (IOException e) {
+                            logInfo(logContext, "Warning: Could not delete backup lock file (may be in use): " + lockFileBackup.getName() + " - " + e.getMessage());
+                        }
                     }
                 } else {
                     logInfo(logContext, "Deleted backup lock file: " + lockFileBackup.getName());
@@ -338,6 +357,206 @@ public class ProjectUtil {
             } catch (Exception e) {
                 logInfo(logContext, "Warning: Error deleting backup lock file: " + lockFileBackup.getName() + " - " + e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Force kill locking processes and delete the lock file.
+     * Uses Windows Restart Manager API or handle.exe as fallback to find locking processes,
+     * then attempts taskkill with UAC elevation if needed.
+     *
+     * @param lockFile The lock file to delete
+     * @param logContext Optional logging context
+     */
+    private static void forceKillAndDeleteLockFile(File lockFile, Object logContext) {
+        if (!System.getProperty("os.name", "").toLowerCase().contains("windows")) {
+            logInfo(logContext, "Warning: Force kill only supported on Windows: " + lockFile.getName());
+            return;
+        }
+
+        try {
+            List<ProcessInfo> lockingProcesses = getLockingProcesses(lockFile.getAbsolutePath());
+
+            if (lockingProcesses.isEmpty()) {
+                logInfo(logContext, "No locking processes found for: " + lockFile.getName());
+                // Try delete again in case handles were released
+                if (lockFile.delete()) {
+                    logInfo(logContext, "Deleted lock file after checking for locks: " + lockFile.getName());
+                } else {
+                    logInfo(logContext, "Warning: Could not delete lock file (no locks found but still in use): " + lockFile.getName());
+                }
+                return;
+            }
+
+            logInfo(logContext, "Found " + lockingProcesses.size() + " locking process(es) for " + lockFile.getName() + ": " +
+                lockingProcesses.stream().map(p -> p.processName + "(PID:" + p.processId + ")").collect(Collectors.joining(", ")));
+
+            for (ProcessInfo proc : lockingProcesses) {
+                boolean killOk = killProcess(proc.processId);
+                if (!killOk) {
+                    logInfo(logContext, "Warning: Failed to kill process " + proc.processName + " (PID: " + proc.processId + ")");
+                } else {
+                    logInfo(logContext, "Killed locking process " + proc.processName + " (PID: " + proc.processId + ")");
+                }
+            }
+
+            // Wait a bit for handles to be released
+            Thread.sleep(1000);
+
+            // Try delete again
+            if (lockFile.delete()) {
+                logInfo(logContext, "Deleted lock file after killing processes: " + lockFile.getName());
+            } else {
+                logInfo(logContext, "Warning: Could not delete lock file even after killing processes (may need UAC elevation): " + lockFile.getName());
+            }
+
+        } catch (Exception e) {
+            logInfo(logContext, "Warning: Error during force kill attempt: " + lockFile.getName() + " - " + e.getMessage());
+        }
+    }
+
+    /**
+     * Get list of processes locking a file using Windows Restart Manager API or handle.exe fallback.
+     */
+    private static List<ProcessInfo> getLockingProcesses(String filePath) throws Exception {
+        List<ProcessInfo> processes = new ArrayList<>();
+
+        // Try Windows Restart Manager API first
+        try {
+            processes = getLockingProcessesViaRestartManager(filePath);
+        } catch (Exception e) {
+            // Fallback to handle.exe if Restart Manager fails
+            try {
+                processes = getLockingProcessesViaHandleExe(filePath);
+            } catch (Exception e2) {
+                throw new Exception("Failed to detect locking processes via Restart Manager (" + e.getMessage() +
+                    ") and handle.exe fallback (" + e2.getMessage() + ")");
+            }
+        }
+
+        return processes;
+    }
+
+    /**
+     * Get locking processes using Windows Restart Manager API.
+     */
+    private static List<ProcessInfo> getLockingProcessesViaRestartManager(String filePath) throws Exception {
+        // This would require JNI/JNA to call rstrtmgr.dll
+        // For now, we'll rely on handle.exe fallback
+        // TODO: Implement JNI/JNA version if needed
+
+        throw new UnsupportedOperationException("Restart Manager API not implemented - using handle.exe fallback");
+    }
+
+    /**
+     * Get locking processes using handle.exe tool.
+     */
+    private static List<ProcessInfo> getLockingProcessesViaHandleExe(String filePath) throws Exception {
+        List<ProcessInfo> processes = new ArrayList<>();
+
+        // Run handle.exe -a <filepath>
+        ProcessBuilder pb = new ProcessBuilder("handle.exe", "-a", filePath);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            boolean inResults = false;
+
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+
+                if (line.isEmpty()) continue;
+
+                // Look for the start of results
+                if (line.contains("Handle v")) {
+                    inResults = true;
+                    continue;
+                }
+
+                if (!inResults) continue;
+
+                // Parse lines like: java.exe           pid: 1234   type: File           1AB0: C:\path\to\file.lock
+                if (line.matches("^[a-zA-Z0-9_\\.]+\\s+pid:\\s+\\d+.*")) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length >= 3 && parts[1].equals("pid:")) {
+                        try {
+                            String processName = parts[0];
+                            int processId = Integer.parseInt(parts[2]);
+                            processes.add(new ProcessInfo(processId, processName));
+                        } catch (NumberFormatException e) {
+                            // Skip invalid lines
+                        }
+                    }
+                }
+            }
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new Exception("handle.exe exited with code " + exitCode);
+        }
+
+        return processes;
+    }
+
+    /**
+     * Kill a process by PID, trying regular taskkill first, then UAC elevation.
+     */
+    private static boolean killProcess(int processId) {
+        try {
+            // Try regular taskkill first
+            if (killProcessRegular(processId)) {
+                return true;
+            }
+
+            // Fall back to UAC elevation
+            return killProcessElevated(processId);
+
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Kill process using regular taskkill (no elevation).
+     */
+    private static boolean killProcessRegular(int processId) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder("taskkill.exe", "/PID", String.valueOf(processId), "/T", "/F");
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        int exitCode = process.waitFor();
+        return exitCode == 0;
+    }
+
+    /**
+     * Kill process using taskkill with UAC elevation.
+     */
+    private static boolean killProcessElevated(int processId) throws Exception {
+        // Use PowerShell to run taskkill with RunAs verb
+        ProcessBuilder pb = new ProcessBuilder(
+            "powershell.exe",
+            "-Command",
+            "Start-Process -FilePath 'taskkill.exe' -ArgumentList '/PID', '" + processId + "', '/T', '/F' -Verb RunAs -Wait"
+        );
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        int exitCode = process.waitFor();
+        return exitCode == 0;
+    }
+
+    /**
+     * Simple process info container.
+     */
+    private static class ProcessInfo {
+        final int processId;
+        final String processName;
+
+        ProcessInfo(int processId, String processName) {
+            this.processId = processId;
+            this.processName = processName;
         }
     }
 

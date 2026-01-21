@@ -1,6 +1,7 @@
 [
   "tests/test_cli_e2e.py::TestBinaryAutoImport::test_imports_test_binary",
   "tests/test_cli_e2e.py::TestCLIStartup::test_cli_initializes_successfully",
+  "tests/test_cli_e2e.py::TestCLIStartup::test_cli_starts_even_if_project_is_locked",
   "tests/test_cli_e2e.py::TestCLIStartup::test_server_capabilities",
   "tests/test_cli_e2e.py::TestCLIStartup::test_server_info_is_correct",
   "tests/test_cli_e2e.py::TestErrorHandling::test_handles_invalid_tool_arguments",

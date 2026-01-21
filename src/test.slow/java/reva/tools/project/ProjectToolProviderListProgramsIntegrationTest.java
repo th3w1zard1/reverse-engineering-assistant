@@ -77,40 +77,6 @@ public class ProjectToolProviderListProgramsIntegrationTest extends RevaIntegrat
     }
 
     @Test
-    public void testListProjectFilesOnlyCheckedOut() throws Exception {
-        withMcpClient(createMcpTransport(), client -> {
-            client.initialize();
-
-            // Call list-project-files with onlyShowCheckedOutPrograms=true
-            Map<String, Object> args = new HashMap<>();
-            args.put("folderPath", "/");
-            args.put("recursive", true);
-            args.put("onlyShowCheckedOutPrograms", true);
-
-            CallToolResult result = client.callTool(new CallToolRequest("list-project-files", args));
-
-            assertNotNull("Result should not be null", result);
-            assertNotNull("Response content should not be null", result.content());
-            assertTrue("Should have at least one content item", !result.content().isEmpty());
-
-            // Parse the response
-            String responseJson = ((TextContent) result.content().get(0)).text();
-            JsonNode response = objectMapper.readTree(responseJson);
-
-            // Should have metadata with onlyShowCheckedOutPrograms=true
-            if (response.isArray() && response.size() > 0) {
-                JsonNode metadata = response.get(0);
-                if (metadata.has("onlyShowCheckedOutPrograms")) {
-                    assertTrue("onlyShowCheckedOutPrograms should be true", 
-                        metadata.get("onlyShowCheckedOutPrograms").asBoolean());
-                }
-            }
-
-            return null;
-        });
-    }
-
-    @Test
     public void testListOpenProgramsShowsAllPrograms() throws Exception {
         withMcpClient(createMcpTransport(), client -> {
             client.initialize();
@@ -132,43 +98,7 @@ public class ProjectToolProviderListProgramsIntegrationTest extends RevaIntegrat
                 // Should have metadata
                 if (response.isArray() && response.size() > 0) {
                     JsonNode metadata = response.get(0);
-                    if (metadata.has("onlyCheckedOut")) {
-                        assertFalse("onlyCheckedOut should be false", 
-                            metadata.get("onlyCheckedOut").asBoolean());
-                    }
-                }
-            }
-
-            return null;
-        });
-    }
-
-    @Test
-    public void testListOpenProgramsOnlyCheckedOut() throws Exception {
-        withMcpClient(createMcpTransport(), client -> {
-            client.initialize();
-
-            // Call list-open-programs with onlyShowCheckedOutPrograms=true
-            Map<String, Object> args = new HashMap<>();
-            args.put("onlyShowCheckedOutPrograms", true);
-
-            CallToolResult result = client.callTool(new CallToolRequest("list-open-programs", args));
-
-            assertNotNull("Result should not be null", result);
-            assertNotNull("Response content should not be null", result.content());
-
-            // Should not be an error
-            if (!result.content().isEmpty()) {
-                String responseJson = ((TextContent) result.content().get(0)).text();
-                JsonNode response = objectMapper.readTree(responseJson);
-
-                // Should have metadata with onlyCheckedOut=true
-                if (response.isArray() && response.size() > 0) {
-                    JsonNode metadata = response.get(0);
-                    if (metadata.has("onlyCheckedOut")) {
-                        assertTrue("onlyCheckedOut should be true", 
-                            metadata.get("onlyCheckedOut").asBoolean());
-                    }
+                    assertNotNull("metadata should not be null", metadata);
                 }
             }
 

@@ -12,11 +12,19 @@ Fixture Scopes:
 - function: Created for each test function (server, mcp_client)
 """
 
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator
+
 import pytest
 import pytest_asyncio
-import sys
-import os
-from pathlib import Path
+
+if TYPE_CHECKING:
+    from mcp.client.session import ClientSession
+    from reva.headless import RevaHeadlessLauncher  # pyright: ignore[reportMissingImports]
 
 
 @pytest.fixture(scope="session")
@@ -44,7 +52,7 @@ def ghidra_initialized():
 
 
 @pytest.fixture(scope="session")
-def test_program(ghidra_initialized):
+def test_program(ghidra_initialized: bool):
     """
     Create a test program with memory and strings.
 
@@ -78,7 +86,7 @@ def test_program(ghidra_initialized):
     yield program
 
     # Cleanup: Dispose builder (which releases the program)
-    if builder:
+    if builder is not None:
         try:
             builder.dispose()
             print("[Fixture] Test program builder disposed")
@@ -87,7 +95,7 @@ def test_program(ghidra_initialized):
 
 
 @pytest.fixture
-def server(ghidra_initialized):
+def server(ghidra_initialized: bool):
     """
     Start a ReVa headless server for a test.
 
@@ -102,11 +110,11 @@ def server(ghidra_initialized):
     Raises:
         AssertionError: If server fails to start or become ready within 30 seconds
     """
-    from reva.headless import RevaHeadlessLauncher
+    from reva.headless import RevaHeadlessLauncher  # pyright: ignore[reportMissingImports]
 
     launcher = RevaHeadlessLauncher()
 
-    print(f"\n[Fixture] Starting ReVa headless server...")
+    print("\n[Fixture] Starting ReVa headless server...")
     launcher.start()
 
     # Wait for server to be ready (30 second timeout)
@@ -125,7 +133,9 @@ def server(ghidra_initialized):
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def mcp_client(server):
+async def mcp_client(
+    server: RevaHeadlessLauncher,
+) -> AsyncGenerator[ClientSession, Any]:
     """
     Create an async MCP client helper for making requests.
 
@@ -145,9 +155,10 @@ async def mcp_client(server):
             )
             assert response is not None
     """
-    from mcp.client.streamable_http import streamablehttp_client
-    from mcp import ClientSession
     import asyncio
+
+    from mcp.client.session import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
 
     port = server.getPort()
     url = f"http://localhost:{port}/mcp/message"
@@ -156,15 +167,20 @@ async def mcp_client(server):
 
     try:
         # Use the streamable HTTP client from MCP SDK
-        async with streamablehttp_client(url, timeout=30.0) as (read_stream, write_stream, get_session_id):
+        async with streamablehttp_client(url, timeout=30.0) as (
+            read_stream,
+            write_stream,
+            get_session_id,
+        ):
             async with ClientSession(read_stream, write_stream) as session:
                 # Initialize the session
                 try:
                     init_result = await asyncio.wait_for(
-                        session.initialize(),
-                        timeout=60.0
+                        session.initialize(), timeout=60.0
                     )
-                    print(f"[Fixture] MCP HTTP session initialized: {init_result.serverInfo.name} v{init_result.serverInfo.version}")
+                    print(
+                        f"[Fixture] MCP HTTP session initialized: {init_result.serverInfo.name} v{init_result.serverInfo.version}"
+                    )
                 except asyncio.TimeoutError:
                     raise TimeoutError(
                         "MCP HTTP session initialization timed out after 60 seconds. "
@@ -183,8 +199,9 @@ async def mcp_client(server):
 # CLI-Specific Fixtures
 # ============================================================================
 
+
 @pytest.fixture
-def isolated_workspace(tmp_path, monkeypatch):
+def isolated_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Path, Any, None]:
     """
     Create an isolated workspace for CLI tests.
 
@@ -214,7 +231,7 @@ def isolated_workspace(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def test_binary(isolated_workspace):
+def test_binary(isolated_workspace: Path) -> Generator[Path, Any, None]:
     """
     Create a minimal test binary for import testing.
 
@@ -236,13 +253,15 @@ def test_binary(isolated_workspace):
     binary_path = isolated_workspace / "test.exe"
     create_minimal_binary(binary_path)
 
-    print(f"[Fixture] Created test binary: {binary_path} ({binary_path.stat().st_size} bytes)")
+    print(
+        f"[Fixture] Created test binary: {binary_path} ({binary_path.stat().st_size} bytes)"
+    )
 
     yield binary_path
 
 
 @pytest.fixture
-def cli_process(isolated_workspace):
+def cli_process(isolated_workspace: Path) -> Generator[subprocess.Popen, Any, None]:
     """
     Start mcp-reva CLI as a subprocess.
 
@@ -264,7 +283,7 @@ def cli_process(isolated_workspace):
     import subprocess
     import time
 
-    print(f"\n[Fixture] Starting mcp-reva CLI subprocess...")
+    print("\n[Fixture] Starting mcp-reva CLI subprocess...")
 
     proc = subprocess.Popen(
         ["uv", "run", "mcp-reva"],
@@ -272,7 +291,7 @@ def cli_process(isolated_workspace):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        cwd=isolated_workspace
+        cwd=isolated_workspace,
     )
 
     # Give it a moment to start
@@ -293,15 +312,15 @@ def cli_process(isolated_workspace):
 
     try:
         proc.wait(timeout=5)
-        print(f"[Fixture] Process terminated gracefully")
+        print("[Fixture] Process terminated gracefully")
     except subprocess.TimeoutExpired:
-        print(f"[Fixture] Process didn't terminate, killing...")
+        print("[Fixture] Process didn't terminate, killing...")
         proc.kill()
         proc.wait()
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def mcp_stdio_client(isolated_workspace):
+async def mcp_stdio_client(isolated_workspace: Path) -> AsyncGenerator[ClientSession, Any]:
     """
     Create an MCP client that connects to mcp-reva via stdio.
 
@@ -324,17 +343,17 @@ async def mcp_stdio_client(isolated_workspace):
         This is a known pytest-asyncio/anyio compatibility issue that
         doesn't affect functionality.
     """
-    from mcp.client.stdio import stdio_client, StdioServerParameters
-    from mcp import ClientSession
-    from pathlib import Path
     import asyncio
+
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
 
     # Configure mcp-reva as stdio server
     server_params = StdioServerParameters(
         command="uv",
         args=["run", "mcp-reva"],
         cwd=str(isolated_workspace),
-        env=os.environ.copy()
+        env=os.environ.copy(),
     )
 
     print(f"\n[Fixture] Starting mcp-reva via stdio_client in {isolated_workspace}...")
@@ -348,7 +367,9 @@ async def mcp_stdio_client(isolated_workspace):
             await session.__aenter__()
 
             try:
-                print("[Fixture] Subprocess started, waiting for initialization to complete...")
+                print(
+                    "[Fixture] Subprocess started, waiting for initialization to complete..."
+                )
 
                 # Give subprocess time to complete blocking initialization
                 # (PyGhidra, project, server startup happens before stdio bridge starts)
@@ -360,9 +381,11 @@ async def mcp_stdio_client(isolated_workspace):
                 try:
                     init_result = await asyncio.wait_for(
                         session.initialize(),
-                        timeout=60.0  # Initialization is fast, but allow buffer for CI overhead
+                        timeout=60.0,  # Initialization is fast, but allow buffer for CI overhead
                     )
-                    print(f"[Fixture] MCP session initialized: {init_result.serverInfo.name} v{init_result.serverInfo.version}")
+                    print(
+                        f"[Fixture] MCP session initialized: {init_result.serverInfo.name} v{init_result.serverInfo.version}"
+                    )
                 except asyncio.TimeoutError:
                     raise TimeoutError(
                         "MCP session initialization timed out after 60 seconds. "
@@ -387,4 +410,6 @@ async def mcp_stdio_client(isolated_workspace):
         # This is a known pytest-asyncio/anyio compatibility issue
         if "cancel scope" not in str(e):
             raise
-        print(f"[Fixture] Suppressed expected cancel scope error during stdio_client cleanup")
+        print(
+            "[Fixture] Suppressed expected cancel scope error during stdio_client cleanup"
+        )

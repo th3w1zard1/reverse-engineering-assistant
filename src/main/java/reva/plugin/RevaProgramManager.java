@@ -278,11 +278,10 @@ public class RevaProgramManager {
     }
 
     /**
-     * Get all program domain files from the project, optionally filtered by checkout status.
-     * @param onlyCheckedOut If true, only return programs that are checked out (or not versioned)
+     * Get all program domain files from the project.
      * @return List of DomainFile objects for all programs in the project
      */
-    public static List<DomainFile> getAllProgramFiles(boolean onlyCheckedOut) {
+    public static List<DomainFile> getAllProgramFiles() {
         List<DomainFile> programFiles = new ArrayList<>();
         Project project = AppInfo.getActiveProject();
         if (project == null) {
@@ -291,7 +290,7 @@ public class RevaProgramManager {
 
         try {
             DomainFolder rootFolder = project.getProjectData().getRootFolder();
-            collectProgramFilesRecursive(rootFolder, programFiles, onlyCheckedOut);
+            collectProgramFilesRecursive(rootFolder, programFiles);
         } catch (Exception e) {
             Msg.debug(RevaProgramManager.class, "Error collecting program files from project: " + e.getMessage());
         }
@@ -303,9 +302,8 @@ public class RevaProgramManager {
      * Recursively collect program domain files from a domain folder.
      * @param folder The folder to search
      * @param programFiles The list to add domain files to
-     * @param onlyCheckedOut If true, only include programs that are checked out (or not versioned)
      */
-    private static void collectProgramFilesRecursive(DomainFolder folder, List<DomainFile> programFiles, boolean onlyCheckedOut) {
+    private static void collectProgramFilesRecursive(DomainFolder folder, List<DomainFile> programFiles) {
         if (folder == null) {
             return;
         }
@@ -313,22 +311,13 @@ public class RevaProgramManager {
         // Add programs in this folder
         for (DomainFile file : folder.getFiles()) {
             if ("Program".equals(file.getContentType())) {
-                // If filtering by checkout status, check the file's state
-                if (onlyCheckedOut) {
-                    // Include if not versioned (always accessible) or if checked out
-                    if (!file.isVersioned() || file.isCheckedOut()) {
-                        programFiles.add(file);
-                    }
-                } else {
-                    // Include all programs
-                    programFiles.add(file);
-                }
+                programFiles.add(file);
             }
         }
 
         // Recurse into subfolders
         for (DomainFolder subfolder : folder.getFolders()) {
-            collectProgramFilesRecursive(subfolder, programFiles, onlyCheckedOut);
+            collectProgramFilesRecursive(subfolder, programFiles);
         }
     }
 

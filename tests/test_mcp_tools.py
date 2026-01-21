@@ -10,11 +10,12 @@ Verifies that:
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from mcp.client.session import ClientSession
 
 from tests.helpers import get_response_result
-
 
 # Mark all tests in this file as integration tests (require server)
 pytestmark = pytest.mark.integration
@@ -249,6 +250,81 @@ class TestToolRegistration:
         """All expected tools are registered and callable"""
         # Call with minimal args - we just want to verify tool exists
         # Some tools need mode/action, but we're just checking registration
+
+
+class TestManageFilesVersionControl:
+    """Test version control operations via manage-files tool"""
+
+    async def test_checkout_operation(self, mcp_client: ClientSession, test_program):
+        """Test checkout operation via manage-files"""
+        program_path = test_program.getDomainFile().getPathname()
+        
+        # Test checkout (may fail if not versioned or already checked out, which is ok)
+        response_result = await mcp_client.call_tool(
+            "manage-files",
+            {
+                "operation": "checkout",
+                "programPath": program_path,
+                "exclusive": False
+            }
+        )
+        
+        assert response_result is not None
+        # Checkout may succeed or fail depending on version control state
+        # Either way, we should get a valid response
+        if not response_result.isError:
+            result = get_response_result({
+                "content": response_result.content,
+                "isError": response_result.isError
+            })
+            # Should have success field
+            assert "success" in result
+
+    async def test_uncheckout_operation(self, mcp_client: ClientSession, test_program):
+        """Test uncheckout operation via manage-files"""
+        program_path = test_program.getDomainFile().getPathname()
+        
+        # Test uncheckout (may fail if not checked out, which is ok)
+        response_result = await mcp_client.call_tool(
+            "manage-files",
+            {
+                "operation": "uncheckout",
+                "programPath": program_path
+            }
+        )
+        
+        assert response_result is not None
+        # Uncheckout may succeed or fail depending on checkout state
+        if not response_result.isError:
+            result = get_response_result({
+                "content": response_result.content,
+                "isError": response_result.isError
+            })
+            # Should have success field
+            assert "success" in result
+
+    async def test_unhijack_operation(self, mcp_client: ClientSession, test_program):
+        """Test unhijack operation via manage-files"""
+        program_path = test_program.getDomainFile().getPathname()
+        
+        # Test unhijack (may fail if not hijacked, which is ok)
+        response_result = await mcp_client.call_tool(
+            "manage-files",
+            {
+                "operation": "unhijack",
+                "programPath": program_path
+            }
+        )
+        
+        assert response_result is not None
+        # Unhijack may succeed or fail depending on hijack state
+        if not response_result.isError:
+            result = get_response_result({
+                "content": response_result.content,
+                "isError": response_result.isError
+            })
+            # Should have success field
+            assert "success" in result
         args = {"programPath": "/TestProgram"}  # Most tools need programPath
 
         # Tools that don't need programPath

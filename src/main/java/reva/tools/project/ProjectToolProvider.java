@@ -18,6 +18,7 @@ package reva.tools.project;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -73,12 +74,12 @@ import ghidra.framework.client.ClientAuthenticator;
 import ghidra.framework.client.ClientUtil;
 import ghidra.framework.client.PasswordClientAuthenticator;
 import ghidra.framework.store.LockException;
+import ghidra.program.model.lang.CompilerSpecNotFoundException;
 import ghidra.program.model.listing.IncompatibleLanguageException;
 import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.VersionException;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
-import reva.debug.DebugCaptureService;
 import reva.plugin.RevaProgramManager;
 import reva.plugin.ConfigManager;
 import reva.tools.AbstractToolProvider;
@@ -123,7 +124,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
         registerAnalyzeProgramTool();
         registerChangeProcessorTool();
         registerManageFilesTool();
-        registerCaptureDebugInfoTool();
 
         // Available in all modes - opens project or program based on path
         registerOpenTool();
@@ -337,11 +337,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
             "Path to the folder to list contents of. Use '/' for the root folder."
         ));
         properties.put("recursive", SchemaUtil.booleanPropertyWithDefault(
-            "Whether to list files recursively", false
-        ));
-        properties.put("onlyShowCheckedOutPrograms", SchemaUtil.booleanPropertyWithDefault(
-            "If true, only show programs that are checked out (or not versioned). Only applies when listing files of type 'Program'. Defaults to false to show all programs.",
-            false
+            "Whether to list files recursively", true
         ));
 
         List<String> required = List.of("folderPath");
@@ -370,9 +366,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
             // Get the recursive flag
             boolean recursive = getOptionalBoolean(request, "recursive", false);
             
-            // Get the onlyShowCheckedOutPrograms flag
-            boolean onlyCheckedOut = getOptionalBoolean(request, "onlyShowCheckedOutPrograms", false);
-            
             // If incorrect arguments, force recursive=true to show full list
             if (hasIncorrectArgs) {
                 recursive = true;
@@ -384,17 +377,40 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 return createErrorResult("No active project found");
             }
 
-            // Get the folder from the path
+            // CRITICAL: Refresh project data FIRST to ensure getFiles() returns fresh data, not cached data
+            // According to Ghidra API docs, getFiles() "may return cached information and does not force a full refresh"
+            // We must call refresh(true) to sync the Domain folder/file structure with the underlying file structure
+            try {
+                project.getProjectData().refresh(true); // true = refresh all folders, not just previously visited ones
+                Msg.info(this, "Refreshed project data before listing files");
+            } catch (Exception e) {
+                Msg.warn(this, "Error refreshing project data (continuing anyway): " + e.getMessage());
+                // Continue anyway - cached data is better than no data
+            }
+
+            // CRITICAL: Get the folder AFTER refresh to ensure we have a fresh reference
+            // Folder references obtained before refresh() may be stale and return cached file lists
             DomainFolder folder;
             if (folderPath.equals("/")) {
                 folder = project.getProjectData().getRootFolder();
             } else {
+                // Try to get folder - if it doesn't exist, it might be because it hasn't been discovered yet
                 folder = project.getProjectData().getFolder(folderPath);
+                if (folder == null && recursive) {
+                    // If recursive and folder not found, try to discover it by walking from root
+                    Msg.debug(this, "Folder not found at path: " + folderPath + ", attempting discovery from root");
+                    folder = project.getProjectData().getRootFolder();
+                    // Will discover all folders recursively anyway
+                }
             }
 
             if (folder == null) {
                 return createErrorResult("Folder not found: " + folderPath);
             }
+            
+            // Additional safety: Log folder info to verify we have the right folder
+            Msg.debug(this, "Using folder: " + folder.getName() + " at path: " + folder.getPathname() + 
+                " (requested: " + folderPath + ")");
 
             // Get files and folders in the specified path
             List<Map<String, Object>> filesList = new ArrayList<>();
@@ -404,29 +420,55 @@ public class ProjectToolProvider extends AbstractToolProvider {
             metadataInfo.put("folderPath", folderPath);
             metadataInfo.put("folderName", folder.getName());
             metadataInfo.put("isRecursive", recursive);
-            metadataInfo.put("onlyShowCheckedOutPrograms", onlyCheckedOut);
 
             // Get the files and folders
+            // Use folderPath as prefix (ensure it ends with / for proper path construction)
+            String pathPrefix = (
+                folderPath.equals("/")
+                ? ""
+                : (folderPath.endsWith("/")
+                    ? folderPath
+                    : folderPath + "/"
+            ));
+            
+            // Collect files and folders
             if (recursive) {
-                collectFilesRecursive(folder, filesList, "", onlyCheckedOut);
+                collectFilesRecursive(folder, filesList, pathPrefix);
             } else {
-                collectFilesInFolder(folder, filesList, "", onlyCheckedOut);
+                collectFilesInFolder(folder, filesList, pathPrefix);
+            }
+
+            // Log for debugging - helps diagnose collection issues
+            Msg.info(this, "=== DIAGNOSTIC: list-project-files ===");
+            Msg.info(this, "folderPath=" + folderPath + ", recursive=" + recursive);
+            Msg.info(this, "Folder name: " + folder.getName() + ", pathname: " + folder.getPathname());
+            Msg.info(this, "Collected " + filesList.size() + " items total");
+            
+            // Also try using getAllProgramFiles() as a cross-check
+            try {
+                List<DomainFile> allProgramFiles = RevaProgramManager.getAllProgramFiles();
+                Msg.info(this, "Cross-check: getAllProgramFiles() found " + allProgramFiles.size() + " program files");
+                for (DomainFile progFile : allProgramFiles) {
+                    Msg.debug(this, "  Program file: " + progFile.getPathname());
+                }
+            } catch (Exception e) {
+                Msg.warn(this, "Error in cross-check getAllProgramFiles(): " + e.getMessage());
             }
 
             metadataInfo.put("itemCount", filesList.size());
 
-            // Create combined result
-            List<Object> resultData = new ArrayList<>();
+            // Create combined result as single JSON object for better MCP client compatibility
+            // Some MCP clients may only show the first content item from multi-content responses
+            Map<String, Object> combinedResult = new HashMap<>();
+            combinedResult.put("metadata", metadataInfo);
+            combinedResult.put("items", filesList);
             
-            // If incorrect arguments, add error message first
+            // If incorrect arguments, add error message
             if (hasIncorrectArgs) {
-                resultData.add(createIncorrectArgsErrorMap());
+                combinedResult.put("error", createIncorrectArgsErrorMap());
             }
-            
-            resultData.add(metadataInfo);
-            resultData.addAll(filesList);
 
-            return createMultiJsonResult(resultData);
+            return createJsonResult(combinedResult);
         });
     }
 
@@ -436,10 +478,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
     private void registerListOpenProgramsTool() {
         // Define schema for the tool
         Map<String, Object> properties = new HashMap<>();
-        properties.put("onlyShowCheckedOutPrograms", SchemaUtil.booleanPropertyWithDefault(
-            "If true, only show programs that are checked out (or not versioned). Defaults to false to show all programs.",
-            false
-        ));
         // This tool doesn't require any parameters
         List<String> required = new ArrayList<>();
 
@@ -447,25 +485,17 @@ public class ProjectToolProvider extends AbstractToolProvider {
         McpSchema.Tool tool = McpSchema.Tool.builder()
             .name("list-open-programs")
             .title("List Programs")
-            .description("List all programs in the Ghidra project (not just open ones). Use onlyShowCheckedOutPrograms to filter by checkout status.")
+            .description("List all programs in the Ghidra project (not just open ones).")
             .inputSchema(createSchema(properties, required))
             .build();
 
         // Register the tool with a handler
         registerTool(tool, (exchange, request) -> {
-            // Get the filter parameter
-            boolean onlyCheckedOut = getOptionalBoolean(request, "onlyShowCheckedOutPrograms", false);
-
-            // Get all program files from the project
-            List<ghidra.framework.model.DomainFile> programFiles = RevaProgramManager.getAllProgramFiles(onlyCheckedOut);
-
-            if (programFiles.isEmpty()) {
-                return createErrorResult("No programs found in the project" + (onlyCheckedOut ? " (filtered to checked out programs only)" : ""));
-            }
-
-            // Create program info for each program file
+            // Create combined result - add metadata first, then program data
+            List<Object> resultData = new ArrayList<>();
             List<Map<String, Object>> programsData = new ArrayList<>();
-            for (ghidra.framework.model.DomainFile domainFile : programFiles) {
+            
+            for (DomainFile domainFile : RevaProgramManager.getAllProgramFiles()) {
                 try {
                     Map<String, Object> programInfo = new HashMap<>();
                     programInfo.put("programPath", domainFile.getPathname());
@@ -500,10 +530,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
             // Create metadata
             Map<String, Object> metadataInfo = new HashMap<>();
             metadataInfo.put("count", programsData.size());
-            metadataInfo.put("onlyCheckedOut", onlyCheckedOut);
-
-            // Create combined result
-            List<Object> resultData = new ArrayList<>();
             resultData.add(metadataInfo);
             resultData.addAll(programsData);
 
@@ -684,6 +710,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param folder The folder to collect from
      * @param programPaths List to accumulate program paths
      */
+    @SuppressWarnings("unused")
     private void collectAllProgramPaths(DomainFolder folder, List<String> programPaths) {
         // Collect programs in this folder
         for (DomainFile file : folder.getFiles()) {
@@ -709,7 +736,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param errors List to track errors
      * @param monitor Task monitor for cancellation and timeout checking
      */
-    private void collectImportedFiles(DomainFolder destFolder, String importedBaseName,
+    @SuppressWarnings("unused")
+	private void collectImportedFiles(DomainFolder destFolder, String importedBaseName,
                                      boolean analyzeAfterImport, int analysisTimeoutSeconds,
                                      List<String> versionedFiles, List<String> analyzedFiles,
                                      List<String> errors, TaskMonitor monitor) {
@@ -791,74 +819,150 @@ public class ProjectToolProvider extends AbstractToolProvider {
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
-     * @param onlyCheckedOut If true, only include programs that are checked out (or not versioned)
      */
-    private void collectFilesInFolder(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix, boolean onlyCheckedOut) {
-        // Add subfolders first
-        for (DomainFolder subfolder : folder.getFolders()) {
-            Map<String, Object> folderInfo = new HashMap<>();
-            folderInfo.put("folderPath", pathPrefix + subfolder.getName());
-            folderInfo.put("type", "folder");
-            folderInfo.put("childCount", subfolder.getFiles().length + subfolder.getFolders().length);
-            filesList.add(folderInfo);
+    private void collectFilesInFolder(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix) {
+        if (folder == null) {
+            Msg.warn(this, "collectFilesInFolder: folder is null");
+            return;
         }
 
-        // Add files
-        for (DomainFile file : folder.getFiles()) {
-            // If filtering by checkout status, only include programs that are checked out (or not versioned)
-            if (onlyCheckedOut && "Program".equals(file.getContentType())) {
-                if (file.isVersioned() && !file.isCheckedOut()) {
-                    // Skip versioned programs that are not checked out
-                    continue;
+        // Add subfolders first
+        try {
+            DomainFolder[] subfolders = folder.getFolders();
+            Msg.debug(this, "collectFilesInFolder: found " + subfolders.length + " subfolders in: " + folder.getPathname());
+            for (DomainFolder subfolder : subfolders) {
+                try {
+                    Map<String, Object> folderInfo = new HashMap<>();
+                    String folderPath = pathPrefix.isEmpty() ? "/" + subfolder.getName() : pathPrefix + subfolder.getName();
+                    folderInfo.put("folderPath", folderPath);
+                    folderInfo.put("type", "folder");
+                    
+                    // Get child count - this forces discovery of files/folders in this subfolder
+                    try {
+                        int fileCount = subfolder.getFiles().length;
+                        int folderCount = subfolder.getFolders().length;
+                        folderInfo.put("childCount", fileCount + folderCount);
+                        Msg.debug(this, "Subfolder " + subfolder.getPathname() + " has " + fileCount + " files, " + folderCount + " subfolders");
+                    } catch (Exception e) {
+                        folderInfo.put("childCount", 0);
+                        Msg.debug(this, "Could not get child count for subfolder " + subfolder.getPathname() + ": " + e.getMessage());
+                    }
+                    
+                    filesList.add(folderInfo);
+                } catch (Exception e) {
+                    Msg.warn(this, "Error processing subfolder: " + e.getMessage());
+                    // Continue with next subfolder
                 }
             }
+        } catch (Exception e) {
+            Msg.warn(this, "Error getting subfolders from " + folder.getName() + ": " + e.getMessage());
+        }
 
-            Map<String, Object> fileInfo = new HashMap<>();
-            fileInfo.put("programPath", file.getPathname());
-            fileInfo.put("type", "file");
-            fileInfo.put("contentType", file.getContentType());
-            fileInfo.put("lastModified", file.getLastModifiedTime());
-            fileInfo.put("readOnly", file.isReadOnly());
-            fileInfo.put("versioned", file.isVersioned());
-            fileInfo.put("checkedOut", file.isCheckedOut());
-
-            // Add program-specific metadata when available
-            if (file.getContentType().equals("Program")) {
+        // Add files - collect ALL files, not just Programs
+        try {
+            DomainFile[] files = folder.getFiles();
+            Msg.info(this, "collectFilesInFolder: found " + files.length + " files in folder: " + folder.getPathname());
+            
+            // Count by content type for diagnostics
+            Map<String, Integer> contentTypeCounts = new HashMap<>();
+            for (DomainFile file : files) {
+                String contentType = file.getContentType();
+                contentTypeCounts.put(contentType, contentTypeCounts.getOrDefault(contentType, 0) + 1);
+            }
+            Msg.info(this, "File type breakdown: " + contentTypeCounts);
+            
+            for (DomainFile file : files) {
                 try {
-                    if (file.getMetadata() != null) {
-                        Object languageObj = file.getMetadata().get("CREATED_WITH_LANGUAGE");
-                        if (languageObj != null) {
-                            fileInfo.put("programLanguage", languageObj);
-                        }
-                        Object md5Obj = file.getMetadata().get("Executable MD5");
-                        if (md5Obj != null) {
-                            fileInfo.put("executableMD5", md5Obj);
+                    Map<String, Object> fileInfo = new HashMap<>();
+                    fileInfo.put("programPath", file.getPathname());
+                    fileInfo.put("type", "file");
+                    fileInfo.put("contentType", file.getContentType());
+                    fileInfo.put("lastModified", file.getLastModifiedTime());
+                    fileInfo.put("readOnly", file.isReadOnly());
+                    fileInfo.put("versioned", file.isVersioned());
+                    fileInfo.put("checkedOut", file.isCheckedOut());
+                    
+                    Msg.debug(this, "  Adding file: " + file.getPathname() + " (type: " + file.getContentType() + ")");
+
+                    // Add program-specific metadata when available
+                    if (file.getContentType().equals("Program")) {
+                        try {
+                            if (file.getMetadata() != null) {
+                                Object languageObj = file.getMetadata().get("CREATED_WITH_LANGUAGE");
+                                if (languageObj != null) {
+                                    fileInfo.put("programLanguage", languageObj);
+                                }
+                                Object md5Obj = file.getMetadata().get("Executable MD5");
+                                if (md5Obj != null) {
+                                    fileInfo.put("executableMD5", md5Obj);
+                                }
+                            }
+                        } catch (Exception e) {
+                            // Ignore metadata errors - not critical for file listing
+                            Msg.debug(this, "Error reading metadata for " + file.getName() + ": " + e.getMessage());
                         }
                     }
+
+                    filesList.add(fileInfo);
                 } catch (Exception e) {
-                    // Ignore metadata errors - not critical for file listing
+                    Msg.warn(this, "Error processing file " + file.getName() + ": " + e.getMessage());
+                    // Continue with next file
                 }
             }
-
-            filesList.add(fileInfo);
+        } catch (Exception e) {
+            Msg.warn(this, "Error getting files from " + folder.getName() + ": " + e.getMessage());
         }
     }
 
     /**
-     * Recursively collect files and subfolders from a folder
+     * Recursively collect files and subfolders from a folder.
+     * Uses aggressive discovery to ensure ALL files are found, even in unvisited folders.
      * @param folder The folder to collect from
      * @param filesList The list to add files to
      * @param pathPrefix The path prefix for subfolder names
-     * @param onlyCheckedOut If true, only include programs that are checked out (or not versioned)
      */
-    private void collectFilesRecursive(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix, boolean onlyCheckedOut) {
+    private void collectFilesRecursive(DomainFolder folder, List<Map<String, Object>> filesList, String pathPrefix) {
+        if (folder == null) {
+            return;
+        }
+        
         // Collect files in current folder
-        collectFilesInFolder(folder, filesList, pathPrefix, onlyCheckedOut);
+        collectFilesInFolder(folder, filesList, pathPrefix);
+
+        // CRITICAL: Get folders AFTER collecting files to ensure fresh discovery
+        // Also try to discover folders by attempting to access them
+        DomainFolder[] subfolders;
+        try {
+            subfolders = folder.getFolders();
+            Msg.debug(this, "collectFilesRecursive: found " + subfolders.length + " subfolders in: " + folder.getPathname());
+        } catch (Exception e) {
+            Msg.warn(this, "Error getting subfolders from " + folder.getPathname() + ": " + e.getMessage());
+            subfolders = new DomainFolder[0];
+        }
 
         // Recursively collect files in subfolders
-        for (DomainFolder subfolder : folder.getFolders()) {
-            String newPrefix = pathPrefix + subfolder.getName() + "/";
-            collectFilesRecursive(subfolder, filesList, newPrefix, onlyCheckedOut);
+        for (DomainFolder subfolder : subfolders) {
+            if (subfolder == null) {
+                continue;
+            }
+            
+            try {
+                String newPrefix;
+                if (pathPrefix.isEmpty()) {
+                    newPrefix = "/" + subfolder.getName() + "/";
+                } else {
+                    newPrefix = pathPrefix.endsWith("/") ? pathPrefix + subfolder.getName() + "/" : pathPrefix + "/" + subfolder.getName() + "/";
+                }
+                
+                // Force discovery by accessing the folder's pathname
+                String subfolderPath = subfolder.getPathname();
+                Msg.debug(this, "Recursing into subfolder: " + subfolderPath);
+                
+                collectFilesRecursive(subfolder, filesList, newPrefix);
+            } catch (Exception e) {
+                Msg.warn(this, "Error processing subfolder " + subfolder.getName() + ": " + e.getMessage());
+                // Continue with next subfolder
+            }
         }
     }
 
@@ -1038,7 +1142,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
             } catch (LanguageNotFoundException e) {
                 return createErrorResult("Language not found: " + languageId);
-            } catch (Exception e) {
+            } catch (LockException | CompilerSpecNotFoundException | IncompatibleLanguageException | IllegalStateException e) {
                 return createErrorResult("Failed to change processor architecture: " + e.getMessage());
             }
         });
@@ -1053,9 +1157,9 @@ public class ProjectToolProvider extends AbstractToolProvider {
 
         // operation parameter (required)
         properties.put("operation", Map.of(
-                "type", "string",
-                "description", "Operation to perform: 'import' (import files into project) or 'export' (export program data to files)",
-                "enum", List.of("import", "export")
+            "type", "string",
+            "description", "Operation to perform: 'import' (import files into project), 'export' (export program data to files), 'checkout' (check out a program from version control), 'uncheckout' (undo checkout and discard changes), or 'unhijack' (unhijack a hijacked file)",
+            "enum", List.of("import", "export", "checkout", "uncheckout", "unhijack")
         ));
 
         // path parameter (required for import)
@@ -1115,11 +1219,14 @@ public class ProjectToolProvider extends AbstractToolProvider {
         properties.put("enableVersionControl", versionControlProperty);
 
         // Export-specific parameters
-        properties.put("programPath", SchemaUtil.stringProperty("For export: Path to the program to export (e.g., '/Hatchery.exe')"));
+        properties.put("programPath", SchemaUtil.stringProperty("For export/checkout/uncheckout/unhijack: Path to the program (e.g., '/Hatchery.exe')"));
+        
+        // Version control parameters
+        properties.put("exclusive", SchemaUtil.booleanPropertyWithDefault("For checkout: Whether to check out exclusively (default: false)", false));
         properties.put("exportType", Map.of(
-                "type", "string",
-                "description", "For export: Type of export: 'program' (export binary), 'function_info' (export function information as JSON/CSV), 'strings' (export strings as text)",
-                "enum", List.of("program", "function_info", "strings")
+            "type", "string",
+            "description", "For export: Type of export: 'program' (export binary), 'function_info' (export function information as JSON/CSV), 'strings' (export strings as text)",
+            "enum", List.of("program", "function_info", "strings")
         ));
         properties.put("format", SchemaUtil.stringProperty("For export: Export format for function_info: 'json' or 'csv' (default: 'json')"));
         properties.put("includeParameters", SchemaUtil.booleanPropertyWithDefault("For export: Include function parameters in function_info export", true));
@@ -1142,11 +1249,14 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 String operation = getString(request, "operation");
 
                 if (null == operation) {
-                    return createErrorResult("Invalid operation: " + operation + ". Must be 'import' or 'export'");
+                    return createErrorResult("Invalid operation: " + operation + ". Must be 'import', 'export', 'checkout', 'uncheckout', or 'unhijack'");
                 } else return switch (operation) {
                     case "import" -> handleImportOperation(exchange, request);
                     case "export" -> handleExportOperation(request);
-                    default -> createErrorResult("Invalid operation: " + operation + ". Must be 'import' or 'export'");
+                    case "checkout" -> handleCheckoutOperation(request);
+                    case "uncheckout" -> handleUncheckoutOperation(request);
+                    case "unhijack" -> handleUnhijackOperation(request);
+                    default -> createErrorResult("Invalid operation: " + operation + ". Must be 'import', 'export', 'checkout', 'uncheckout', or 'unhijack'");
                 };
             } catch (IllegalArgumentException e) {
                 return createErrorResult(e.getMessage());
@@ -1242,8 +1352,8 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Send initial progress notification
         if (exchange != null) {
             exchange.progressNotification(new McpSchema.ProgressNotification(
-                    progressToken, 0.0, (double) totalFiles,
-                    "Starting import of " + totalFiles + " file(s) from " + path + "..."));
+                progressToken, 0.0, (double) totalFiles,
+                "Starting import of " + totalFiles + " file(s) from " + path + "..."));
         }
 
         // Custom import loop - replaces ImportBatchTask to capture actual imported files
@@ -1267,10 +1377,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
             BatchGroupLoadSpec selectedBatchGroupLoadSpec = group.getSelectedBatchGroupLoadSpec();
             if (selectedBatchGroupLoadSpec == null) {
                 detailedErrors.add(Map.of(
-                        "stage", "discovery",
-                        "error", "Enabled group has no selected load spec",
-                        "errorType", "ConfigurationError",
-                        "details", group.getCriteria().toString()
+                    "stage", "discovery",
+                    "error", "Enabled group has no selected load spec",
+                    "errorType", "ConfigurationError",
+                    "details", group.getCriteria().toString()
                 ));
                 continue;
             }
@@ -1286,11 +1396,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
                     LoadSpec loadSpec = config.getLoadSpec(selectedBatchGroupLoadSpec);
                     if (loadSpec == null) {
                         detailedErrors.add(Map.of(
-                                "stage", "import",
-                                "sourceFSRL", config.getFSRL().toString(),
-                                "preferredName", config.getPreferredFileName(),
-                                "error", "No load spec matches selected batch group load spec",
-                                "errorType", "LoadSpecError"
+                            "stage", "import",
+                            "sourceFSRL", config.getFSRL().toString(),
+                            "preferredName", config.getPreferredFileName(),
+                            "error", "No load spec matches selected batch group load spec",
+                            "errorType", "LoadSpecError"
                         ));
                         processedFiles++;
                         continue;
@@ -1536,10 +1646,10 @@ public class ProjectToolProvider extends AbstractToolProvider {
         // Build completion message
         String message = "Import completed. " + importedDomainFiles.size() + " of " +
             batchInfo.getTotalCount() + " files imported";
-        if (analyzeAfterImport && analyzedFiles.size() > 0) {
+        if (analyzeAfterImport && !analyzedFiles.isEmpty()) {
             message += ", " + analyzedFiles.size() + " analyzed";
         }
-        if (enableVersionControl && versionedFiles.size() > 0) {
+        if (enableVersionControl && !versionedFiles.isEmpty()) {
             message += ", " + versionedFiles.size() + " added to version control";
         }
         if (!detailedErrors.isEmpty()) {
@@ -1561,16 +1671,262 @@ public class ProjectToolProvider extends AbstractToolProvider {
         Program program = getProgramFromArgs(request);
         String exportType = getString(request, "exportType");
         String outputPath = getString(request, "path"); // Use 'path' parameter for export output
+        return switch (exportType) {
+            case "program" -> handleExportProgram(program, outputPath);
+            case "function_info" -> handleExportFunctionInfo(program, request, outputPath);
+            case "strings" -> handleExportStrings(program, outputPath);
+            default -> createErrorResult("Invalid export_type: " + exportType);
+        };
+    }
 
-        switch (exportType) {
-            case "program":
-                return handleExportProgram(program, outputPath);
-            case "function_info":
-                return handleExportFunctionInfo(program, request, outputPath);
-            case "strings":
-                return handleExportStrings(program, outputPath);
-            default:
-                return createErrorResult("Invalid export_type: " + exportType);
+    /**
+     * Handle checkout operation for a program
+     */
+    private McpSchema.CallToolResult handleCheckoutOperation(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Get program path
+        String programPath;
+        try {
+            programPath = getString(request, "programPath");
+        } catch (IllegalArgumentException e) {
+            return createErrorResult("programPath parameter is required for checkout operation: " + e.getMessage());
+        }
+
+        // Get exclusive flag (default: false for non-exclusive checkout)
+        boolean exclusive = getOptionalBoolean(request, "exclusive", false);
+
+        // Get the DomainFile for the program
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            return createErrorResult("No active project found");
+        }
+
+        DomainFile domainFile;
+        if (programPath.startsWith("/")) {
+            String relativePath = programPath.substring(1);
+            int lastSlash = relativePath.lastIndexOf('/');
+            if (lastSlash > 0) {
+                String folderPath = "/" + relativePath.substring(0, lastSlash);
+                String fileName = relativePath.substring(lastSlash + 1);
+                DomainFolder folder = project.getProjectData().getFolder(folderPath);
+                if (folder == null) {
+                    return createErrorResult("Folder not found: " + folderPath);
+                }
+                domainFile = folder.getFile(fileName);
+            } else {
+                domainFile = project.getProjectData().getRootFolder().getFile(relativePath);
+            }
+        } else {
+            domainFile = project.getProjectData().getRootFolder().getFile(programPath);
+        }
+
+        if (domainFile == null) {
+            return createErrorResult("Program not found: " + programPath);
+        }
+
+        // Check if already checked out
+        if (domainFile.isCheckedOut()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("action", "already_checked_out");
+            result.put("isCheckedOut", true);
+            result.put("isExclusive", domainFile.isCheckedOutExclusive());
+            result.put("message", "Program is already checked out");
+            return createJsonResult(result);
+        }
+
+        // Check if versioned
+        if (!domainFile.isVersioned()) {
+            return createErrorResult("Program is not under version control: " + programPath);
+        }
+
+        // Perform checkout
+        try {
+            boolean success = domainFile.checkout(exclusive, TaskMonitor.DUMMY);
+            if (!success) {
+                return createErrorResult("Checkout failed. The file may be checked out exclusively by another user: " + programPath);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("action", "checked_out");
+            result.put("isCheckedOut", true);
+            result.put("isExclusive", exclusive);
+            result.put("message", "Program checked out successfully");
+
+            return createJsonResult(result);
+        } catch (CancelledException | IOException e) {
+            return createErrorResult("Checkout failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle uncheckout operation for a program (undo checkout and discard changes)
+     */
+    private McpSchema.CallToolResult handleUncheckoutOperation(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Get program path
+        String programPath;
+        try {
+            programPath = getString(request, "programPath");
+        } catch (IllegalArgumentException e) {
+            return createErrorResult("programPath parameter is required for uncheckout operation: " + e.getMessage());
+        }
+
+        // Get the DomainFile for the program
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            return createErrorResult("No active project found");
+        }
+
+        DomainFile domainFile;
+        if (programPath.startsWith("/")) {
+            String relativePath = programPath.substring(1);
+            int lastSlash = relativePath.lastIndexOf('/');
+            if (lastSlash > 0) {
+                String folderPath = "/" + relativePath.substring(0, lastSlash);
+                String fileName = relativePath.substring(lastSlash + 1);
+                DomainFolder folder = project.getProjectData().getFolder(folderPath);
+                if (folder == null) {
+                    return createErrorResult("Folder not found: " + folderPath);
+                }
+                domainFile = folder.getFile(fileName);
+            } else {
+                domainFile = project.getProjectData().getRootFolder().getFile(relativePath);
+            }
+        } else {
+            domainFile = project.getProjectData().getRootFolder().getFile(programPath);
+        }
+
+        if (domainFile == null) {
+            return createErrorResult("Program not found: " + programPath);
+        }
+
+        // Check if checked out
+        if (!domainFile.isCheckedOut()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("action", "not_checked_out");
+            result.put("isCheckedOut", false);
+            result.put("message", "Program is not checked out");
+            return createJsonResult(result);
+        }
+
+        // Check if versioned
+        if (!domainFile.isVersioned()) {
+            return createErrorResult("Program is not under version control: " + programPath);
+        }
+
+        // Release program from cache if it's cached
+        try {
+            Program program = RevaProgramManager.getProgramByPath(programPath);
+            if (program != null) {
+                RevaProgramManager.releaseProgramFromCache(program);
+            }
+        } catch (Exception e) {
+            Msg.debug(this, "Error releasing program from cache during uncheckout: " + e.getMessage());
+        }
+
+        // Perform undo checkout
+        try {
+            domainFile.undoCheckout(false);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("action", "unchecked_out");
+            result.put("isCheckedOut", false);
+            result.put("message", "Program unchecked out successfully (changes discarded)");
+
+            return createJsonResult(result);
+        } catch (IOException e) {
+            return createErrorResult("Uncheckout failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle unhijack operation for a program (restore hijacked file from repository)
+     */
+    private McpSchema.CallToolResult handleUnhijackOperation(io.modelcontextprotocol.spec.McpSchema.CallToolRequest request) {
+        // Get program path
+        String programPath;
+        try {
+            programPath = getString(request, "programPath");
+        } catch (IllegalArgumentException e) {
+            return createErrorResult("programPath parameter is required for unhijack operation: " + e.getMessage());
+        }
+
+        // Get the DomainFile for the program
+        Project project = AppInfo.getActiveProject();
+        if (project == null) {
+            return createErrorResult("No active project found");
+        }
+
+        DomainFile domainFile;
+        if (programPath.startsWith("/")) {
+            String relativePath = programPath.substring(1);
+            int lastSlash = relativePath.lastIndexOf('/');
+            if (lastSlash > 0) {
+                String folderPath = "/" + relativePath.substring(0, lastSlash);
+                String fileName = relativePath.substring(lastSlash + 1);
+                DomainFolder folder = project.getProjectData().getFolder(folderPath);
+                if (folder == null) {
+                    return createErrorResult("Folder not found: " + folderPath);
+                }
+                domainFile = folder.getFile(fileName);
+            } else {
+                domainFile = project.getProjectData().getRootFolder().getFile(relativePath);
+            }
+        } else {
+            domainFile = project.getProjectData().getRootFolder().getFile(programPath);
+        }
+
+        if (domainFile == null) {
+            return createErrorResult("Program not found: " + programPath);
+        }
+
+        // Check if hijacked
+        if (!domainFile.isHijacked()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("action", "not_hijacked");
+            result.put("isHijacked", false);
+            result.put("message", "Program is not hijacked");
+            return createJsonResult(result);
+        }
+
+        // Check if versioned
+        if (!domainFile.isVersioned()) {
+            return createErrorResult("Program is not under version control: " + programPath);
+        }
+
+        // Release program from cache if it's cached
+        try {
+            Program program = RevaProgramManager.getProgramByPath(programPath);
+            if (program != null) {
+                RevaProgramManager.releaseProgramFromCache(program);
+            }
+        } catch (Exception e) {
+            Msg.debug(this, "Error releasing program from cache during unhijack: " + e.getMessage());
+        }
+
+        // Perform unhijack
+        try {
+            domainFile.undoCheckout(true); // true = keep checked out after restore
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("programPath", programPath);
+            result.put("action", "unhijacked");
+            result.put("isHijacked", false);
+            result.put("isCheckedOut", domainFile.isCheckedOut());
+            result.put("message", "Program unhijacked successfully (restored from repository)");
+
+            return createJsonResult(result);
+        } catch (IOException e) {
+            return createErrorResult("Unhijack failed: " + e.getMessage());
         }
     }
 
@@ -2227,7 +2583,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 Program program;
                 try {
                     program = getProgramFromArgs(request);
-                } catch (Exception e) {
+                } catch (IllegalArgumentException | ProgramValidationException e) {
                     return createErrorResult(e.getMessage());
                 }
 
@@ -2579,47 +2935,6 @@ public class ProjectToolProvider extends AbstractToolProvider {
     }
 
     /**
-     * Register a tool to capture ReVa debug information for troubleshooting.
-     * Creates a zip file with system info, logs, configuration, and open
-     * programs.
-     */
-    private void registerCaptureDebugInfoTool() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("message", Map.of(
-                "type", "string",
-                "description", "Optional message describing the issue being debugged"
-        ));
-
-        List<String> required = new ArrayList<>();
-
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name("capture-reva-debug-info")
-                .title("Capture ReVa Debug Information")
-                .description("Creates a zip file containing ReVa debug information for troubleshooting issues. "
-                        + "Includes system info, Ghidra config, ReVa settings, MCP server status, open programs, and logs.")
-                .inputSchema(createSchema(properties, required))
-                .build();
-
-        registerTool(tool, (exchange, request) -> {
-            String message = getOptionalString(request, "message", null);
-
-            try {
-                DebugCaptureService debugService = new DebugCaptureService();
-                File debugZip = debugService.captureDebugInfo(message);
-
-                Map<String, Object> result = new HashMap<>();
-                result.put("success", true);
-                result.put("debugZipPath", debugZip.getAbsolutePath());
-                result.put("message", "Debug information captured to: " + debugZip.getAbsolutePath());
-
-                return createJsonResult(result);
-            } catch (java.io.IOException e) {
-                return createErrorResult("Failed to capture debug info: " + e.getMessage());
-            }
-        });
-    }
-
-    /**
      * Recursively collect programs matching specified extensions
      *
      * @param folder The folder to search
@@ -2762,8 +3077,7 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 // Use this as the consumer to ensure a stable, non-null reference
                 Object consumer = this;
                 DomainObject domainObject = importedFile.getDomainObject(consumer, false, false, TaskMonitor.DUMMY);
-                if (domainObject instanceof Program) {
-                    Program program = (Program) domainObject;
+                if (domainObject instanceof Program program) {
                     try {
                         AutoAnalysisManager analysisManager = AutoAnalysisManager.getAnalysisManager(program);
                         if (analysisManager != null) {
@@ -2887,13 +3201,11 @@ public class ProjectToolProvider extends AbstractToolProvider {
                 if (includeVars) {
                     List<Map<String, Object>> vars = new ArrayList<>();
                     ghidra.program.model.listing.Parameter[] paramArray = func.getParameters();
-                    Set<ghidra.program.model.listing.Parameter> params = new HashSet<ghidra.program.model.listing.Parameter>();
-                    for (ghidra.program.model.listing.Parameter param : paramArray) {
-                        params.add(param);
-                    }
+                    Set<ghidra.program.model.listing.Parameter> params = new HashSet<>();
+                    params.addAll(Arrays.asList(paramArray));
                     for (ghidra.program.model.listing.Variable var : func.getAllVariables()) {
                         // Skip parameters - they're already included in the parameters list
-                        if (params.contains(var)) {
+                        if (var instanceof ghidra.program.model.listing.Parameter && params.contains((ghidra.program.model.listing.Parameter) var)) {
                             continue;
                         }
                         Map<String, Object> varInfo = new HashMap<>();

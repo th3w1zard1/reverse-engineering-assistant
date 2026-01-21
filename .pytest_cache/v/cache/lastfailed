@@ -43,5 +43,7 @@
   "tests/test_mcp_tools.py::TestToolRegistration::test_tool_is_registered[find-cross-references]": true,
   "tests/test_mcp_tools.py::TestProgramTools::test_list_open_programs_shows_all": true,
   "tests/test_mcp_tools.py::TestProgramTools::test_list_open_programs_only_checked_out": true,
-  "tests/test_cli_e2e.py::TestErrorHandling::test_handles_invalid_tool_arguments": true
+  "tests/test_cli_e2e.py::TestErrorHandling::test_handles_invalid_tool_arguments": true,
+  "tests/test_mcp_tools.py::TestProgramTools::test_list_project_files": true,
+  "tests/test_cli_e2e.py::TestCLIStartup::test_cli_starts_even_if_project_is_locked": true
 }

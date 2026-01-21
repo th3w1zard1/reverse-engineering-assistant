@@ -26,9 +26,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ghidra.framework.model.DomainFile;
+import ghidra.program.model.address.AddressOutOfBoundsException;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.SymbolTable;
+import ghidra.util.exception.InvalidInputException;
 import io.modelcontextprotocol.spec.McpSchema;
 import reva.RevaIntegrationTestBase;
 import reva.plugin.RevaProgramManager;
@@ -38,8 +40,6 @@ import reva.plugin.RevaProgramManager;
  * Tests fix for issue #154 (save before checkin) and save fallback for unversioned files.
  */
 public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegrationTestBase {
-
-    private ObjectMapper objectMapper;
 
     @Before
     public void setUp() {
@@ -74,7 +74,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                     symbolTable.createLabel(testProgram.getAddressFactory().getDefaultAddressSpace().getAddress(0x1000),
                         "test_label", SourceType.USER_DEFINED);
                     testProgram.endTransaction(transactionID, true);
-                } catch (Exception e) {
+                } catch (AddressOutOfBoundsException | InvalidInputException e) {
                     testProgram.endTransaction(transactionID, false);
                     throw e;
                 }
@@ -152,7 +152,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                     symbolTable.createLabel(testProgram.getAddressFactory().getDefaultAddressSpace().getAddress(0x2000),
                         "test_label_unversioned", SourceType.USER_DEFINED);
                     testProgram.endTransaction(transactionID, true);
-                } catch (Exception e) {
+                } catch (AddressOutOfBoundsException | InvalidInputException e) {
                     testProgram.endTransaction(transactionID, false);
                     throw e;
                 }
@@ -237,7 +237,7 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                     symbolTable.createLabel(testProgram.getAddressFactory().getDefaultAddressSpace().getAddress(0x3000),
                         "test_label_message", SourceType.USER_DEFINED);
                     testProgram.endTransaction(transactionID, true);
-                } catch (Exception e) {
+                } catch (AddressOutOfBoundsException | InvalidInputException e) {
                     testProgram.endTransaction(transactionID, false);
                     throw e;
                 }
@@ -273,6 +273,235 @@ public class ProjectToolProviderVersionControlIntegrationTest extends RevaIntegr
                 throw new RuntimeException("Test failed", e);
             } finally {
                 // Clean up the test program
+                if (testProgram != null) {
+                    RevaProgramManager.unregisterProgram(testProgram);
+                    if (serverManager != null) {
+                        serverManager.programClosed(testProgram, tool);
+                    }
+                    testProgram.release(this);
+                }
+            }
+        });
+    }
+
+    /**
+     * Test checkout operation via manage-files tool.
+     */
+    @Test
+    public void testCheckoutOperation() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            Program testProgram = null;
+            try {
+                client.initialize();
+
+                // Create a test program and add it to version control
+                testProgram = createDefaultProgram("test-checkout", "x86:LE:64:default", this);
+                String program_path = testProgram.getDomainFile().getPathname();
+                DomainFile domainFile = testProgram.getDomainFile();
+
+                // Register the program
+                RevaProgramManager.registerProgram(testProgram);
+                if (serverManager != null) {
+                    serverManager.programOpened(testProgram, tool);
+                }
+
+                // Check if version control is available
+                if (!domainFile.canAddToRepository()) {
+                    // Skip test if version control not available
+                    System.out.println("Version control not available, skipping checkout test");
+                    return null;
+                }
+
+                // Add to version control and checkin first
+                testProgram.save("Initial save", null);
+                domainFile.addToVersionControl("Initial checkin", false, null);
+
+                // Release program from cache
+                testProgram.release(this);
+                RevaProgramManager.unregisterProgram(testProgram);
+
+                // Now test checkout
+                McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
+                    "manage-files",
+                    Map.of(
+                        "operation", "checkout",
+                        "programPath", program_path,
+                        "exclusive", false
+                    )
+                ));
+
+                assertNotNull("Result should not be null", result);
+                assertFalse("Tool should not have error", result.isError());
+
+                String responseJson = ((io.modelcontextprotocol.spec.McpSchema.TextContent) result.content().get(0)).text();
+                Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<Map<String, Object>>() {});
+
+                assertTrue("Checkout should be successful", Boolean.TRUE.equals(response.get("success")));
+                assertEquals("Action should be checked_out", "checked_out", response.get("action"));
+                assertTrue("Program should be checked out", Boolean.TRUE.equals(response.get("isCheckedOut")));
+
+                // Verify the domain file is actually checked out
+                assertTrue("Domain file should be checked out", domainFile.isCheckedOut());
+
+                return null;
+            } catch (Exception e) {
+                throw new RuntimeException("Test failed", e);
+            } finally {
+                if (testProgram != null) {
+                    RevaProgramManager.unregisterProgram(testProgram);
+                    if (serverManager != null) {
+                        serverManager.programClosed(testProgram, tool);
+                    }
+                    testProgram.release(this);
+                }
+            }
+        });
+    }
+
+    /**
+     * Test uncheckout operation via manage-files tool.
+     */
+    @Test
+    public void testUncheckoutOperation() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            Program testProgram = null;
+            try {
+                client.initialize();
+
+                // Create a test program and add it to version control
+                testProgram = createDefaultProgram("test-uncheckout", "x86:LE:64:default", this);
+                String program_path = testProgram.getDomainFile().getPathname();
+                DomainFile domainFile = testProgram.getDomainFile();
+
+                // Register the program
+                RevaProgramManager.registerProgram(testProgram);
+                if (serverManager != null) {
+                    serverManager.programOpened(testProgram, tool);
+                }
+
+                // Check if version control is available
+                if (!domainFile.canAddToRepository()) {
+                    System.out.println("Version control not available, skipping uncheckout test");
+                    return null;
+                }
+
+                // Add to version control and checkin first
+                testProgram.save("Initial save", null);
+                domainFile.addToVersionControl("Initial checkin", true, null); // Keep checked out
+
+                // Make some changes
+                int transactionID = testProgram.startTransaction("Add test label");
+                try {
+                    SymbolTable symbolTable = testProgram.getSymbolTable();
+                    symbolTable.createLabel(testProgram.getAddressFactory().getDefaultAddressSpace().getAddress(0x4000),
+                        "test_label_uncheckout", SourceType.USER_DEFINED);
+                    testProgram.endTransaction(transactionID, true);
+                } catch (AddressOutOfBoundsException | InvalidInputException e) {
+                    testProgram.endTransaction(transactionID, false);
+                    throw e;
+                }
+
+                // Release program from cache
+                RevaProgramManager.releaseProgramFromCache(testProgram);
+                RevaProgramManager.unregisterProgram(testProgram);
+
+                // Now test uncheckout
+                McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
+                    "manage-files",
+                    Map.of(
+                        "operation", "uncheckout",
+                        "programPath", program_path
+                    )
+                ));
+
+                assertNotNull("Result should not be null", result);
+                assertFalse("Tool should not have error", result.isError());
+
+                String responseJson = ((io.modelcontextprotocol.spec.McpSchema.TextContent) result.content().get(0)).text();
+                Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<Map<String, Object>>() {});
+
+                assertTrue("Uncheckout should be successful", Boolean.TRUE.equals(response.get("success")));
+                assertEquals("Action should be unchecked_out", "unchecked_out", response.get("action"));
+                assertFalse("Program should not be checked out", Boolean.TRUE.equals(response.get("isCheckedOut")));
+
+                // Verify the domain file is actually unchecked out
+                assertFalse("Domain file should not be checked out", domainFile.isCheckedOut());
+
+                return null;
+            } catch (Exception e) {
+                throw new RuntimeException("Test failed", e);
+            } finally {
+                if (testProgram != null) {
+                    RevaProgramManager.unregisterProgram(testProgram);
+                    if (serverManager != null) {
+                        serverManager.programClosed(testProgram, tool);
+                    }
+                    testProgram.release(this);
+                }
+            }
+        });
+    }
+
+    /**
+     * Test unhijack operation via manage-files tool.
+     */
+    @Test
+    public void testUnhijackOperation() throws Exception {
+        withMcpClient(createMcpTransport(), client -> {
+            Program testProgram = null;
+            try {
+                client.initialize();
+
+                // Create a test program and add it to version control
+                testProgram = createDefaultProgram("test-unhijack", "x86:LE:64:default", this);
+                String program_path = testProgram.getDomainFile().getPathname();
+                DomainFile domainFile = testProgram.getDomainFile();
+
+                // Register the program
+                RevaProgramManager.registerProgram(testProgram);
+                if (serverManager != null) {
+                    serverManager.programOpened(testProgram, tool);
+                }
+
+                // Check if version control is available
+                if (!domainFile.canAddToRepository()) {
+                    System.out.println("Version control not available, skipping unhijack test");
+                    return null;
+                }
+
+                // Add to version control and checkin first
+                testProgram.save("Initial save", null);
+                domainFile.addToVersionControl("Initial checkin", false, null); // Check in
+
+                // Release program from cache
+                testProgram.release(this);
+                RevaProgramManager.unregisterProgram(testProgram);
+
+                // Test unhijack on non-hijacked file (should return appropriate response)
+                McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(
+                    "manage-files",
+                    Map.of(
+                        "operation", "unhijack",
+                        "programPath", program_path
+                    )
+                ));
+
+                assertNotNull("Result should not be null", result);
+                assertFalse("Tool should not have error", result.isError());
+
+                String responseJson = ((io.modelcontextprotocol.spec.McpSchema.TextContent) result.content().get(0)).text();
+                Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<Map<String, Object>>() {});
+
+                assertTrue("Unhijack should be successful", Boolean.TRUE.equals(response.get("success")));
+                // Should either be "not_hijacked" or "unhijacked" depending on state
+                String action = (String) response.get("action");
+                assertTrue("Action should be not_hijacked or unhijacked",
+                    "not_hijacked".equals(action) || "unhijacked".equals(action));
+
+                return null;
+            } catch (Exception e) {
+                throw new RuntimeException("Test failed", e);
+            } finally {
                 if (testProgram != null) {
                     RevaProgramManager.unregisterProgram(testProgram);
                     if (serverManager != null) {

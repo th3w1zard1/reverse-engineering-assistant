@@ -17,37 +17,6 @@ if TYPE_CHECKING:
     )
 
 
-def _spawn_project_watchdog(
-    project_path: Path,
-    project_name: str,
-) -> int | None:
-    """
-    Spawn a detached watchdog process to monitor this process and clean up the project.
-
-    Args:
-        project_path: Path to the Ghidra project directory
-        project_name: Name of the Ghidra project
-
-    Returns:
-        Watchdog PID if spawned successfully, None otherwise
-    """
-    try:
-        from .watchdog import spawn_watchdog
-
-        parent_pid: int = os.getpid()
-        watchdog_pid: int | None = spawn_watchdog(parent_pid, project_path, project_name)
-        if watchdog_pid:
-            sys.stderr.write(
-                f"Spawned project watchdog (PID: {watchdog_pid}) to monitor cleanup\n"
-            )
-    except Exception as e:
-        # Don't fail if watchdog can't be spawned - just log and continue
-        sys.stderr.write(f"Warning: Failed to spawn project watchdog: {e}\n")
-        return None
-    else:
-        return watchdog_pid
-
-
 class ReVaLauncher:
     """Wraps ReVa headless launcher with Python-side project management.
 
@@ -199,11 +168,6 @@ class ReVaLauncher:
             if self.java_launcher.waitForServer(30000):  # pyright: ignore[reportOptionalMemberAccess]
                 self.port = self.java_launcher.getPort()  # pyright: ignore[reportOptionalMemberAccess]
                 sys.stderr.write(f"ReVa server ready on port {self.port}\n")
-
-                # Spawn watchdog process to ensure project cleanup on shutdown
-                # Only spawn for user-specified projects (not temp projects)
-                if self.user_project_path:
-                    _spawn_project_watchdog(projects_dir, project_name)
 
                 return self.port  # pyright: ignore[reportReturnType]
             else:
