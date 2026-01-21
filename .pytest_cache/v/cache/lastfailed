@@ -45,5 +45,15 @@
   "tests/test_mcp_tools.py::TestProgramTools::test_list_open_programs_only_checked_out": true,
   "tests/test_cli_e2e.py::TestErrorHandling::test_handles_invalid_tool_arguments": true,
   "tests/test_mcp_tools.py::TestProgramTools::test_list_project_files": true,
-  "tests/test_cli_e2e.py::TestCLIStartup::test_cli_starts_even_if_project_is_locked": true
+  "tests/test_cli_e2e.py::TestCLIStartup::test_cli_starts_even_if_project_is_locked": true,
+  "tests/test_cli_e2e.py::TestCLIStartup::test_cli_initializes_successfully": true,
+  "tests/test_cli_e2e.py::TestCLIStartup::test_server_info_is_correct": true,
+  "tests/test_cli_e2e.py::TestCLIStartup::test_server_capabilities": true,
+  "tests/test_cli_e2e.py::TestMCPToolCalls::test_call_list_programs_tool": true,
+  "tests/test_cli_e2e.py::TestMCPToolCalls::test_list_resources": true,
+  "tests/test_cli_e2e.py::TestMCPToolCalls::test_sequential_tool_calls": true,
+  "tests/test_cli_e2e.py::TestProjectCreation::test_does_not_create_reva_directory": true,
+  "tests/test_cli_e2e.py::TestProjectCreation::test_lazy_initialization_prevents_directory_creation": true,
+  "tests/test_cli_e2e.py::TestBinaryAutoImport::test_imports_test_binary": true,
+  "tests/test_cli_e2e.py::TestErrorHandling::test_handles_unknown_tool": true
 }

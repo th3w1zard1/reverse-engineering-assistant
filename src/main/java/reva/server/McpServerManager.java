@@ -172,7 +172,7 @@ public class McpServerManager implements RevaMcpService, ConfigChangeListener {
      */
     private void initializeResourceProviders() {
         resourceProviders.add(new ProgramListResource(server));
-        resourceProviders.add(new ProgramDocumentationResource(server));
+        resourceProviders.add(new SarifAnalysisReportResource(server));
         resourceProviders.add(new reva.resources.impl.RevaDebugInfoResource(server));
 
         // Register all resources with the server

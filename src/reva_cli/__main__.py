@@ -25,18 +25,47 @@ if TYPE_CHECKING:
 
 
 def _redirect_java_outputs():
-    """Attempt to redirect Java's System.out and System.err to Python stderr.
+    """Redirect Java's System.out and System.err to Python stderr.
 
-    This is a best-effort attempt. If it fails, the Python-level stdout/stderr
-    filters will catch Java output and redirect it appropriately.
-    
-    The Python filters are the primary defense against Java logs corrupting
-    the MCP JSON-RPC stream - this redirection is just an optimization.
+    This ensures Java log messages don't corrupt the MCP JSON-RPC stdout stream.
     """
-    # NOTE: Java output redirection is complex and may not work in all environments.
-    # The Python-level stdout/stderr filters are the primary mechanism for ensuring
-    # all output is properly formatted. This function is a best-effort optimization.
-    pass
+    try:
+        # Import Java classes after PyGhidra is initialized
+        from java.lang import System  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
+        from java.io import PrintStream, OutputStream  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
+
+        # Create a custom OutputStream that writes to our Python stderr
+        class PythonStderrOutputStream(OutputStream):
+            def write(self, b):
+                """Write byte to Python stderr (buffered for performance)."""
+                if isinstance(b, int):
+                    # Single byte
+                    sys.stderr.write(chr(b))
+                elif isinstance(b, bytes):
+                    # Byte array
+                    sys.stderr.write(b.decode('utf-8', errors='replace'))
+                elif hasattr(b, '__iter__'):
+                    # Array of bytes
+                    for byte_val in b:
+                        sys.stderr.write(chr(byte_val))
+                else:
+                    # Fallback
+                    sys.stderr.write(str(b))
+
+            def flush(self):
+                """Flush the stream."""
+                sys.stderr.flush()
+
+        # Redirect Java System.out and System.err
+        python_stderr_stream = PrintStream(PythonStderrOutputStream())
+        System.setOut(python_stderr_stream)
+        System.setErr(python_stderr_stream)
+
+        sys.stderr.write("Java output redirection enabled\n")
+
+    except Exception as e:
+        # If redirection fails, the Python filters will handle it
+        sys.stderr.write(f"Warning: Java output redirection failed: {e}\n")
 
 
 class StderrFilter:
@@ -308,6 +337,14 @@ class ReVaCLI:
             traceback.print_exc(file=sys.stderr)
             sys.exit(1)
         finally:
+            # Clean up json stream
+            if self.bridge and hasattr(self.bridge, '_current_json_stream') and self.bridge._current_json_stream:
+                try:
+                    # Note: aclose is async, but we can't await here
+                    # The async context managers should have handled cleanup already
+                    pass
+                except Exception:
+                    pass
             self.cleanup()
 
 
@@ -383,6 +420,10 @@ def main():
         _redirect_java_outputs()
 
         sys.stderr.write("PyGhidra initialized\n")
+
+        # Force garbage collection to clean up any lingering references
+        import gc
+        gc.collect()
 
         # Initialize project manager (lazy - project created on first tool use)
         sys.stderr.write("Initializing project manager...\n")

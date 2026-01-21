@@ -90,7 +90,7 @@ gradle test && gradle integrationTest && uv run pytest
 
 **GUI Mode (Ghidra Plugin):**
 1. Start Ghidra and open a project
-2. Server runs on http://localhost:8080/mcp/message (streamable transport)
+2. Server runs on <http://localhost:8080/mcp/message> (streamable transport)
 
 **Headless Mode (Python Script):**
 ```bash
@@ -174,7 +174,7 @@ Each major package contains its own CLAUDE.md file with detailed implementation 
 ### Tool Provider Categories
 - **Core Analysis**: decompiler, functions, strings, symbols, xrefs, memory
 - **Data & Types**: data, datatypes, structures
-- **Advanced Analysis**: callgraph, dataflow, constants, vtable, imports
+- **Advanced Analysis**: callgraph, dataflow, constants, vtable, suggestions
 - **Annotations**: comments, bookmarks
 - **Project Management**: project
 
@@ -231,7 +231,7 @@ When adding new tools to DecompilerToolProvider:
 
 **HTTP Streamable (GUI & Headless modes):**
 - Default port: 8080
-- Endpoint: http://localhost:8080/mcp/message
+- Endpoint: <http://localhost:8080/mcp/message>
 - Transport: HttpServletStreamableServerTransportProvider
 - Used by: GUI plugin, headless scripts, direct HTTP clients
 

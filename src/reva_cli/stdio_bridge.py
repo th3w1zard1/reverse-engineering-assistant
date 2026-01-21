@@ -97,6 +97,11 @@ class JsonEnvelopeStream:
         # If it's already a SessionMessage, pass it through unchanged
         return item
 
+    async def aclose(self):
+        """Close the stream if it supports it."""
+        if hasattr(self.original_stream, "aclose"):
+            await self.original_stream.aclose()
+
 
 class ReVaStdioBridge:
     """
@@ -118,6 +123,7 @@ class ReVaStdioBridge:
         self.server = Server("ReVa")
         self.backend_session: ClientSession | None = None
         self._connection_context = None  # Store the connection context for reconnection
+        self._current_json_stream = None  # Store current JsonEnvelopeStream for cleanup
         self._connection_params = {
             "timeout": 3600.0,  # 1 hour
             "read_timeout": 1800.0,  # 30 minutes
@@ -395,6 +401,7 @@ class ReVaStdioBridge:
                     # Wrap read_stream to convert non-JSON messages to valid JSON
                     # This prevents JSON parsing errors while preserving all log messages
                     json_stream = JsonEnvelopeStream(read_stream)
+                    self._current_json_stream = json_stream
 
                     # Enter the wrapper's context manager
                     async with json_stream:
@@ -496,11 +503,32 @@ class ReVaStdioBridge:
                 traceback.print_exc(file=sys.stderr)
                 raise
             finally:
+                # Ensure json_stream is properly closed
+                try:
+                    await json_stream.aclose()
+                except Exception:
+                    pass  # Ignore errors during cleanup
+            finally:
                 self.backend_session = None
+                # Clean up json stream
+                if self._current_json_stream:
+                    try:
+                        await self._current_json_stream.aclose()
+                    except Exception:
+                        pass
+                    self._current_json_stream = None
                 if attempt == max_retries - 1:
                     sys.stderr.write("Bridge stopped\n")
 
     def stop(self):
-        """Stop the bridge (handled by context managers)."""
-        # Cleanup is handled by async context managers
+        """Stop the bridge and cleanup resources."""
+        # Clean up json stream
+        if self._current_json_stream:
+            try:
+                # Note: aclose is async, but this is called from synchronous cleanup
+                # The async context managers will handle the actual cleanup
+                pass
+            except Exception:
+                pass
+            self._current_json_stream = None
         pass

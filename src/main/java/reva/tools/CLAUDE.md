@@ -434,7 +434,7 @@ if (monitor.isCancelled()) {
 
 ## Tool Categories
 
-### Current Tool Providers (17 Total)
+### Current Tool Providers (18 Total)
 
 **Core Analysis** (6 providers):
 - **decompiler/** - Decompilation and variable manipulation
@@ -454,11 +454,14 @@ if (monitor.isCancelled()) {
 - **dataflow/** - Data flow analysis and tracking
 - **constants/** - Constant value analysis and identification
 - **vtable/** - Virtual table detection and analysis
-- **imports/** - Import table and external reference analysis
+- **suggestions/** - Context-aware suggestions for reverse engineering analysis
 
 **Annotations** (2 providers):
 - **comments/** - Comment management
 - **bookmarks/** - Bookmark operations
+
+**Smart Suggestions** (1 provider):
+- **suggestions/** - Context-aware suggestions for reverse engineering analysis improvements
 
 **Project Management** (1 provider):
 - **project/** - Program listing and project management

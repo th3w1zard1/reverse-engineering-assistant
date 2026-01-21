@@ -61,25 +61,24 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Resource provider for comprehensive program documentation.
- * Provides ALL program data in structured JSON format:
+ * Resource provider for SARIF 2.1.0 format static analysis reports.
+ * Provides comprehensive program analysis results in standardized SARIF JSON format:
  * - All functions (with parameters, variables, tags, comments)
- * - All comments (all types: pre, eol, post, plate, repeatable)
  * - All symbols/labels (with addresses, types, namespaces)
  * - All bookmarks (with type, category, comment, address)
  * - All strings (with addresses, content, length)
  * - All data types and structures
- * - Memory layout
- * - Imports/exports
- * - Function tags
- * - Cross-references summary
- * 
- * Uses caching to improve performance - documentation is regenerated only when programs change.
+ * - Memory layout analysis
+ * - Imports/exports analysis
+ * - Function tags and categorization
+ * - Static analysis findings and observations
+ *
+ * Uses caching to improve performance - reports are regenerated only when programs change.
  */
-public class ProgramDocumentationResource extends AbstractResourceProvider {
-    private static final String RESOURCE_ID = "ghidra://program-documentation";
-    private static final String RESOURCE_NAME = "program-documentation";
-    private static final String RESOURCE_DESCRIPTION = "Comprehensive JSON documentation of all open programs - includes all functions, comments, labels, tags, bookmarks, strings, data types, and more";
+public class StaticAnalysisResultsResource extends AbstractResourceProvider {
+    private static final String RESOURCE_ID = "ghidra://sarif-report";
+    private static final String RESOURCE_NAME = "sarif-report";
+    private static final String RESOURCE_DESCRIPTION = "SARIF 2.1.0 format static analysis report of all open programs - comprehensive program documentation including functions, symbols, comments, and analysis results";
     private static final String RESOURCE_MIME_TYPE = "application/json";
     private static final ObjectMapper JSON = new ObjectMapper();
 
